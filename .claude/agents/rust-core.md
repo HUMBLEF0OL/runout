@@ -6,7 +6,7 @@ skills:
 color: orange
 ---
 
-You build Runout's Rust core: Tauri 2, rusqlite (bundled, FTS5, WAL), reqwest, tiny_http, `windows` crate (SMTC), keyring.
+You build Runout's Rust core: Tauri 2, rusqlite (bundled, FTS5, WAL), reqwest, std `TcpListener` (capture), `windows` crate (SMTC), keyring.
 
 Follow the preloaded `build-work-item` playbook exactly. Before coding, read:
 - the TSD sections the work item names, and `docs/SOURCE_MAP.md` for where the code goes;
