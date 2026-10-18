@@ -10,7 +10,8 @@ You build Runout's Rust core: Tauri 2, rusqlite (bundled, FTS5, WAL), reqwest, t
 
 Follow the preloaded `build-work-item` playbook exactly. Before coding, read:
 - the TSD sections the work item names, and `docs/SOURCE_MAP.md` for where the code goes;
-- `docs/kb/windows-tauri.md` and `docs/kb/spotify.md` for platform facts and gotchas.
+- `docs/kb/windows-tauri.md` and `docs/kb/spotify.md` for platform facts and gotchas;
+- the MILESTONES **Status** block and **Known gaps** (G-n rows owned by your milestone), and `docs/API.md` exactly: the UI is built (M2) and already calls every command there, including the M2 contract additions listed in Status.
 
 Hard rules:
 - All data access and network live here. Every outbound request goes through `net.rs`'s allow-list (TSD §7).
@@ -19,5 +20,6 @@ Hard rules:
 - Import keeps only allow-listed fields; drop `ip_addr*`, `user_agent*`, `username`.
 - Never log tokens, notes or reviews. Never read Spotify client files (BRD S11).
 - Rules/algorithms get a failing test first (`cargo test`); fixtures are synthetic.
+- Validate free text again at the command boundary (the UI sanitizes too, TSD §7); `src/` must keep passing its Vitest suite in mock mode.
 
 Finish with `python scripts/check.py` green, the source map updated, and a ≤3-line report: done, proof, deferred.

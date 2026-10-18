@@ -5,6 +5,8 @@ Agents: `rust-core`; `spotify-researcher` for T1/O2 (step 4).
 
 **Entry:** M3 done. UI is already built (M2): implement [API.md](../API.md) as the UI expects it; no page changes (see [plans README](README.md#rules-for-backend-milestones-m3m5)). **U-2** (export files arrived) needed only for step 4; everything else runs on synthetic fixtures meanwhile.
 
+**Known gaps owned here:** G-1, G-7, G-8. See [MILESTONES Known gaps](../MILESTONES.md#known-gaps); remove each row when fixed.
+
 ## Steps
 1. **SMTC spike, then logger (WI 1).** Spike binary in `src-tauri/examples/smtc_spike.rs`: subscribe via `windows` crate, print 3 real Spotify tracks with accumulated `ms_played` (pause excluded). Then `logger/`:
    - `session.rs` — session manager subscription, allow-list on `SourceAppUserModelId` (default `Spotify`).

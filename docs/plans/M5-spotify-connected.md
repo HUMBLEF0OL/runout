@@ -5,6 +5,8 @@ Agents: `spotify-researcher` (gate + T3), `rust-core`, `spec-reviewer` after ste
 
 **Entry:** M3 done (M4 not required). UI is already built (M2): implement [API.md](../API.md) as the UI expects it; no page changes (see [plans README](README.md#rules-for-backend-milestones-m3m5)). **Gate before any R3 code:** U-6 developer app created → one `GET /me` call with the user’s token proves the Student Premium plan works in Development Mode (**O1**). Fails → stop R3, report to the user (scope decision). Optional U-8/O7.
 
+**Known gaps owned here:** G-9. See [MILESTONES Known gaps](../MILESTONES.md#known-gaps); remove each row when fixed.
+
 ## Steps
 0. **Gate.** `spotify-researcher` re-checks T3 (redirect rules, `/me/library` scope); U-6 + U-7; minimal PKCE script in `src-tauri/examples/spotify_gate.rs` calls `GET /me`. Record O1 result in KB + BRD §18 via `change-spec`.
 1. **Auth (WI 1).** `spotify/auth.rs`: PKCE (S256 verifier), bind free loopback port, open browser, receive `/callback`, exchange code; `keyring` entry `Runout/spotify` holds `{access, refresh, expires_at}`; refresh on 401 and **store rotated refresh token**; `invalid_grant` → delete tokens, status `reconnect`, `spotify-status` event. `client.rs` wraps `net` with auth header, 429 `Retry-After` backoff, max 1 in-flight write.

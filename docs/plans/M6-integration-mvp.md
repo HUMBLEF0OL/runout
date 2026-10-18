@@ -5,6 +5,8 @@ Agents: `react-ui` (switch-over), `rust-core` (installer, cleanup hook), `spotif
 
 **Entry:** integration phase ([plans README](README.md)): M2 done and the whole backend phase done — M3, M4 and M5 (or M5 formally stopped after a failed O1 gate).
 
+**Known gaps owned here:** G-14. See [MILESTONES Known gaps](../MILESTONES.md#known-gaps); remove each row when fixed.
+
 ## Steps
 1. **Switch MVP calls (WI 1).** In `api.ts`, route every API.md §3 command to `invoke` (per-command table `REAL = new Set([...])` so R2/R3 stay mocked). Wire §6 MVP events. Remove MVP-only data from `src/mocks/`. Run journeys A–E and H in `npm run tauri dev` on an empty library, then on the 10k fixture.
    - Proof: Vitest asserts no §3 command resolves to a mock when `VITE_MOCK` is off.

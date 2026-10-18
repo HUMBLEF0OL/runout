@@ -5,6 +5,8 @@ Agent: `rust-core` for everything; `spec-reviewer` after steps 4, 7 and 11.
 
 **Entry:** M2 done (API.md stable, `src/mocks/` passing). No hard stops in M3. UI is already built (M2): implement [API.md](../API.md) as the UI expects it; no page changes (see [plans README](README.md#rules-for-backend-milestones-m3m5)).
 
+**Known gaps owned here:** G-2, G-3, G-4, G-5 (decide before step 1), G-10, plus the M2 contract additions listed in the MILESTONES Status block. See [MILESTONES Known gaps](../MILESTONES.md#known-gaps); remove each row when fixed.
+
 ## Steps
 1. **Skeleton + DB (WI 1).** Crates: `rusqlite` (bundled, FTS5), `serde`/`serde_json`, `thiserror`, `chrono`, `sha2`, `zip`, `reqwest` (rustls, blocking off), `tiny_http`, `rand`, `tauri-plugin-dialog`. Modules per TSD §9. `db/`: open with WAL + `foreign_keys=ON`, migration runner over embedded `migrations/*.sql` using `PRAGMA user_version`. `0001_init.sql` = TSD §3 core tables + `item_fts` (+ triggers) + `usage_event`. `AppError` per API.md §1 with `From<rusqlite::Error>` etc.
    - Tests: fresh DB migrates to v1; running twice is a no-op; CHECK constraints reject a bad status and rating 0.7.
