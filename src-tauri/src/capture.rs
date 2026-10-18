@@ -170,31 +170,9 @@ pub async fn save(db: &Mutex<Connection>, link: &str, arrived: Instant) -> Resul
     let id = items::insert_name_needed(&tx, kind, &uri, "phone")?;
     let ms = arrived.elapsed().as_millis() as i64;
     usage::record(&tx, usage::Kind::Capture, Some("phone"), Some(ms))?;
-    let summary = summary(&tx, id)?;
+    let summary = serde_json::to_value(items::summary(&tx, id)?)?;
     tx.commit()?;
     Ok(Outcome::New(summary))
-}
-
-/// API.md `ItemSummary` as JSON, straight from SQL.
-// ponytail: step 11 swaps this for the library::items summary once that lands.
-fn summary(conn: &Connection, id: i64) -> Result<Value> {
-    let s: String = conn.query_row(
-        "SELECT json_object('id', i.id, 'type', i.type, 'display_name', i.display_name,
-           'spotify_uri', i.spotify_uri, 'status', i.status, 'priority', i.priority, 'rating', i.rating,
-           'favourite', json(iif(i.favourite, 'true', 'false')), 'revisit', json(iif(i.revisit, 'true', 'false')),
-           'in_backlog', json(iif(i.in_backlog, 'true', 'false')), 'backlog_order', i.backlog_order,
-           'tags', (SELECT json_group_array(t.name) FROM item_tag it JOIN tag t ON t.id = it.tag_id WHERE it.item_id = i.id),
-           'artist_names', (SELECT json_group_array(a.display_name) FROM item_link l JOIN item a ON a.id = l.to_id
-                              WHERE l.from_id = i.id AND l.kind = 'by_artist' AND a.display_name IS NOT NULL),
-           'album_name', (SELECT a.display_name FROM item_link l JOIN item a ON a.id = l.to_id
-                            WHERE l.from_id = i.id AND l.kind = 'on_album' LIMIT 1),
-           'added_via', i.added_via, 'recommended_by', i.recommended_by,
-           'added_at', i.added_at, 'modified_at', i.modified_at)
-         FROM item i WHERE i.id = ?1",
-        [id],
-        |r| r.get(0),
-    )?;
-    Ok(serde_json::from_str(&s)?)
 }
 
 /// Effects the listener needs from the app (lib.rs wires them to AppState + `emit`).
@@ -254,6 +232,8 @@ fn handle(
             disable,
         } => {
             if disable {
+                // The code was under attack: retire it now so a restart or re-enable can't reuse it.
+                *sh.guard.lock().unwrap() = Guard::new(new_code());
                 sh.on.store(false, Ordering::SeqCst);
                 let _ = sh.persist();
                 (sh.hooks.emit)(
@@ -281,28 +261,78 @@ fn handle(
     }
 }
 
-/// Socket loop: runs until `stop` is set and the server is unblocked, or a lockout turns capture off.
-fn serve(server: Arc<tiny_http::Server>, stop: Arc<AtomicBool>, sh: Arc<Shared>) {
-    for mut req in server.incoming_requests() {
-        if stop.load(Ordering::SeqCst) {
-            break;
+/// Stateless checks before any body byte is read: source IP first, then route, then a declared
+/// length ≤ [`MAX_BODY`] (chunked or missing → 411). `None` = go on and read the body.
+fn pre_read(
+    ip: IpAddr,
+    method: &str,
+    url: &str,
+    len: Option<usize>,
+) -> Option<(u16, &'static str)> {
+    if !is_private(ip) {
+        return Some((403, "Runout only accepts shares from your home network."));
+    }
+    if method != "POST" || url.split('?').next() != Some("/capture") {
+        return Some((404, "Send POST /capture."));
+    }
+    match len {
+        None => Some((411, "Send a Content-Length.")),
+        Some(n) if n > MAX_BODY => Some((413, "That share is too big.")),
+        Some(_) => None,
+    }
+}
+
+/// One request, on its own thread: a stalled client (or tiny_http draining an unread body on drop)
+/// only ever blocks this thread, never the accept loop or `set_enabled`.
+// ponytail: thread per request; the 10/min limit and MAX_BODY keep it small. Pool it if that changes.
+fn serve_one(mut req: tiny_http::Request, sh: &Shared) {
+    let arrived = Instant::now();
+    let ip = req
+        .remote_addr()
+        .map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |a| a.ip());
+    let method = req.method().as_str().to_owned();
+    let url = req.url().to_owned();
+    let (status, text) = match pre_read(ip, &method, &url, req.body_length()) {
+        Some((status, text)) => (status, text.to_owned()),
+        None => {
+            let mut body = Vec::new();
+            let _ = req
+                .as_reader()
+                .take(MAX_BODY as u64 + 1)
+                .read_to_end(&mut body);
+            handle(sh, ip, &method, &url, &body, arrived)
         }
-        let arrived = Instant::now();
-        let ip = req
-            .remote_addr()
-            .map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |a| a.ip());
-        let mut body = Vec::new();
-        let _ = req
-            .as_reader()
-            .take(MAX_BODY as u64 + 1)
-            .read_to_end(&mut body);
-        let method = req.method().as_str().to_owned();
-        let url = req.url().to_owned();
-        let (status, text) = handle(&sh, ip, &method, &url, &body, arrived);
-        let _ = req.respond(tiny_http::Response::from_string(text).with_status_code(status));
-        if !sh.on.load(Ordering::SeqCst) {
-            break;
+    };
+    let _ = req.respond(tiny_http::Response::from_string(text).with_status_code(status));
+}
+
+/// How often the accept loop looks at `stop` / a lockout.
+const POLL: Duration = Duration::from_millis(200);
+
+/// Accept loop: hands each request to [`serve_one`] and stops when `stop` is set or a lockout turns
+/// capture off. On a lockout it closes its own server, so the port stops accepting at once.
+fn serve(
+    server: Arc<tiny_http::Server>,
+    stop: Arc<AtomicBool>,
+    sh: Arc<Shared>,
+    running: Arc<Mutex<Option<Running>>>,
+) {
+    while !stop.load(Ordering::SeqCst) && sh.on.load(Ordering::SeqCst) {
+        match server.recv_timeout(POLL) {
+            Ok(Some(req)) => {
+                let sh = sh.clone();
+                std::thread::spawn(move || serve_one(req, &sh));
+            }
+            Ok(None) => {}
+            Err(_) => break,
         }
+    }
+    drop(server);
+    // Lockout: nobody else is tearing down (set_enabled holds the lock while it does), so close here.
+    if let Ok(mut r) = running.try_lock()
+        && let Some(r) = r.take()
+    {
+        close(r);
     }
 }
 
@@ -311,6 +341,21 @@ struct Running {
     stop: Arc<AtomicBool>,
     thread: JoinHandle<()>,
     port: u16,
+}
+
+/// Stop the accept loop, wait for it (bounded: it polls every [`POLL`]), and close the port.
+fn close(r: Running) {
+    r.stop.store(true, Ordering::SeqCst);
+    if r.thread.thread().id() != std::thread::current().id() {
+        let _ = r.thread.join();
+    }
+    drop(r.server);
+    // tiny_http's accept thread only notices the close on its next connection, and its own wake-up
+    // connects to 0.0.0.0, which Windows refuses: poke it on loopback so the socket closes now.
+    let _ = std::net::TcpStream::connect_timeout(
+        &(Ipv4Addr::LOCALHOST, r.port).into(),
+        Duration::from_millis(200),
+    );
 }
 
 /// API.md `get_capture` shape.
@@ -327,7 +372,7 @@ pub struct CaptureInfo {
 pub struct Listener {
     shared: Arc<Shared>,
     port: u16,
-    running: Mutex<Option<Running>>,
+    running: Arc<Mutex<Option<Running>>>,
 }
 
 impl Listener {
@@ -346,7 +391,7 @@ impl Listener {
                 hooks,
             }),
             port,
-            running: Mutex::new(None),
+            running: Arc::default(),
         }
     }
 
@@ -378,18 +423,9 @@ impl Listener {
     pub fn set_enabled(&self, on: bool) -> Result<CaptureInfo> {
         let mut running = self.running.lock().unwrap();
         if let Some(r) = running.take() {
-            r.stop.store(true, Ordering::SeqCst);
-            r.server.unblock();
-            let _ = r.thread.join();
+            close(r);
         }
         if on {
-            {
-                // After a lockout the old code was under attack: enabling again issues a new one.
-                let mut g = self.shared.guard.lock().unwrap();
-                if g.wrong >= MAX_WRONG_CODES {
-                    *g = Guard::new(new_code());
-                }
-            }
             let server = match tiny_http::Server::http(("0.0.0.0", self.port)) {
                 Ok(s) => s,
                 Err(e) => {
@@ -406,8 +442,13 @@ impl Listener {
             let server = Arc::new(server);
             let stop = Arc::new(AtomicBool::new(false));
             self.shared.on.store(true, Ordering::SeqCst);
-            let (s, st, sh) = (server.clone(), stop.clone(), self.shared.clone());
-            let thread = std::thread::spawn(move || serve(s, st, sh));
+            let (s, st, sh, run) = (
+                server.clone(),
+                stop.clone(),
+                self.shared.clone(),
+                self.running.clone(),
+            );
+            let thread = std::thread::spawn(move || serve(s, st, sh, run));
             *running = Some(Running {
                 server,
                 stop,
@@ -432,10 +473,8 @@ impl Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        if let Some(r) = self.running.get_mut().unwrap().take() {
-            r.stop.store(true, Ordering::SeqCst);
-            r.server.unblock();
-            let _ = r.thread.join();
+        if let Some(r) = self.running.lock().unwrap().take() {
+            close(r);
         }
     }
 }
@@ -632,6 +671,7 @@ mod tests {
             "album_name",
             "added_via",
             "recommended_by",
+            "notes",
             "added_at",
             "modified_at",
         ];
@@ -681,6 +721,7 @@ mod tests {
         let dir = tmp("lockout");
         let (l, events) = listener(&dir, 0);
         assert!(!l.info().on, "off by default");
+        let attacked = l.info().code;
         l.shared.on.store(true, Ordering::SeqCst);
         for _ in 0..5 {
             handle(
@@ -700,14 +741,78 @@ mod tests {
                 serde_json::json!({"reason": "wrong_code"})
             )]
         );
-        let old = l.info().code;
+        let rotated = l.info().code;
+        assert_ne!(rotated, attacked, "lockout retires the attacked code");
         drop(l);
         let (l, _) = listener(&dir, 0);
         assert_eq!(
             (l.info().on, l.info().code),
-            (false, old),
-            "persisted across restart"
+            (false, rotated),
+            "off + new code persisted across restart"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pre_read_checks_ip_first_then_route_then_length() {
+        let out = "203.0.113.5".parse().unwrap();
+        assert_eq!(pre_read(out, "POST", "/capture", None).unwrap().0, 403);
+        assert_eq!(pre_read(LAN, "GET", "/", Some(1)).unwrap().0, 404);
+        assert_eq!(pre_read(LAN, "POST", "/capture", None).unwrap().0, 411);
+        assert_eq!(
+            pre_read(LAN, "POST", "/capture", Some(MAX_BODY + 1))
+                .unwrap()
+                .0,
+            413
+        );
+        assert_eq!(pre_read(LAN, "POST", "/capture?x=1", Some(MAX_BODY)), None);
+    }
+
+    fn connect(port: u16) -> std::io::Result<std::net::TcpStream> {
+        std::net::TcpStream::connect_timeout(
+            &(Ipv4Addr::LOCALHOST, port).into(),
+            Duration::from_secs(1),
+        )
+    }
+
+    /// A client that declares 2000 bytes and then goes silent must not hang the listener.
+    #[test]
+    fn stalled_body_does_not_block_stop() {
+        let dir = tmp("stall");
+        let (l, _) = listener(&dir, 0);
+        l.set_enabled(true).unwrap();
+        let port = l.bound_port().unwrap();
+        let mut stalled = connect(port).unwrap();
+        stalled
+            .write_all(b"POST /capture HTTP/1.1\r\nHost: x\r\nContent-Length: 2000\r\n\r\n{")
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        let t = Instant::now();
+        assert!(!l.set_enabled(false).unwrap().on);
+        assert!(
+            t.elapsed() < Duration::from_secs(2),
+            "stop took {:?}",
+            t.elapsed()
+        );
+        drop(stalled);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// NFR-18: after a lockout the port is closed, not just ignored.
+    #[test]
+    fn lockout_closes_the_port() {
+        let dir = tmp("lockport");
+        let (l, _) = listener(&dir, 0);
+        l.set_enabled(true).unwrap();
+        let port = l.bound_port().unwrap();
+        l.shared.on.store(false, Ordering::SeqCst); // what `handle` does on the 5th wrong code
+        let t = Instant::now();
+        while l.bound_port().is_some() && t.elapsed() < Duration::from_secs(2) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(l.bound_port().is_none());
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(connect(port).is_err(), "port still accepting after lockout");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -731,7 +836,7 @@ mod tests {
         );
         let code = l.info().code;
         assert_ne!(l.new_pairing_code().unwrap().code, code);
-        assert!(!l.set_enabled(false).unwrap().on); // joins the thread: unblock() works
+        assert!(!l.set_enabled(false).unwrap().on); // joins the accept loop (bounded by POLL)
         assert!(l.bound_port().is_none());
         let _ = std::fs::remove_dir_all(dir);
     }

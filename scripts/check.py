@@ -71,7 +71,7 @@ def check_ui_purity():
                 bad.append(f"{rel}:{i}: hard-coded source tag fallback; use `?? []`")
             if "]${" in line:  # Tailwind can't see an arbitrary-value class glued to ${...}; the rule is never generated
                 bad.append(f"{rel}:{i}: put a space between ']' and '${{' in class strings")
-            if re.search(r"e as AppError|isAppError\(e\) \? e : undefined", line):  # a non-AppError throw would vanish or crash
+            if re.search(r"\be as AppError\b|isAppError\(e\) \? e : undefined", line):  # a non-AppError throw would vanish or crash
                 bad.append(f"{rel}:{i}: convert caught errors with toAppError(e) from api.ts")
             if "@tauri-apps/api" in line and rel != "src/api.ts":
                 bad.append(f"{rel}:{i}: only src/api.ts may import @tauri-apps/api")
@@ -99,6 +99,36 @@ def check_contract_and_attribution():
     if bad:
         failures.append("contract + attribution")
         print("--- contract + attribution: FAIL\n" + "\n".join(sorted(set(bad))))
+
+
+# API.md sections whose commands must be registered in commands.rs. M4 adds "4", M5 adds "5".
+COMMAND_SECTIONS = ["3"]
+
+
+def check_commands():
+    # API.md §7: every API.md command in COMMAND_SECTIONS is in commands.rs's generate_handler! list
+    # and has its camelCase export in src/api.ts.
+    cmds = TAURI / "src/commands.rs"
+    if not cmds.exists() or "generate_handler!" not in cmds.read_text(encoding="utf-8"):
+        return
+    spec = (ROOT / "docs/API.md").read_text(encoding="utf-8")
+    want = []
+    for sec in COMMAND_SECTIONS:
+        body = re.search(rf"^## {sec}\..*?(?=^## )", spec, re.S | re.M).group(0)
+        for row in re.findall(r"^\| (`[a-z_]+`(?: / `[a-z_]+`)*) \|", body, re.M):
+            want += re.findall(r"`([a-z_]+)`", row)
+    reg = re.search(r"generate_handler!\[(.*?)\]", cmds.read_text(encoding="utf-8"), re.S).group(1)
+    registered = set(re.findall(r"\w+", reg))
+    api = (ROOT / "src/api.ts").read_text(encoding="utf-8")
+    camel = lambda n: re.sub(r"_(\w)", lambda m: m.group(1).upper(), n)
+    bad = [f"API.md command '{n}' not registered in commands.rs" for n in want if n not in registered]
+    bad += [f"API.md command '{n}' has no `export const {camel(n)}` in src/api.ts" for n in want
+            if not re.search(rf"export const {camel(n)}\b", api)]
+    if not want:
+        bad.append("no commands parsed from API.md (table format changed?)")
+    if bad:
+        failures.append("commands")
+        print("--- commands: FAIL" + chr(10) + chr(10).join(bad))
 
 
 def check_source_map():
@@ -187,6 +217,7 @@ check_hosts()
 check_no_oembed_or_tokens_logged()
 check_ui_purity()
 check_contract_and_attribution()
+check_commands()
 check_source_map()
 check_design()
 

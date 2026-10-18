@@ -42,6 +42,7 @@ pub fn uninstall_cleanup() -> i32 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(commands::handler())
         .setup(|app| {
             let st = state::AppState::init(app.handle())?;
             backup::cleanup_pre_restore(std::path::Path::new(
@@ -74,12 +75,16 @@ pub fn run() {
                     let h = handle.clone();
                     std::thread::spawn(move || {
                         let st = h.state::<state::AppState>();
-                        if let Ok(n) =
+                        if let Ok((n, new)) =
                             tauri::async_runtime::block_on(links::retry_unresolved(&st.db))
-                            && n > 0
                         {
-                            let _ =
-                                h.emit("unresolved-resolved", serde_json::json!({ "resolved": n }));
+                            commands::emit_resolved(&h, &st, &new);
+                            if n > 0 {
+                                let _ = h.emit(
+                                    "unresolved-resolved",
+                                    serde_json::json!({ "resolved": n }),
+                                );
+                            }
                         }
                     });
                 }

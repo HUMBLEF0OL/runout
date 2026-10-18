@@ -308,30 +308,62 @@ pub fn discard_unresolved(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Apply one resolve attempt to a queued row. Ok → name-needed item + row removed (`true`);
-/// offline → left as is; any other error → `failed` with its message.
+/// What one resolve attempt did to a queued row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Applied {
+    /// Offline (left as is) or failed (marked `failed`).
+    Pending,
+    /// Resolved to an item already in the library; row removed.
+    Existing(i64),
+    /// New name-needed item; row removed.
+    New(i64),
+}
+
+/// Apply one resolve attempt to a queued row. Ok → name-needed item + row removed; a phone share
+/// (`shortcut`) also records its `capture` usage event, timed from `received_at` (TSD §4.12).
+/// Offline → left as is; any other error → `failed` with its message.
 pub fn apply_resolution(
     conn: &mut Connection,
     id: i64,
     source: &str,
     outcome: Result<(String, ItemType)>,
-) -> Result<bool> {
+) -> Result<Applied> {
     match outcome {
         Ok((uri, kind)) => {
-            let via = if source == "shortcut" { "phone" } else { "pc" };
+            let phone = source == "shortcut";
             let tx = conn.transaction()?;
-            items::insert_name_needed(&tx, kind, &uri, via)?;
+            let applied = match items::id_by_uri(&tx, &uri)? {
+                Some(existing) => Applied::Existing(existing),
+                None => {
+                    let item = items::insert_name_needed(
+                        &tx,
+                        kind,
+                        &uri,
+                        if phone { "phone" } else { "pc" },
+                    )?;
+                    if phone {
+                        let ms: Option<i64> = tx.query_row(
+                            "SELECT CAST((julianday('now') - julianday(received_at)) * 86400000 AS INTEGER)
+                             FROM unresolved_capture WHERE id = ?1",
+                            [id],
+                            |r| r.get(0),
+                        )?;
+                        crate::usage::record(&tx, crate::usage::Kind::Capture, Some("phone"), ms)?;
+                    }
+                    Applied::New(item)
+                }
+            };
             tx.execute("DELETE FROM unresolved_capture WHERE id = ?1", [id])?;
             tx.commit()?;
-            Ok(true)
+            Ok(applied)
         }
-        Err(e) if e.code == Code::Offline => Ok(false),
+        Err(e) if e.code == Code::Offline => Ok(Applied::Pending),
         Err(e) => {
             conn.execute(
                 "UPDATE unresolved_capture SET state = 'failed', error = ?2 WHERE id = ?1",
                 params![id, e.message],
             )?;
-            Ok(false)
+            Ok(Applied::Pending)
         }
     }
 }
@@ -350,22 +382,28 @@ pub async fn resolve_or_queue(
     out
 }
 
-/// `retry_unresolved` (and on `online-changed` → true): returns how many resolved. Stops at the first
-/// offline answer so a flaky connection doesn't mark rows failed.
-pub async fn retry_unresolved(db: &Mutex<Connection>) -> Result<usize> {
+/// `retry_unresolved` (and on `online-changed` → true): returns `(resolved count, new item ids)`; the
+/// caller emits `capture-received` per new item. Stops at the first offline answer so a flaky
+/// connection doesn't mark rows failed.
+pub async fn retry_unresolved(db: &Mutex<Connection>) -> Result<(usize, Vec<i64>)> {
     let pending = list_unresolved(&db.lock().unwrap())?;
-    let mut resolved = 0;
+    let (mut resolved, mut new) = (0, vec![]);
     for u in pending {
         let out = resolve_short(&u.raw_link).await;
         let offline = matches!(&out, Err(e) if e.code == Code::Offline);
-        if apply_resolution(&mut db.lock().unwrap(), u.id, &u.source, out)? {
-            resolved += 1;
+        match apply_resolution(&mut db.lock().unwrap(), u.id, &u.source, out)? {
+            Applied::Pending => {}
+            Applied::Existing(_) => resolved += 1,
+            Applied::New(id) => {
+                resolved += 1;
+                new.push(id);
+            }
         }
         if offline {
             break;
         }
     }
-    Ok(resolved)
+    Ok((resolved, new))
 }
 
 #[cfg(test)]
@@ -578,13 +616,28 @@ mod tests {
         );
 
         // offline: untouched
-        assert!(!apply_resolution(&mut c, a, "shortcut", Err(AppError::offline())).unwrap());
+        assert_eq!(
+            apply_resolution(&mut c, a, "shortcut", Err(AppError::offline())).unwrap(),
+            Applied::Pending
+        );
         assert_eq!(list_unresolved(&c).unwrap().len(), 3);
         // resolved: name-needed item from the phone, row gone
         let uri = format!("spotify:track:{A}");
-        assert!(
+        let Applied::New(new_id) =
             apply_resolution(&mut c, a, "shortcut", Ok((uri.clone(), ItemType::Track))).unwrap()
-        );
+        else {
+            panic!("expected a new item")
+        };
+        // a phone share resolved later still counts as a phone capture (TSD §4.12)
+        let (n, detail, ms): (i64, Option<String>, Option<i64>) = c
+            .query_row(
+                "SELECT count(*), max(detail), max(duration_ms) FROM usage_event WHERE kind = 'capture'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((n, detail.as_deref()), (1, Some("phone")));
+        assert!(ms.is_some_and(|ms| ms >= 0));
         let (name, via, prov): (Option<String>, String, String) = c
             .query_row(
                 "SELECT display_name, added_via, (SELECT source FROM field_provenance WHERE item_id = item.id AND field = 'spotify_uri') FROM item WHERE spotify_uri = ?1",
@@ -597,14 +650,20 @@ mod tests {
             (None, "phone", "promoted")
         );
         // same URI again: no duplicate item
-        assert!(apply_resolution(&mut c, b, "paste", Ok((uri, ItemType::Track))).unwrap());
+        assert_eq!(
+            apply_resolution(&mut c, b, "paste", Ok((uri, ItemType::Track))).unwrap(),
+            Applied::Existing(new_id)
+        );
         let n: i64 = c
             .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 1);
         // other error: marked failed
         let bad = AppError::new(Code::InvalidLink, "nope");
-        assert!(!apply_resolution(&mut c, d, "paste", Err(bad)).unwrap());
+        assert_eq!(
+            apply_resolution(&mut c, d, "paste", Err(bad)).unwrap(),
+            Applied::Pending
+        );
         let rows = list_unresolved(&c).unwrap();
         assert_eq!(
             (rows.len(), rows[0].state.as_str(), rows[0].error.as_deref()),
