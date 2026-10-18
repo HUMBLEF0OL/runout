@@ -1,0 +1,296 @@
+# Technical Specification (TSD) — Runout
+
+| | |
+|---|---|
+| Version | 1.0 |
+| Date | 18 Oct 2026 |
+| Implements | [BRD](../BRD.md) |
+| Related | [Capabilities](CAPABILITIES.md) · [Milestones](MILESTONES.md) · [Command contract](API.md) · [User actions](USER_ACTIONS.md) |
+
+Items marked **⚑ verify** are assumptions to confirm in the named milestone. Everything else is decided.
+
+---
+
+## 1. Technology decisions (resolves BRD O3)
+
+| Concern | Decision | Why |
+|---|---|---|
+| App shell | **Tauri 2** (Rust core + system WebView2) | Already installed toolchain (Rust 1.98 + MSVC, Node 26, WebView2) → zero new installs; small binary; native tray; web UI hosts Spotify embeds naturally |
+| UI | **React + TypeScript + Vite** | Most common, boring choice; good list/table/chart ecosystem |
+| Charts (R2) | Recharts | Free, React-native, enough for bar/line/heatmap |
+| Database | **SQLite** via `rusqlite` (bundled), **FTS5** for search, WAL mode | Serverless, transactional (NFR-05), fast (NFR-04) |
+| Migrations | Numbered SQL files run at startup, `PRAGMA user_version` | No migration framework needed |
+| Windows media session | `windows` crate → `Windows.Media.Control` (SMTC) | Official OS API; proven on this PC (Spotify 1.305, 18 Oct 2026) |
+| HTTP client | `reqwest` (Rust side only) | oEmbed, short-link resolution, Web API |
+| Capture listener | `tiny_http` on a background thread | Smallest adequate server |
+| Secrets | `keyring` crate → Windows Credential Manager | NFR-08 |
+| Autostart / tray | Tauri tray API + `tauri-plugin-autostart` | Native |
+| Web view mode | Main window created with `incognito(true)` (WebView2 InPrivate) **⚑ verify in M2** | Spotify embed content is never kept in a disk cache (BRD 5.3, Embeds Terms IV.2.c) |
+| Bundle identifier | `app.runout.desktop` | Determines all app data folders and what the uninstaller deletes |
+| Installer | Tauri NSIS bundle (per-user, unsigned) | Free; uninstaller hooks for FR-024 |
+| Tests | Rust `cargo test` for core logic; Vitest for UI logic; fixture files | No e2e framework until needed |
+| UI design | Direction D · Pulse; tokens, components and screens in [DESIGN.md](DESIGN.md) | Single source for look and behaviour (BRD D29) |
+| UI data during M2 | `src/api.ts` typed wrappers over `src/mocks/`; swapped for Rust commands in M6/M7 | Design-first order (BRD D30) without page rewrites |
+
+**Rule:** all data access and business logic live in Rust. The UI calls Rust through Tauri commands only; it never touches SQLite or the network directly (except embed iframes).
+
+## 2. Architecture
+
+```
+┌──────────────────────── Tauri app (single process) ─────────────────────────┐
+│  WebView2 UI (React)                                                         │
+│   Dashboard · Library · Backlog · Rediscovery · Insights · Playlists ·       │
+│   Settings · Data      ── iframes: open.spotify.com/embed/* (CSP-allowed)    │
+│            │ invoke()                                                        │
+│  ──────────▼──────────────────────── Rust core ────────────────────────────  │
+│   commands ─┬─ library     ─┬─ db (rusqlite, FTS5, migrations)               │
+│             ├─ links        │                                                │
+│             ├─ capture ◄────┼── tiny_http listener (off by default)          │
+│             ├─ logger  ◄────┼── SMTC watcher thread                          │
+│             ├─ importer     │                                                │
+│             ├─ insights     │                                                │
+│             ├─ backup       │                                                │
+│             └─ spotify (R3) ┴─ cache store (separate SQLite file)            │
+│                    │ reqwest                                                 │
+└────────────────────┼─────────────────────────────────────────────────────────┘
+                     ▼
+     open.spotify.com/oembed · spotify.link · api.spotify.com · accounts.spotify.com
+```
+
+- Closing the window hides to tray; the logger keeps running. Quit from tray stops everything.
+- Two database files, so cache deletion is a file delete:
+  - `library.db` — user data (sources U, S, E). Backed up.
+  - `spotify_cache.db` — all Spotify-provided data (source A, R3): cache entries **and playlist snapshots**. Never backed up.
+
+**Locations.** Paths come from Tauri’s path API (`app_data_dir`, `app_local_data_dir`), never hard-coded, so they always match what the uninstaller deletes.
+| Data | Path |
+|---|---|
+| Library DB | `%APPDATA%\app.runout.desktop\library.db` (movable in Settings, D15) |
+| Spotify cache DB | `%LOCALAPPDATA%\app.runout.desktop\spotify_cache.db` (fixed) |
+| WebView2 data | `%LOCALAPPDATA%\app.runout.desktop\EBWebView\` (InPrivate mode keeps no browsing cache here) |
+| Backups | `%USERPROFILE%\Documents\Runout\Backups\` (changeable; outside app data by design, BRD D28) |
+| Tokens | Windows Credential Manager, target `Runout/spotify` |
+
+## 3. Data model (`library.db`)
+
+```sql
+-- Core
+item(id INTEGER PK, type TEXT CHECK(type IN('album','track','artist')),
+     display_name TEXT,                  -- NULL = “name needed” (phone capture, BRD 5.2); UI shows the link instead
+     spotify_uri TEXT UNIQUE,            -- NULL allowed; duplicates blocked with “open existing” (FR-004)
+     status TEXT NOT NULL DEFAULT 'planned'
+       CHECK(status IN('planned','in_progress','explored','not_for_me','abandoned')),
+     priority TEXT CHECK(priority IN('high','medium','low')),
+     rating REAL CHECK(rating BETWEEN 0.5 AND 5 AND rating*2 = CAST(rating*2 AS INT)),
+     review TEXT, notes TEXT, favourite INT DEFAULT 0, revisit INT DEFAULT 0,
+     in_backlog INT DEFAULT 1, recommended_by TEXT, backlog_order INT,
+     added_at TEXT, explored_at TEXT, reviewed_at TEXT, created_at TEXT, modified_at TEXT)
+field_provenance(item_id, field, source CHECK(source IN('user','promoted')), PRIMARY KEY(item_id, field))
+item_link(from_id, to_id, kind CHECK(kind IN('by_artist','on_album','version_of')), PK(from_id,to_id,kind))
+tag(id PK, name UNIQUE COLLATE NOCASE, description)
+item_tag(item_id, tag_id, PK(item_id, tag_id))
+status_history(id PK, item_id, from_status, to_status, at TEXT, note)
+saved_filter(id PK, name, definition_json)
+unresolved_capture(id PK, raw_link, received_at, source CHECK(source IN('paste','shortcut')), state, error)
+item_fts  -- FTS5 over display_name, review, notes, recommended_by, tag names, linked artist names
+
+-- Release 2
+listening_event(id PK, source CHECK(source IN('logger','export')),
+     ended_at_utc TEXT, ended_at_local TEXT, ms_played INT, counts_as_play INT GENERATED ALWAYS AS (ms_played >= 30000),
+     track_name, artist_name, album_name, norm_key TEXT,  -- normalized "artist|track"
+     spotify_track_uri, platform, reason_start, reason_end,
+     shuffle INT, skipped INT, offline INT, private_session INT,
+     item_id, reconciled_with INT, import_batch_id,
+     dedupe_hash TEXT UNIQUE)                              -- idempotent import
+CREATE UNIQUE INDEX one_to_one_reconcile ON listening_event(reconciled_with) WHERE reconciled_with IS NOT NULL;
+import_batch(id PK, kind CHECK(kind IN('streaming_history','account_data')), imported_at,
+     record_count, latest_event_utc, checksum UNIQUE)
+exported_playlist(id PK, import_batch_id, name, last_modified)   -- matched across exports by name (no ID in export)
+exported_playlist_item(playlist_id, position, track_name, artist_name, album_name, spotify_track_uri)
+
+-- Success metrics (FR-045), local only
+usage_event(id PK, kind CHECK(kind IN('app_open','page_visit','capture')), at TEXT, detail TEXT, duration_ms INT)
+```
+
+`spotify_cache.db` (source A only; deleted as a file on disconnect):
+```sql
+cache_entry(uri PK, kind, payload_json, fetched_at, expires_at)
+playlist_snapshot(id PK, playlist_uri, spotify_snapshot_id, taken_at, expires_at, items_json)
+```
+
+Timestamps are ISO-8601 UTC strings except `ended_at_local`.
+
+## 4. Key rules and algorithms
+
+### 4.1 Spotify link parsing (FR-002) — shared by M3 and M4
+Accept, after trimming:
+| Input | Handling |
+|---|---|
+| `https://open.spotify.com/{intl-xx/}?{album|track|artist|playlist}/{id}?si=…` | Strip locale prefix and query → `spotify:{type}:{id}` |
+| `spotify:{type}:{id}` | As is |
+| `https://spotify.link/{code}` | Online: follow redirects (HEAD/GET, max 5, 5 s timeout) to an open.spotify.com URL, then parse. Offline: store in `unresolved_capture`, retry on reconnect |
+| Episode/show/audiobook links | Reject with message (D23) |
+| Anything else | Reject; never fetched |
+
+ID must match `^[A-Za-z0-9]{22}$`. Playlist links are accepted only by Playlist features, not as library items.
+
+### 4.2 Promotion rule and provenance (BRD 5.2)
+- Creating an item from a pasted/shared link or “Add to backlog” on Spotify-provided data stores `spotify_uri` + the user-confirmed `display_name`, with provenance `promoted`.
+- Autofill (R3) values render from `spotify_cache.db` with a “confirm” affordance; only on confirm/edit are they written to `item` with provenance `promoted`/`user`.
+- MVP title prefill: the add dialog may pre-fill the name from oEmbed `title`; saving = confirmation. This confirmed title is the only oEmbed-derived value ever stored.
+- Phone capture (no one at the PC): stores `spotify_uri` only, `display_name = NULL`. The backlog shows a “name needed” badge; opening the item runs the normal confirm step.
+
+### 4.3 Embeds (FR-017)
+- Embed URL is derived: `https://open.spotify.com/embed/{type}/{id}` — no oEmbed call needed to render.
+- oEmbed (`/oembed?url=`) is called only to pre-fill the title in the add dialog. The response is never persisted; only a title the user confirms is stored (4.2).
+- Lists: artwork mode off by default; when on, page size 20, iframes `loading="lazy"`, only mounted when visible; page ends with an “Open Spotify” link.
+- Attribution (FR-044): wherever Spotify-sourced content appears outside the embed itself, show the Spotify logo and an “Open Spotify” link per the Design Guidelines.
+- CSP: `frame-src https://open.spotify.com; connect-src ipc: http://ipc.localhost; img-src 'self' data:` (UI never fetches Spotify directly).
+- Offline detection: cross-origin iframes don’t report load failures reliably, so Rust exposes `net::online()` (HEAD to `open.spotify.com`, result cached 30 s, re-checked on OS network-change events). The UI mounts embed iframes only when online; otherwise it shows the placeholder.
+
+### 4.4 Play rule (D25)
+`counts_as_play = ms_played >= 30000`, for logger and export alike. Listening time = Σ `ms_played` over all events.
+
+### 4.5 Logger (FR-026)
+- Subscribe to `GlobalSystemMediaTransportControlsSessionManager`; track the session whose `SourceAppUserModelId` contains `Spotify` (configurable allow-list).
+- On media-properties change or session end: close the current event; `ms_played` = accumulated time in `Playing` state (sum of intervals; pauses excluded; seeks don’t add time).
+- Poll timeline every 5 s as a fallback (some apps don’t raise every event).
+- Event is written only if `ms_played >= 1000` (noise filter); `counts_as_play` derives as above.
+- SMTC has no private-session flag, so desktop private sessions can’t be detected. Tray menu offers **Pause logging** (until resumed or for 1 h); paused time writes nothing.
+
+### 4.6 Normalization and matching (FR-028, FR-030)
+`norm(s) = lower(strip_diacritics(s))` with suffixes such as ` - Remastered 2011`, ` (feat. …)`, ` - Live` removed by a small regex list. `norm_key = norm(artist) + "|" + norm(track)`.
+
+Artist strings differ by source: the export’s `master_metadata_album_artist_name` may be the album artist, while SMTC’s Artist may list several artists. So matching keys on the **track** name and uses the artist only to break ties.
+- Event → item: by `spotify_track_uri` when present; else by `norm(track)` against track items, tie-broken by any overlap between the event’s artist string and the item’s linked artists. Still ambiguous → unmatched (user links manually from the “unmatched plays” list).
+
+### 4.7 Reconciliation (FR-028)
+On each export import, for every logger event with no export partner: candidates = export events with the same `norm(track)` and `|Δ ended_at_utc| ≤ 120 s` that are not yet linked to another logger event. Several candidates → prefer artist overlap, then the smallest time gap. Link by setting `reconciled_with` on the logger event. The unique partial index makes the link one-to-one. Insights exclude reconciled logger events.
+
+Fixtures must include a featured-artist track, a compilation track and a track repeated back-to-back.
+
+### 4.8 Import (FR-027, FR-029, FR-033)
+- Input: the user selects the unzipped export folder (or the .zip).
+- Streaming history: files `Streaming_History_Audio_*.json` **⚑ verify file names and field names against the real export in M4**. Expected fields: `ts, platform, ms_played, conn_country, ip_addr, master_metadata_track_name, master_metadata_album_artist_name, master_metadata_album_album_name, spotify_track_uri, episode_*, audiobook_*, reason_start, reason_end, shuffle, skipped, offline, offline_timestamp, incognito_mode`.
+- Parse into an explicit allow-list of fields; everything else is discarded at parse time and never written. In particular, any key matching `ip_addr*`, `user_agent*` or `username` is dropped (older exports used `ip_addr_decrypted` / `user_agent_decrypted`). Skip rows where `spotify_track_uri` is null (episodes/audiobooks/video).
+- `dedupe_hash = sha256(ts|spotify_track_uri|ms_played)`; insert-or-ignore → idempotent.
+- `ended_at_local` = convert `ts` with Windows time-zone rules for the PC’s zone at that date.
+- `private_session = incognito_mode`; excluded from insights unless the setting is on.
+- Account data: only `Playlist*.json` **⚑ verify in M4** → `exported_playlist*`. `YourLibrary.json` is not imported (data minimization; nothing uses it). Playlists are matched across exports by name.
+- Whole import runs in one transaction; raw files are not copied.
+
+### 4.9 Insights (FR-031, FR-032)
+- Pure SQL views over `item`, `status_history`, `listening_event` (excluding reconciled logger events and, by default, private sessions). No source-A table is reachable from insight queries (enforced: insights module has no access to the cache DB).
+- Every insight response carries `sources: ['U'|'S'|'E']` and `freshness: {logger_last_event, export_latest_event}`.
+- “Unfinished albums” is computed only for album items whose track list exists in the library (tracks linked `on_album`, entered or confirmed by the user). For those, unfinished = some linked tracks have no counted play. Other albums are not shown, and the UI says why.
+
+### 4.10 Backup (FR-021, D16)
+1. `VACUUM INTO` a temp file (consistent snapshot, compacted).
+2. Zip (deflate) → `runout-backup-YYYYMMDD-HHMMSS.zip` with a `manifest.json` (app version, schema version, sha256 of db, counts). `library.db` holds no source-A data, so backups never contain Spotify-provided data.
+3. Keep newest 3; delete older.
+4. If zip size > threshold (default 100 MB) → warning notification; backup still kept.
+- Restore: verify sha256 and `PRAGMA integrity_check` on the extracted DB, show counts, then swap files (old DB kept as `library.db.pre-restore` until next successful start).
+
+### 4.11 Uninstall (FR-024)
+Tauri’s NSIS uninstaller has a “delete application data” checkbox. It is off by default, removes `%APPDATA%\<identifier>` and `%LOCALAPPDATA%\<identifier>`, and is skipped in update mode.
+1. **Always**, via `NSIS_HOOK_PREUNINSTALL`, run `runout.exe --uninstall-cleanup`. This deletes:
+   - `spotify_cache.db` (cache and playlist snapshots)
+   - the Credential Manager entry `Runout/spotify`
+   - the `EBWebView` folder
+
+   The hook must skip this step when the uninstaller runs in update mode, so updates keep the Spotify connection. **⚑ verify update-mode detection in M6.**
+2. **Library**: removed only if the user ticks the checkbox, relabelled “Also delete my music library”. This removes `%APPDATA%\app.runout.desktop\` (including `library.db.pre-restore`).
+3. **Backups**: the default folder is `Documents\Runout\Backups`, outside both app-data folders, so neither step touches it.
+4. **Library moved elsewhere (D15)**: not removed automatically. Settings warns about this when the user moves it.
+
+### 4.12 Usage counters (FR-045)
+Insert a `usage_event` on app open, on each page visit, and on each capture. A capture’s duration is measured from the add dialog opening (or the Shortcut request arriving) to save. Counters are used only by the success-metrics view, never leave the PC, and are excluded from exports.
+
+### 4.13 Thresholds (decided 18 Oct 2026, one constant each)
+| Rule | Value | Used by |
+|---|---|---|
+| Stale backlog item | status `planned`, in backlog, unchanged ≥ 60 days | Rediscover (FR-013) |
+| Low-rated track | rating ≤ 2★ | Playlist check-up (FR-033), Playlist Studio cut suggestions |
+| Never played | no event with `counts_as_play` | Playlist check-up, Your take |
+
+## 5. Integrations
+
+### 5.1 Capture listener (FR-018, NFR-18; resolves BRD O6 → local listener)
+- Off by default. When enabled: binds `0.0.0.0:<port>` (default 47821), shows the PC’s LAN IP and a 6-digit pairing code.
+- Accepts `POST /capture` with JSON `{ "code": "...", "link": "..." }`, body ≤ 2 KB; link must parse per 4.1 or be a spotify.link short link.
+- Rejects requests from non-private source IPs (only 10/8, 172.16/12, 192.168/16, 169.254/16).
+- Rate limit 10 requests/min; 5 wrong codes → listener disables itself and notifies.
+- Captured items are stored per 4.2 (“name needed”).
+- Accepted risk (NFR-18): plain HTTP on the home network, so the pairing code is not encrypted in transit.
+- Windows Firewall will prompt on first enable (user action U-4).
+- iOS Shortcut: *Receive URLs from Share Sheet → Get contents of URL (POST, JSON) → Show result.*
+
+### 5.2 Spotify Web API (R3)
+- Auth: Authorization Code + PKCE, no client secret.
+- Redirect URI: registered as `http://127.0.0.1/callback` **without a port**. At login the app binds a free loopback port and sends `http://127.0.0.1:<port>/callback`. Spotify allows this only for loopback IP literals; `localhost` is not allowed (redirect-URI concept page, checked 18 Oct 2026).
+- Tokens in Credential Manager. Refresh on 401, and **store the new refresh token** whenever the refresh response contains one. On `invalid_grant`, discard tokens and show “Reconnect Spotify” (6-month expiry).
+- Endpoints (names per Feb 2026 Dev Mode guide): `GET /me`, `GET /me/playlists`, `GET|POST|PUT|DELETE /playlists/{id}/items`, `POST /me/playlists`, `GET /me/top/{artists|tracks}`, `GET /me/player/recently-played`, `PUT|DELETE /me/library`, `GET /me/library/contains`, `GET /albums/{id}`, `GET /tracks/{id}`, `GET /artists/{id}`.
+- Scopes: `playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public user-top-read user-read-recently-played user-library-read user-library-modify`. `PUT /me/library` takes up to 40 URIs per call.
+- Rate limiting: honour `Retry-After` on 429; max 1 in-flight write.
+- Playlist conflict check:
+  - Spotify applies item changes even if the playlist changed since the given `snapshot_id`, so that ID gives no protection.
+  - Immediately before applying, `GET` the playlist and compare its current `snapshot_id` with the one stored in the draft. On mismatch, stop and show “playlist changed on Spotify, reload draft”.
+  - The remaining race window is the gap between that `GET` and the write (sub-second). Accepted.
+- Playlist Studio reads only `item` ratings and tags (source U) alongside API playlist data. It never queries `listening_event` or `exported_playlist*` (BRD 11.1, D27).
+- Disconnect: delete tokens and delete `spotify_cache.db` (cache and snapshots) immediately, which satisfies the 5-day rule.
+- Cache expiry 7 days (O5); snapshot expiry 30 days (O4); sweeper runs at startup and daily.
+
+## 6. Error handling and degradation (NFR-09, NFR-15)
+| Situation | Behaviour |
+|---|---|
+| Offline | All U/S/E features work; embeds show placeholder; short links queued |
+| oEmbed fails | Add dialog without title prefill |
+| Spotify app not running | Logger idle; tray tooltip says so |
+| SMTC unavailable | Logger shows error state; rest unaffected |
+| API 401/403 | Token refresh / “not authorized (Premium or allow-list?)” message |
+| `invalid_grant` | Reconnect prompt |
+| 429 | Back off per `Retry-After`; UI shows “Spotify busy” |
+| Import file not recognized | Abort transaction; report file and field |
+
+## 7. Security and privacy
+- No telemetry, no analytics SDKs, no crash upload.
+- Rust’s only outbound hosts are `open.spotify.com`, `spotify.link`, `api.spotify.com` and `accounts.spotify.com`, enforced by a single HTTP module with an allow-list.
+- Embed iframes are loaded by WebView2 and reach whatever Spotify hosts the embed itself uses (for example its image CDN). That traffic is Spotify’s widget, contains no user data from the library, and is outside the Rust allow-list.
+- Tauri capabilities: UI gets only the app’s own commands; no shell, no fs plugin.
+- Tokens never logged; logs contain no personal notes.
+
+## 8. Testing
+| Level | What |
+|---|---|
+| Unit (Rust) | Link parser (table of real link forms), play rule, normalization, reconciliation, dedupe hash, time-zone conversion, backup rotation, promotion rule |
+| Fixtures | Synthetic export folder matching 4.8; replaced/extended with anonymized structure of the real export in M4 |
+| Performance | Generator: 10k items (M3 check: search, navigation, start); plus 500k events and a 10-year synthetic export (M4 check: queries < 200 ms, import < 60 s). Run with `cargo test --release -- --ignored perf` |
+| Integrity | Kill the process during a large write and during backup; library opens and passes `PRAGMA integrity_check` (NFR-05) |
+| Network | Capture outbound connections during idle and during normal use; only allow-listed hosts plus embed traffic appear (NFR-07) |
+| Manual | Per-milestone acceptance checklist in [MILESTONES.md](MILESTONES.md) |
+
+## 9. Repository layout
+```
+spotify-companion/
+  BRD.docx         source of truth (humans); BRD.md generated copy (agents)
+  CLAUDE.md        agent guide: playbooks, dev flow, proof
+  .claude/         skills/ (playbooks), agents/ (subagents), settings.json (Stop-hook proof)
+  scripts/         brd_to_md.py, check.py (universal proof)
+  docs/            TSD.md DESIGN.md API.md CAPABILITIES.md MILESTONES.md USER_ACTIONS.md SOURCE_MAP.md kb/
+                   plans/ (one plan per milestone, written before it starts)
+                   EXPORT_FORMAT.md (written in M3, FR-020)
+  src/             React UI (pages/, components/, styles/tokens.css, api.ts = typed invoke wrappers, mocks/ until M6/M7)
+  src-tauri/
+    src/           main.rs, commands.rs, db/, links.rs, library/, capture.rs,
+                   logger/, importer/, insights/, backup.rs, spotify/ (R3), net.rs
+    migrations/    0001_init.sql, ...
+    tests/fixtures/
+```
+
+## 10. Open technical items
+| # | Item | Resolve in |
+|---|---|---|
+| T1 | Export file and field names (4.8) | M4 |
+| T2 | NSIS checkbox relabel and update-mode detection in the pre-uninstall hook (4.11) | M6 |
+| T3 | Re-check redirect-URI rules just before registering the app (5.2); confirmed 18 Oct 2026 | M5 |
+| T4 | Incognito (InPrivate) WebView2 works with Spotify embeds and keeps no disk cache (§1) | M2 |

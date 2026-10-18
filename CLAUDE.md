@@ -4,7 +4,7 @@ Local-first Windows music notebook for Spotify. Tauri 2 (Rust core) + React/TS/V
 
 ## Source of truth
 - [BRD.md](BRD.md) — what and why. Generated from `BRD.docx`; never edit the .md (`change-spec` skill).
-- [docs/DESIGN.md](docs/DESIGN.md) — look and behaviour (direction D · Pulse) · [docs/TSD.md](docs/TSD.md) — how · [docs/MILESTONES.md](docs/MILESTONES.md) — work items + acceptance · [docs/CAPABILITIES.md](docs/CAPABILITIES.md) — CAP ↔ FR.
+- [docs/DESIGN.md](docs/DESIGN.md) — look and behaviour (direction D · Pulse) · [docs/TSD.md](docs/TSD.md) — how · [docs/API.md](docs/API.md) — UI ↔ Rust command contract · [docs/MILESTONES.md](docs/MILESTONES.md) — work items + acceptance · [docs/CAPABILITIES.md](docs/CAPABILITIES.md) — CAP ↔ FR.
 - [docs/SOURCE_MAP.md](docs/SOURCE_MAP.md) — where each capability lives in code, its spec and tests.
 - [docs/kb/](docs/kb/README.md) — verified external facts, open questions, glossary, gotchas.
 - [docs/USER_ACTIONS.md](docs/USER_ACTIONS.md) — the only hard stops.
