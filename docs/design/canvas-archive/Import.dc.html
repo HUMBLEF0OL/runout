@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runout import Spotify export</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F5C46B}a:hover{color:#FFDCA0}
+button,a{transition:transform 100ms cubic-bezier(0.16,1,0.3,1),filter 150ms,background 150ms,box-shadow 150ms}
+button{cursor:pointer}
+button:hover{filter:brightness(1.12)}
+button:active{transform:scale(0.98)}
+button:focus-visible,a:focus-visible{outline:2px solid #F5B544;outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="min-height: 1000px; width: 100%; box-sizing: border-box; background: #101113; color: #ECEDEF; font-family: 'Schibsted Grotesk', system-ui, sans-serif; font-size: 14px; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <nav aria-label="Main" style="flex: 1 1 208px; max-width: 220px; box-sizing: border-box; padding: 22px 14px; display: flex; flex-direction: column; gap: 22px; background: #0B0C0E; border-right: 1px solid #23262B">
+    <span style="padding: 0 10px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em">Runout</span>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="8">
+        <a href="#" style="{{n.style}}"><span>{{n.label}}</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">{{n.count}}</span></a>
+      </sc-for>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; box-sizing: border-box; padding: 24px 32px 40px; display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start">
+    <section aria-labelledby="im-title" style="flex: 1.5 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <a href="#" style="font-size: 13px; font-weight: 600">Back to settings</a>
+        <h1 id="im-title" style="margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em">Import your Spotify history</h1>
+        <span style="color: #A9AEB7">Uses the files Spotify emails you after you request your data.</span>
+      </div>
+
+      <ol aria-label="Steps" style="margin: 0; padding: 0; list-style: none; display: flex; gap: 8px">
+        <li style="flex: 1 1 0; padding: 10px 12px; border-radius: 10px; background: #17191C; color: #A9AEB7; font-size: 13px">1. Choose files</li>
+        <li aria-current="step" style="flex: 1 1 0; padding: 10px 12px; border-radius: 10px; background: linear-gradient(180deg, #F8C566, #F0A92E); color: #101113; box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 8px rgba(245,181,68,0.18); font-size: 13px; font-weight: 700">2. Check</li>
+        <li style="flex: 1 1 0; padding: 10px 12px; border-radius: 10px; background: #17191C; color: #A9AEB7; font-size: 13px">3. Import</li>
+      </ol>
+
+      <div style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; justify-content: space-between; gap: 12px; align-items: baseline">
+          <h2 style="margin: 0; font-size: 17px; font-weight: 800">What we found</h2>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A9AEB7">Documents\spotify-export</span>
+        </div>
+        <sc-for list="{{found}}" as="f" hint-placeholder-count="5">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 8px 0">
+            <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">{{f.what}}</span><span style="font-size: 12px; color: #A9AEB7">{{f.note}}</span></span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: {{f.color}}">{{f.count}}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px">
+        <button type="button" style="height: 42px; padding: 0 16px; border: 1px solid #3A3F46; border-radius: 10px; background: transparent; color: #ECEDEF; font: inherit">Back</button>
+        <button type="button" style="height: 42px; padding: 0 22px; border: 0; border-radius: 10px; background: linear-gradient(180deg, #F8C566, #F0A92E); color: #101113; box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 8px rgba(245,181,68,0.18); font: inherit; font-weight: 700">Import 46,902 plays</button>
+      </div>
+    </section>
+
+    <aside aria-label="Privacy and other states" style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+      <div style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-size: 17px; font-weight: 800">What Runout keeps</h2>
+        <span style="color: #C3C7CE; line-height: 1.55">When each play ended, how long it played, the track, artist, album and link, the device type, how it started and ended, shuffle, skip, offline and private-session flags.</span>
+        <h2 style="margin: 6px 0 0; font-size: 17px; font-weight: 800">What it drops</h2>
+        <span style="color: #C3C7CE; line-height: 1.55">Your IP address, device identifier and username are never stored. The original files are not copied.</span>
+      </div>
+      <div style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); border: 1px solid #5A3530; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 13px; font-weight: 700; color: #FF7A6B">If the folder is wrong</span>
+        <span style="line-height: 1.5">This folder doesn’t look like a Spotify export. Choose the unzipped folder from Spotify’s email, or the .zip itself.</span>
+      </div>
+      <div style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 18px; display: flex; flex-direction: column; gap: 8px">
+        <span style="font-size: 13px; font-weight: 700; color: #C3C7CE">Importing again later</span>
+        <span style="line-height: 1.5">Plays already imported are skipped, so a newer export only adds what’s new.</span>
+      </div>
+    </aside>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const navBase = 'display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #C3C7CE;';
+    const nav = [['Home', ''], ['Recent plays', ''], ['Insights', ''], ['Backlog', '37'], ['Library', '214'], ['Rediscover', '6'], ['Playlists', ''], ['Settings', '']]
+      .map(([label, count]) => ({ label, count, style: navBase + (label === 'Settings' ? ' background: #1F2226; color: #ECEDEF; font-weight: 700; box-shadow: inset 3px 0 0 #F5B544;' : '') }));
+    const found = [
+      { what: 'Music plays', note: 'March 2016 to 2 October 2026', count: '46,902', color: '#ECEDEF' },
+      { what: 'Podcasts and audiobooks', note: 'Skipped. Runout keeps music only', count: '1,308', color: '#A9AEB7' },
+      { what: 'Already on your desktop log', note: 'Merged with the export, never counted twice', count: '312', color: '#A9AEB7' },
+      { what: 'Playlists', note: 'For the read-only playlist check-up', count: '27', color: '#ECEDEF' },
+      { what: 'Private-session plays', note: 'Kept, but hidden from insights unless you turn them on', count: '214', color: '#F5B544' }
+    ];
+    return { nav, found };
+  }
+}
+</script>
+</body>
+</html>

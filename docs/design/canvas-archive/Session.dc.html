@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runout, Session direction: one listen at a time</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1E5B43}a:hover{color:#123828}
+</style>
+</helmet>
+<div style="min-height: 900px; width: 100%; box-sizing: border-box; background: #EEF1EC; color: #18241E; font-family: 'Hanken Grotesk', system-ui, sans-serif; font-size: 15px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 20px 40px">
+    <span style="font-weight: 700; font-size: 19px; letter-spacing: -0.01em">Runout</span>
+    <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 22px; font-size: 14px">
+      <a href="#" style="color: #18241E; font-weight: 700; text-decoration: none">Today</a>
+      <a href="#" style="color: #4C5A52; text-decoration: none">Backlog</a>
+      <a href="#" style="color: #4C5A52; text-decoration: none">Library</a>
+      <a href="#" style="color: #4C5A52; text-decoration: none">Rediscover</a>
+      <a href="#" style="color: #4C5A52; text-decoration: none">Insights</a>
+      <a href="#" style="color: #4C5A52; text-decoration: none">Playlists</a>
+    </nav>
+    <button type="button" style="height: 40px; padding: 0 18px; border: 1px solid #B9C4BC; border-radius: 16px; background: #FFFFFF; color: #18241E; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer">Quick add</button>
+  </header>
+
+  <main style="flex: 1 1 auto; box-sizing: border-box; width: 100%; max-width: 1360px; margin: 0 auto; padding: 8px 40px 48px; display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start">
+
+    <section aria-labelledby="session-today" style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 28px">
+      <div style="border-radius: 24px; background: {{panel}}; color: #EEF1EC; padding: 36px; display: flex; flex-wrap: wrap; gap: 32px; align-items: center">
+        <div role="img" aria-label="Spotify embed placeholder" style="flex: 0 0 280px; aspect-ratio: 1 / 1; border-radius: 16px; background: #2C4F42; border: 1px dashed #7FA392; display: flex; align-items: center; justify-content: center; text-align: center; padding: 28px; box-sizing: border-box; color: #D5E0D9; font-size: 14px">Spotify embed: artwork and player, shown unaltered</div>
+        <div style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+          <span style="font-size: 14px; color: #BFD0C6">Today's listen</span>
+          <h1 id="session-today" style="margin: 0; font-size: 44px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05">Promises</h1>
+          <span style="font-size: 17px; color: #D5E0D9; line-height: 1.4">Floating Points, Pharoah Sanders and the London Symphony Orchestra. Recommended by Meera.</span>
+          <span style="font-size: 14px; color: #BFD0C6">You started this 6 days ago. One full listen left before you decide.</span>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px">
+            <a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: 16px; background: {{accent}}; color: #18241E; font-weight: 700; text-decoration: none">Open Spotify</a>
+            <button type="button" style="height: 44px; padding: 0 20px; border: 1px solid #7FA392; border-radius: 16px; background: transparent; color: #EEF1EC; font: inherit; font-weight: 600">I've listened</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em">After that</h2>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+          <sc-for list="{{queue}}" as="q" hint-placeholder-count="3">
+            <a href="#" style="display: flex; gap: 14px; align-items: center; padding: 14px; border-radius: 16px; background: #FFFFFF; color: #18241E; text-decoration: none; box-shadow: 0 1px 2px rgba(24,36,30,0.06)">
+              <div aria-hidden="true" style="width: 56px; height: 56px; border-radius: 12px; background: {{q.tint}}; flex: none"></div>
+              <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0">
+                <span style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{q.title}}</span>
+                <span style="font-size: 13px; color: #4C5A52">{{q.artist}}</span>
+                <span style="font-size: 12px; color: #4C5A52">{{q.why}}</span>
+              </div>
+            </a>
+          </sc-for>
+        </div>
+        <a href="#" style="font-size: 14px; font-weight: 600; align-self: flex-start">See the whole backlog (37)</a>
+      </div>
+    </section>
+
+    <aside aria-label="Journal and rediscovery" style="flex: 1 1 340px; max-width: 420px; display: flex; flex-direction: column; gap: 24px">
+      <form style="border-radius: 24px; background: #FFFFFF; padding: 24px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 1px 2px rgba(24,36,30,0.06)">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 700">Write it down</h2>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 13px; font-weight: 600; color: #4C5A52">How did it land?</span>
+          <div role="group" aria-label="Outcome" style="display: flex; flex-wrap: wrap; gap: 6px">
+            <button type="button" style="height: 34px; padding: 0 12px; border: 1px solid {{panel}}; border-radius: 16px; background: {{panel}}; color: #EEF1EC; font: inherit; font-size: 13px; font-weight: 600">Explored</button>
+            <button type="button" style="height: 34px; padding: 0 12px; border: 1px solid #B9C4BC; border-radius: 16px; background: transparent; color: #18241E; font: inherit; font-size: 13px">Still going</button>
+            <button type="button" style="height: 34px; padding: 0 12px; border: 1px solid #B9C4BC; border-radius: 16px; background: transparent; color: #18241E; font: inherit; font-size: 13px">Not for me</button>
+            <button type="button" style="height: 34px; padding: 0 12px; border: 1px solid #B9C4BC; border-radius: 16px; background: transparent; color: #18241E; font: inherit; font-size: 13px">Abandoned</button>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 13px; font-weight: 600; color: #4C5A52">Rating</span>
+          <span aria-label="4.5 of 5 stars" style="font-size: 22px; color: #18241E; letter-spacing: 3px">★★★★<span style="color: #B9C4BC">★</span></span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="session-note" style="font-size: 13px; font-weight: 600; color: #4C5A52">Notes</label>
+          <textarea id="session-note" rows="4" style="box-sizing: border-box; width: 100%; padding: 12px; border: 1px solid #B9C4BC; border-radius: 16px; font: inherit; line-height: 1.5; color: #18241E; resize: vertical">Movement 6 is where it opens up.</textarea>
+        </div>
+        <label style="display: flex; gap: 10px; align-items: center; font-size: 14px">
+          <input type="checkbox" checked="checked" style="width: 18px; height: 18px">
+          Flag to revisit in a few months
+        </label>
+        <button type="button" style="height: 44px; border: 0; border-radius: 16px; background: {{panel}}; color: #EEF1EC; font: inherit; font-weight: 700; cursor: pointer">Save to journal</button>
+      </form>
+
+      <section aria-labelledby="session-revisit" style="display: flex; flex-direction: column; gap: 10px">
+        <h2 id="session-revisit" style="margin: 0; font-size: 18px; font-weight: 700">Worth a return</h2>
+        <sc-for list="{{revisit}}" as="r" hint-placeholder-count="3">
+          <a href="#" style="display: flex; justify-content: space-between; gap: 12px; padding: 10px 2px; color: #18241E; text-decoration: none">
+            <span style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-weight: 600">{{r.title}}</span>
+              <span style="font-size: 13px; color: #4C5A52">{{r.why}}</span>
+            </span>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #4C5A52; white-space: nowrap">{{r.rating}}</span>
+          </a>
+        </sc-for>
+      </section>
+
+      <div style="border-radius: 24px; background: #DCE5DE; padding: 20px 24px; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 13px; font-weight: 600; color: #3A4A41">October so far</span>
+        <span style="font-size: 17px; line-height: 1.45">9 explored, 2 not for me, 11 new in the backlog. Most of your listening time went to Alice Coltrane.</span>
+        <a href="#" style="font-size: 14px; font-weight: 600">Open insights</a>
+      </div>
+    </aside>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#E3A23B","options":["#E3A23B","#9FD3B8","#F2C9A0"]},"panel":{"editor":"color","default":"#1E3B30","options":["#1E3B30","#22324A","#3B2A22"]},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      accent: this.props.accent ?? '#E3A23B',
+      panel: this.props.panel ?? '#1E3B30',
+      queue: [
+        { title: 'Madvillainy', artist: 'Madvillain', why: 'High priority, from Ishaan', tint: '#8A6A2E' },
+        { title: 'Journey in Satchidananda', artist: 'Alice Coltrane', why: 'Next in her discography', tint: '#3D5A4A' },
+        { title: 'Blue Lines', artist: 'Massive Attack', why: 'Waiting 3 weeks', tint: '#2B4F7A' }
+      ],
+      revisit: [
+        { title: 'Hounds of Love', why: 'Rated 5, not played since March', rating: '5.0' },
+        { title: 'Carrie & Lowell', why: 'Flagged for a winter listen', rating: '4.5' },
+        { title: 'Moon Safari', why: 'Review never written', rating: '4.0' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

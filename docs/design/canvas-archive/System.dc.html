@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runout design system</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F5C46B}a:hover{color:#FFDCA0}
+.ro-btn{height:40px;padding:0 16px;border-radius:10px;font:inherit;font-weight:700;cursor:pointer;transition:transform 100ms cubic-bezier(0.16,1,0.3,1),background 150ms,border-color 150ms,box-shadow 150ms}
+.ro-btn:active{transform:scale(0.98)}
+.ro-btn:focus-visible{outline:2px solid #F5B544;outline-offset:2px}
+.ro-primary{border:0;color:#101113;background:linear-gradient(180deg,#F8C566,#F0A92E);box-shadow:inset 0 1px 0 rgba(255,255,255,0.35),0 2px 8px rgba(245,181,68,0.18)}
+.ro-primary:hover{background:linear-gradient(180deg,#FACF7E,#F3B23F)}
+.ro-primary:active{background:linear-gradient(180deg,#F0A92E,#E39A1F)}
+.ro-secondary{border:1px solid #3A3F46;background:transparent;color:#ECEDEF;font-weight:600}
+.ro-secondary:hover{background:#1F2226;border-color:#4A5059}
+.ro-light{border:0;background:#ECEDEF;color:#101113}
+.ro-light:hover{background:#F7F8F9}
+.ro-danger{border:1px solid #FF7A6B;background:transparent;color:#FF7A6B}
+.ro-danger:hover{background:rgba(255,122,107,0.1)}
+.ro-card{border-radius:16px;background:linear-gradient(180deg,#1A1C20,#16181B);border:1px solid rgba(255,255,255,0.06);box-shadow:inset 0 1px 0 rgba(255,255,255,0.04),0 8px 24px rgba(0,0,0,0.28);transition:transform 150ms cubic-bezier(0.16,1,0.3,1),border-color 150ms,box-shadow 150ms}
+.ro-card.ro-hover:hover{transform:translateY(-1px);border-color:rgba(255,255,255,0.12);box-shadow:inset 0 1px 0 rgba(255,255,255,0.05),0 12px 28px rgba(0,0,0,0.34)}
+.ro-row{border-radius:10px;transition:background 150ms}
+.ro-row:hover{background:#1F2226}
+.ro-input{height:42px;box-sizing:border-box;padding:0 14px;border:1px solid #3A3F46;border-radius:10px;background:#101113;color:#ECEDEF;font:inherit;transition:border-color 150ms,box-shadow 150ms}
+.ro-input:hover{border-color:#4A5059}
+.ro-input:focus{outline:none;border-color:#F5B544;box-shadow:0 0 0 3px rgba(245,181,68,0.18)}
+.ro-tile .ro-tile-actions{opacity:0;transform:translateY(-4px);transition:opacity 150ms,transform 150ms cubic-bezier(0.16,1,0.3,1)}
+.ro-tile:hover .ro-tile-actions,.ro-tile:focus-within .ro-tile-actions{opacity:1;transform:none}
+.ro-tile .ro-art{transition:transform 150ms cubic-bezier(0.16,1,0.3,1),box-shadow 150ms}
+.ro-tile:hover .ro-art{transform:translateY(-2px);box-shadow:0 12px 24px rgba(0,0,0,0.4)}
+@keyframes ro-pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+.ro-live{width:8px;height:8px;border-radius:4px;background:#F5B544;animation:ro-pulse 2s ease-in-out infinite}
+@keyframes ro-shimmer{0%{background-position:-240px 0}100%{background-position:240px 0}}
+.ro-skel{border-radius:6px;background:linear-gradient(90deg,#1C1F23 0,#262A2F 50%,#1C1F23 100%);background-size:480px 100%;animation:ro-shimmer 1.6s linear infinite}
+@media (prefers-reduced-motion: reduce){.ro-live,.ro-skel{animation:none}.ro-btn,.ro-card,.ro-tile .ro-art,.ro-tile .ro-tile-actions{transition:none}}
+</style>
+</helmet>
+<div style="min-height: 3000px; width: 100%; box-sizing: border-box; background: #101113; color: #ECEDEF; font-family: 'Schibsted Grotesk', system-ui, sans-serif; font-size: 14px; padding: 48px 56px 64px; display: flex; flex-direction: column; gap: 48px">
+
+  <header style="display: flex; flex-direction: column; gap: 8px; max-width: 760px">
+    <h1 style="margin: 0; font-size: 40px; font-weight: 800; letter-spacing: -0.03em">Runout design system</h1>
+    <p style="margin: 0; color: #C3C7CE; font-size: 16px; line-height: 1.55">Direction D · Pulse, v1.1. Graphite layers, one amber accent, mono numbers. Hover, press and tab through anything on this board; the static rows draw every state side by side.</p>
+  </header>
+
+  <section aria-labelledby="sys-color" style="display: flex; flex-direction: column; gap: 16px">
+    <h2 id="sys-color" style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.015em">Color</h2>
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px">
+      <sc-for list="{{swatches}}" as="s" hint-placeholder-count="15">
+        <div class="ro-card" style="padding: 10px; display: flex; flex-direction: column; gap: 8px">
+          <div aria-hidden="true" style="height: 64px; border-radius: 10px; background: {{s.hex}}; border: 1px solid rgba(255,255,255,0.08)"></div>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600">{{s.name}}</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A9AEB7">{{s.hex}}</span>
+          <span style="font-size: 12px; color: #C3C7CE">{{s.use}}</span>
+        </div>
+      </sc-for>
+    </div>
+    <p style="margin: 0; font-size: 13px; color: #A9AEB7">Contrast on the page background: text 16.1:1, text-2 11.1:1, muted 8.5:1, faint 7.1:1, accent 10.4:1, danger 7.4:1. Dark text on accent 10.4:1. All pass WCAG AA.</p>
+  </section>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+    <section aria-labelledby="sys-type" style="display: flex; flex-direction: column; gap: 14px">
+      <h2 id="sys-type" style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.015em">Type</h2>
+      <div class="ro-card" style="padding: 20px; display: flex; flex-direction: column; gap: 14px">
+        <sc-for list="{{typeScale}}" as="t" hint-placeholder-count="7">
+          <div style="display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 16px; align-items: baseline">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">{{t.spec}}</span>
+            <span style="{{t.style}}">{{t.sample}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section aria-labelledby="sys-depth" style="display: flex; flex-direction: column; gap: 14px">
+      <h2 id="sys-depth" style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.015em">Depth, shape and spacing</h2>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px">
+        <div style="height: 120px; border-radius: 16px; background: #101113; border: 1px dashed #2E3238; padding: 14px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px"><span style="font-weight: 700">Level 0</span><span style="font-size: 12px; color: #A9AEB7">Page canvas</span></div>
+        <div class="ro-card ro-hover" style="height: 120px; padding: 14px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px"><span style="font-weight: 700">Level 1</span><span style="font-size: 12px; color: #A9AEB7">Cards. Hover me</span></div>
+        <div style="height: 120px; border-radius: 16px; background: #1C1F23; border: 1px solid rgba(255,255,255,0.10); box-shadow: 0 24px 64px rgba(0,0,0,0.5); padding: 14px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px"><span style="font-weight: 700">Level 2</span><span style="font-size: 12px; color: #A9AEB7">Dialogs, toasts</span></div>
+      </div>
+      <div class="ro-card" style="padding: 18px; display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-end">
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 12px; color: #A9AEB7">Radius 6 · 10 · 16</span>
+          <div style="display: flex; gap: 10px; align-items: flex-end">
+            <div style="width: 40px; height: 40px; border-radius: 6px; background: #2E3238"></div>
+            <div style="width: 52px; height: 40px; border-radius: 10px; background: #2E3238"></div>
+            <div style="width: 72px; height: 52px; border-radius: 16px; background: #2E3238"></div>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 12px; color: #A9AEB7">Spacing 4 · 8 · 12 · 16 · 20 · 24 · 32</span>
+          <div style="display: flex; gap: 8px; align-items: flex-end">
+            <sc-for list="{{spacing}}" as="sp" hint-placeholder-count="7">
+              <div style="width: {{sp}}; height: {{sp}}; border-radius: 3px; background: #F5B544; opacity: 0.8"></div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section aria-labelledby="sys-buttons" style="display: flex; flex-direction: column; gap: 16px">
+    <h2 id="sys-buttons" style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.015em">Buttons</h2>
+    <div class="ro-card" style="padding: 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+      <span style="font-size: 13px; color: #A9AEB7; width: 120px">Live: try them</span>
+      <button type="button" class="ro-btn ro-primary">Save</button>
+      <button type="button" class="ro-btn ro-secondary">Add a note</button>
+      <button type="button" class="ro-btn ro-light">Rate it</button>
+      <button type="button" class="ro-btn ro-danger">Delete</button>
+      <a href="#" style="font-weight: 600; padding: 0 8px">Open Spotify</a>
+    </div>
+    <div class="ro-card" style="padding: 20px; display: grid; grid-template-columns: 120px repeat(6, minmax(0, 1fr)); gap: 14px 12px; align-items: center">
+      <span></span>
+      <sc-for list="{{stateNames}}" as="sn" hint-placeholder-count="6">
+        <span style="font-size: 12px; font-weight: 600; color: #A9AEB7">{{sn}}</span>
+      </sc-for>
+      <sc-for list="{{buttonMatrix}}" as="row" hint-placeholder-count="4">
+        <span style="font-size: 13px; color: #C3C7CE">{{row.name}}</span>
+        <sc-for list="{{row.cells}}" as="c" hint-placeholder-count="6">
+          <span style="{{c.style}}">{{c.label}}</span>
+        </sc-for>
+      </sc-for>
+    </div>
+  </section>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+    <section aria-labelledby="sys-inputs" style="display: flex; flex-direction: column; gap: 16px">
+      <h2 id="sys-inputs" style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.015em">Inputs</h2>
+      <div class="ro-card" style="padding: 20px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="sys-in-live" style="font-size: 13px; font-weight: 600; color: #C3C7CE">Live field</label>
+          <input id="sys-in-live" class="ro-input" type="text" placeholder="Search your library, or paste a Spotify link">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Link detected</span>
+          <div style="display: flex; gap: 8px">
+            <span style="flex: 1 1 auto; height: 42px; box-sizing: border-box; padding: 0 14px; display: flex; align-items: center; border: 1px solid #F5B544; box-shadow: 0 0 0 3px rgba(245,181,68,0.18); border-radius: 10px; background: #101113; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ECEDEF; overflow: hidden; white-space: nowrap">open.spotify.com/album/1xb5lgWrO1YbHnMr9SsXcW</span>
+            <span class="ro-btn ro-primary" style="display: inline-flex; align-items: center">Add album</span>
+          </div>
+          <span style="font-size: 12px; color: #A9AEB7">The button names what will be saved.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Error</span>
+          <span style="height: 42px; box-sizing: border-box; padding: 0 14px; display: flex; align-items: center; border: 1px solid #FF7A6B; border-radius: 10px; background: #101113; color: #ECEDEF">open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk</span>
+          <span style="font-size: 12px; color: #FF7A6B">Podcast episodes can’t be saved. Runout keeps albums, tracks and artists.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; opacity: 0.4">
+          <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Disabled</span>
+          <span style="height: 42px; box-sizing: border-box; padding: 0 14px; display: flex; align-items: center; border: 1px solid #3A3F46; border-radius: 10px; background: #101113; color: #A9AEB7">Connect Spotify to use autofill</span>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="sys-controls" style="display: flex; flex-direction: column; gap: 16px">
+      <h2 id="sys-controls" style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.015em">Selection controls</h2>
+      <div class="ro-card" style="padding: 20px; display: flex; flex-direction: column; gap: 18px">
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Status (the indicator slides 220 ms)</span>
+          <div role="radiogroup" aria-label="Status example" style="display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: #101113; border: 1px solid rgba(255,255,255,0.06); align-self: flex-start">
+            <sc-for list="{{statuses}}" as="s" hint-placeholder-count="5">
+              <button type="button" role="radio" aria-checked="{{s.on}}" class="ro-btn" style="{{s.style}}" onClick="{{s.pick}}">{{s.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Rating (hover previews, arrows step by half)</span>
+          <div style="display: flex; gap: 24px; align-items: center">
+            <span aria-label="Rated 3.5 of 5" style="font-size: 24px; letter-spacing: 4px; color: #F5B544">★★★½<span style="color: #4A5059">★</span></span>
+            <span aria-label="Hover preview 4.5" style="font-size: 24px; letter-spacing: 4px; color: #F8C566; opacity: 0.75">★★★★½</span>
+            <span aria-label="Unrated" style="font-size: 24px; letter-spacing: 4px; color: #3A3F46">★★★★★</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Tags</span>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px">
+            <span style="padding: 5px 10px; border-radius: 10px; background: #1F2226">late-night</span>
+            <span style="padding: 5px 10px; border-radius: 10px; background: #2A2D32; box-shadow: inset 0 0 0 1px #4A5059">jazz (hover)</span>
+            <span style="padding: 5px 10px; border-radius: 10px; background: #F5B544; color: #101113; font-weight: 700">headphones (filter on)</span>
+            <span style="padding: 5px 10px; border-radius: 10px; border: 1px dashed #3A3F46; color: #C3C7CE">Add tag</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Navigation</span>
+          <span style="display: flex; justify-content: space-between; height: 36px; align-items: center; padding: 0 10px; border-radius: 10px; color: #C3C7CE; max-width: 220px">Library<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">214</span></span>
+          <span style="display: flex; justify-content: space-between; height: 36px; align-items: center; padding: 0 10px; border-radius: 10px; background: #17191C; color: #ECEDEF; max-width: 220px">Rediscover (hover)<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">6</span></span>
+          <span style="display: flex; justify-content: space-between; height: 36px; align-items: center; padding: 0 10px; border-radius: 10px; background: #1F2226; color: #ECEDEF; font-weight: 700; box-shadow: inset 3px 0 0 #F5B544; max-width: 220px">Backlog (selected)<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">37</span></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section aria-labelledby="sys-data" style="display: flex; flex-direction: column; gap: 16px">
+    <h2 id="sys-data" style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.015em">Data components</h2>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 20px; align-items: start">
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <div class="ro-card ro-hover" style="padding: 16px; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 12px; color: #A9AEB7">Stat tile</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 600; letter-spacing: -0.02em">27h 40m</span>
+          <span style="font-size: 12px; color: #A9AEB7">3h 10m more than last week</span>
+        </div>
+        <div class="ro-card ro-hover" style="padding: 16px; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 12px; color: #A9AEB7">Stat tile asking for action</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 600; letter-spacing: -0.02em">9</span>
+          <span style="font-size: 12px; color: #F5B544">31 plays still unrated</span>
+        </div>
+        <div class="ro-card" style="padding: 16px; display: flex; flex-direction: column; gap: 10px">
+          <span style="font-size: 12px; color: #A9AEB7">Rank bars (no track behind the bar)</span>
+          <sc-for list="{{ranks}}" as="r" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: 18px minmax(0, 1fr) 64px; gap: 10px; align-items: center">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">{{r.rank}}</span>
+              <div style="display: flex; flex-direction: column; gap: 5px"><span style="font-weight: 600">{{r.name}}</span><div style="height: 6px; border-radius: 3px; width: {{r.w}}; background: {{r.c}}"></div></div>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #C3C7CE; text-align: right">{{r.n}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px">
+          <div class="ro-tile" style="display: flex; flex-direction: column; gap: 6px">
+            <div class="ro-art" aria-hidden="true" style="aspect-ratio: 1 / 1; border-radius: 10px; background: #2E3F5C"></div>
+            <span style="font-weight: 600; font-size: 13px">Promises</span>
+            <span style="font-size: 12px; color: #A9AEB7">Floating Points</span>
+            <div class="ro-tile-actions" style="display: flex; gap: 6px">
+              <button type="button" class="ro-btn ro-light" style="height: 30px; padding: 0 10px; font-size: 12px">Rate</button>
+              <button type="button" class="ro-btn ro-secondary" style="height: 30px; padding: 0 10px; font-size: 12px">Save</button>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div aria-hidden="true" style="aspect-ratio: 1 / 1; border-radius: 10px; background: #5C4630; transform: translateY(-2px); box-shadow: 0 12px 24px rgba(0,0,0,0.4)"></div>
+            <span style="font-weight: 600; font-size: 13px">Thembi (hover)</span>
+            <span style="font-size: 12px; color: #A9AEB7">Actions below, never on the art</span>
+            <div style="display: flex; gap: 6px">
+              <span class="ro-btn ro-light" style="height: 30px; padding: 0 10px; font-size: 12px; display: inline-flex; align-items: center">Rate</span>
+              <span class="ro-btn ro-secondary" style="height: 30px; padding: 0 10px; font-size: 12px; display: inline-flex; align-items: center">Save</span>
+            </div>
+          </div>
+        </div>
+        <div class="ro-card" style="padding: 14px; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 12px; font-weight: 600">Freshness note</span>
+          <span style="font-size: 12px; color: #A9AEB7; line-height: 1.45">Desktop plays: live. All devices: up to your export of 2 Oct.</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+          <span style="padding: 4px 10px; border-radius: 10px; background: rgba(245,181,68,0.14); color: #F5C46B; font-size: 12px; font-weight: 700">Name needed</span>
+          <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #F5B544"><span class="ro-live" aria-hidden="true"></span>Playing now on your PC</span>
+        </div>
+      </div>
+
+      <div class="ro-card" style="padding: 6px; display: flex; flex-direction: column">
+        <span style="font-size: 12px; color: #A9AEB7; padding: 10px 10px 4px">Play rows: rated, unrated (hover), skipped</span>
+        <sc-for list="{{plays}}" as="p" hint-placeholder-count="3">
+          <div class="ro-row" style="{{p.style}}">
+            <div aria-hidden="true" style="width: 36px; height: 36px; border-radius: 6px; background: {{p.tint}}"></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 600">{{p.track}}</span><span style="font-size: 12px; color: #A9AEB7">{{p.artist}}</span></div>
+            <span style="font-size: 13px; color: {{p.endColor}}">{{p.end}}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8; text-align: right">{{p.when}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="sys-feedback" style="display: flex; flex-direction: column; gap: 16px">
+    <h2 id="sys-feedback" style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.015em">Feedback, loading and Spotify content</h2>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start">
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <div role="status" style="display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: #1C1F23; border: 1px solid rgba(255,255,255,0.10); box-shadow: 0 24px 64px rgba(0,0,0,0.5)">
+          <span>Thembi saved to your backlog</span>
+          <button type="button" class="ro-btn ro-secondary" style="height: 30px; padding: 0 10px; font-size: 12px">Undo</button>
+        </div>
+        <div class="ro-card" style="padding: 18px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start">
+          <span style="font-size: 12px; color: #A9AEB7">Empty state</span>
+          <span style="font-size: 17px; font-weight: 700">Nothing waiting</span>
+          <span style="color: #C3C7CE">Paste a Spotify link, or share one from your phone.</span>
+          <button type="button" class="ro-btn ro-primary" style="height: 36px">Add a link</button>
+        </div>
+      </div>
+      <div class="ro-card" style="padding: 18px; display: flex; flex-direction: column; gap: 12px">
+        <span style="font-size: 12px; color: #A9AEB7">Skeleton while loading</span>
+        <sc-for list="{{skeletons}}" as="k" hint-placeholder-count="4">
+          <div style="display: grid; grid-template-columns: 36px minmax(0, 1fr) 48px; gap: 12px; align-items: center">
+            <div class="ro-skel" style="width: 36px; height: 36px"></div>
+            <div style="display: flex; flex-direction: column; gap: 6px"><div class="ro-skel" style="height: 10px; width: {{k.a}}"></div><div class="ro-skel" style="height: 8px; width: {{k.b}}"></div></div>
+            <div class="ro-skel" style="height: 8px"></div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 14px">
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div role="img" aria-label="Spotify embed, online" style="height: 152px; border-radius: 12px; background: #26303D; border: 1px dashed #4D5866; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: #C3C7CE; padding: 8px">Spotify embed, online</div>
+            <span style="font-size: 12px; color: #A9AEB7">Unaltered, never cropped or covered</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div role="img" aria-label="Offline placeholder" style="height: 152px; border-radius: 12px; background: #17191C; border: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; font-size: 12px; color: #A9AEB7; padding: 8px"><span style="font-weight: 700; color: #C3C7CE">Offline</span>Artwork returns when you reconnect</div>
+            <span style="font-size: 12px; color: #A9AEB7">Placeholder</span>
+          </div>
+        </div>
+        <div class="ro-card" style="padding: 14px; display: flex; align-items: center; gap: 12px">
+          <div role="img" aria-label="Spotify logo placeholder" style="width: 96px; height: 28px; border-radius: 6px; border: 1px dashed #4D5866; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #A9AEB7">Spotify logo</div>
+          <span style="font-size: 13px; color: #C3C7CE">Attribution: logo plus <a href="#">Open Spotify</a> next to any Spotify content</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":3000}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { status: 'In progress' }; }
+  renderVals() {
+    const swatches = [
+      ['--bg', '#101113', 'Page canvas'], ['--rail', '#0B0C0E', 'Sidebar'], ['--surface', '#17191C', 'Cards, inputs'], ['--surface-2', '#1F2226', 'Hover, selected'], ['--line', '#23262B', 'Dividers'],
+      ['--line-strong', '#3A3F46', 'Control borders'], ['--text', '#ECEDEF', 'Primary text'], ['--text-2', '#C3C7CE', 'Secondary text'], ['--muted', '#A9AEB7', 'Labels, metadata'], ['--faint', '#9A9FA8', 'Ranks, times'],
+      ['--accent', '#F5B544', 'Needs you, primary'], ['--link', '#F5C46B', 'Links'], ['--bar', '#4A5059', 'Chart bars'], ['--danger', '#FF7A6B', 'Destructive, errors'], ['--accent-ink', '#101113', 'Text on accent']
+    ].map(([name, hex, use]) => ({ name, hex, use }));
+    const typeScale = [
+      ['32 / 800', 'font-size: 32px; font-weight: 800; letter-spacing: -0.025em', 'Promises'],
+      ['26 / 800', 'font-size: 26px; font-weight: 800; letter-spacing: -0.02em', 'Backlog'],
+      ['20 / 800', 'font-size: 20px; font-weight: 800; letter-spacing: -0.015em', 'Top artists this week'],
+      ['15 / 600', 'font-size: 15px; font-weight: 600', 'Journey in Satchidananda'],
+      ['14 / 400', 'font-size: 14px; color: #C3C7CE', 'Recommended by Meera. Needs a full listen.'],
+      ['12 / 400', 'font-size: 12px; color: #A9AEB7', 'Desktop plays: live'],
+      ['Mono 26 / 600', "font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 600", '9,284 plays']
+    ].map(([spec, style, sample]) => ({ spec, style, sample }));
+    const spacing = ['4px', '8px', '12px', '16px', '20px', '24px', '32px'];
+    const base = 'display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 12px; border-radius: 10px; font-weight: 700; font-size: 13px; box-sizing: border-box; white-space: nowrap;';
+    const v = {
+      Primary: { d: 'border: 0; color: #101113; background: linear-gradient(180deg,#F8C566,#F0A92E); box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 8px rgba(245,181,68,0.18);', h: 'background: linear-gradient(180deg,#FACF7E,#F3B23F); color: #101113; box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 8px rgba(245,181,68,0.18);', p: 'background: linear-gradient(180deg,#F0A92E,#E39A1F); color: #101113; transform: scale(0.98);', label: 'Save' },
+      Secondary: { d: 'border: 1px solid #3A3F46; color: #ECEDEF; background: transparent; font-weight: 600;', h: 'border: 1px solid #4A5059; color: #ECEDEF; background: #1F2226; font-weight: 600;', p: 'border: 1px solid #4A5059; color: #ECEDEF; background: #23262B; transform: scale(0.98); font-weight: 600;', label: 'Add a note' },
+      Light: { d: 'border: 0; color: #101113; background: #ECEDEF;', h: 'color: #101113; background: #F7F8F9;', p: 'color: #101113; background: #D9DBDF; transform: scale(0.98);', label: 'Rate it' },
+      Danger: { d: 'border: 1px solid #FF7A6B; color: #FF7A6B; background: transparent;', h: 'border: 1px solid #FF7A6B; color: #FF7A6B; background: rgba(255,122,107,0.1);', p: 'border: 1px solid #FF7A6B; color: #FF7A6B; background: rgba(255,122,107,0.16); transform: scale(0.98);', label: 'Delete' }
+    };
+    const buttonMatrix = Object.entries(v).map(([name, s]) => ({
+      name,
+      cells: [
+        { style: base + s.d, label: s.label },
+        { style: base + s.h, label: s.label },
+        { style: base + s.p, label: s.label },
+        { style: base + s.d + ' outline: 2px solid #F5B544; outline-offset: 2px;', label: s.label },
+        { style: base + s.d + ' opacity: 0.4;', label: s.label },
+        { style: base + s.d, label: 'Saving...' }
+      ]
+    }));
+    const stateNames = ['Default', 'Hover', 'Pressed', 'Focus', 'Disabled', 'Loading'];
+    const sBase = 'height: 34px; padding: 0 12px; border: 0; border-radius: 8px; font-size: 13px;';
+    const statuses = ['Planned', 'In progress', 'Explored', 'Not for me', 'Abandoned'].map(label => {
+      const on = this.state.status === label;
+      return { label, on: on ? 'true' : 'false', pick: () => this.setState({ status: label }), style: sBase + (on ? ' background: #ECEDEF; color: #101113; font-weight: 700;' : ' background: transparent; color: #C3C7CE; font-weight: 500;') };
+    });
+    const ranks = [
+      { rank: '1', name: 'Alice Coltrane', w: '100%', c: '#4A5059', n: '58 plays' },
+      { rank: '2', name: 'Floating Points', w: '76%', c: '#4A5059', n: '44 plays' },
+      { rank: '3', name: 'Pharoah Sanders', w: '50%', c: '#F5B544', n: '29 plays' }
+    ];
+    const row = 'display: grid; grid-template-columns: 36px minmax(0, 1fr) auto 56px; gap: 12px; align-items: center; padding: 8px 10px;';
+    const plays = [
+      { track: 'Movement 6', artist: 'Floating Points', end: '★★★★★', endColor: '#F5B544', when: '18 min', tint: '#2E3F5C', style: row },
+      { track: 'Teardrop', artist: 'Massive Attack', end: 'Rate', endColor: '#ECEDEF', when: '3 h', tint: '#2B4F7A', style: row + ' background: #1F2226;' },
+      { track: 'Glow', artist: 'Kelly Lee Owens', end: 'Skipped, not counted', endColor: '#9A9FA8', when: '4 h', tint: '#4A4F59', style: row + ' opacity: 0.55;' }
+    ];
+    const skeletons = [{ a: '70%', b: '40%' }, { a: '55%', b: '35%' }, { a: '80%', b: '45%' }, { a: '60%', b: '30%' }];
+    return { swatches, typeScale, spacing, buttonMatrix, stateNames, statuses, ranks, plays, skeletons };
+  }
+}
+</script>
+</body>
+</html>

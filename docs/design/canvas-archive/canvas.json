@@ -1,0 +1,40 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-18T09:30:00Z"},
+  "title": "Runout UI directions",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 900, "title": "A · Ledger (list-first workspace)", "expand": "fill"},
+    "Crate.dc.html": {"x": 1520, "y": 0, "w": 1440, "h": 900, "title": "B · Crate (artwork-first, dark)", "expand": "fill"},
+    "Session.dc.html": {"x": 3040, "y": 0, "w": 1440, "h": 900, "title": "C · Session (one thing at a time)", "expand": "fill"},
+    "System.dc.html": {"x": 5600, "y": 0, "w": 1440, "h": 3000, "title": "Design system v1.1: tokens, components, states", "expand": "fill", "is_interactive": true},
+    "Home.dc.html": {"x": 0, "y": 1420, "w": 1440, "h": 1180, "title": "SC-01 Home, full (R2) · chosen direction D · Pulse", "expand": "fill"},
+    "HomeMvp.dc.html": {"x": 0, "y": 3020, "w": 1440, "h": 1000, "title": "SC-02 Home, MVP state", "expand": "fill"},
+    "QuickAdd.dc.html": {"x": 1520, "y": 3020, "w": 1440, "h": 1000, "title": "SC-06 Quick add and name confirm", "expand": "fill"},
+    "Backlog.dc.html": {"x": 3040, "y": 3020, "w": 1440, "h": 1000, "title": "SC-03 Backlog", "expand": "fill"},
+    "Detail.dc.html": {"x": 4560, "y": 3020, "w": 1440, "h": 1000, "title": "SC-05 Item detail", "expand": "fill"},
+    "Library.dc.html": {"x": 6080, "y": 3020, "w": 1440, "h": 1000, "title": "SC-04 Library", "expand": "fill"},
+    "Rediscover.dc.html": {"x": 7600, "y": 3020, "w": 1440, "h": 1000, "title": "SC-07 Rediscover", "expand": "fill"},
+    "Plays.dc.html": {"x": 0, "y": 4440, "w": 1440, "h": 1000, "title": "SC-08 Recent plays and unmatched", "expand": "fill"},
+    "Insights.dc.html": {"x": 1520, "y": 4440, "w": 1440, "h": 1000, "title": "SC-09 Insights", "expand": "fill"},
+    "Import.dc.html": {"x": 3040, "y": 4440, "w": 1440, "h": 1000, "title": "SC-10 Import Spotify export", "expand": "fill"},
+    "Playlists.dc.html": {"x": 0, "y": 5860, "w": 1440, "h": 1000, "title": "SC-11 Playlists: check-up and Studio", "expand": "fill"},
+    "FromSpotify.dc.html": {"x": 1520, "y": 5860, "w": 1440, "h": 1000, "title": "SC-12 From Spotify", "expand": "fill"},
+    "Settings.dc.html": {"x": 3040, "y": 5860, "w": 1440, "h": 1000, "title": "SC-13 Settings and data", "expand": "fill"}
+  },
+  "order": ["Main.dc.html", "Crate.dc.html", "Session.dc.html", "System.dc.html", "Home.dc.html", "HomeMvp.dc.html", "QuickAdd.dc.html", "Backlog.dc.html", "Detail.dc.html", "Library.dc.html", "Rediscover.dc.html", "Plays.dc.html", "Insights.dc.html", "Import.dc.html", "Playlists.dc.html", "FromSpotify.dc.html", "Settings.dc.html"],
+  "notes": {
+    "system": {"x": 5600, "y": -300, "text": "Design system", "kind": "title1", "maxW": 1440},
+    "heading": {"x": 0, "y": -300, "text": "Explorations: three directions (history)", "kind": "title1", "maxW": 4480},
+    "pulse": {"x": 0, "y": 1120, "text": "Chosen: D · Pulse. Your listening and your opinions in one place", "kind": "title1", "maxW": 4480},
+    "mvp": {"x": 0, "y": 2720, "text": "MVP screens", "kind": "title1", "maxW": 9040},
+    "r2": {"x": 0, "y": 4140, "text": "Release 2: listening log and insights", "kind": "title1", "maxW": 4480},
+    "r3": {"x": 0, "y": 5560, "text": "Release 3 and settings", "kind": "title1", "maxW": 4480},
+    "journeys": {"x": 1520, "y": 1420, "w": 520, "maxH": 1180, "size": "m", "fill": "gray", "text": "Journeys, screen by screen\n\nA Save for later: Home MVP > Quick add > Backlog\nB Capture from phone: iPhone Shortcut > Home MVP (Waiting for a name) > Quick add (naming)\nC Explore an album: Backlog (Start) > Item detail (status, rating, review)\nD Explore an artist: Quick add (artist) > Item detail (artist) > Backlog\nE Rediscover: Rediscover > Item detail > Open Spotify\nF Listening history: Settings > Import > Recent plays > Insights\nG Clean up a playlist: Playlists check-up > Studio > Apply > Undo\nH Back up and restore: Settings (Back up now, Restore)"},
+    "states-mvp": {"x": 9120, "y": 3020, "w": 520, "maxH": 1000, "size": "m", "fill": "gray", "text": "States, MVP row\n\nHome MVP, first run: only the add field and one line, Paste a Spotify link to start your backlog.\nQuick add: duplicate, unsupported and offline drawn on the board.\nBacklog empty: Nothing waiting. Paste a link or share from your phone. Filter with no results: offers Clear filters.\nItem detail offline: embed shows the neutral placeholder; everything else works.\nLibrary empty: one line plus Add. Search with no match: Nothing matches, with Clear search.\nRediscover: a shelf with nothing in it is hidden; if all are empty, a line explains how shelves fill up.\nErrors everywhere: inline under the control that failed, never a toast."},
+    "states-r2": {"x": 4560, "y": 4440, "w": 520, "maxH": 1000, "size": "m", "fill": "gray", "text": "States, Release 2 row\n\nRecent plays empty: logger off or nothing played yet; buttons to turn the logger on or import an export.\nLogger error: Windows media info unavailable, shown in the logger card; the rest works.\nInsights before any data: explains the two sources with Import and Turn on logger.\nInsights with stale export: freshness line turns accent and suggests a new export.\nImport wrong folder and re-import drawn on the board."},
+    "states-r3": {"x": 4560, "y": 5860, "w": 520, "maxH": 1000, "size": "m", "fill": "gray", "text": "States, Release 3 row\n\nNot connected: Playlists keeps the export check-up; Studio and From Spotify show Connect Spotify only.\nSign-in expired (6 months): one banner, Reconnect Spotify.\nPremium lapsed or Spotify down: Spotify features say why and pause; nothing else is affected.\nPlaylist changed on Spotify: drawn on the Playlists board.\nSettings, backup too large: warning under Backups, backup still kept."}
+  },
+  "designSystems": []
+}

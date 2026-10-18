@@ -1,0 +1,7197 @@
+{
+ "meta": {
+  "generated_for": "Runout design prototype and M2 mocks",
+  "seed": 7,
+  "today": "2026-10-18T21:20",
+  "export_until": "2026-10-02T23:59",
+  "note": "Synthetic. Spotify IDs are random; no real export values."
+ },
+ "items": [
+  {
+   "id": 1,
+   "type": "artist",
+   "display_name": "Alice Coltrane",
+   "spotify_uri": "spotify:artist:Pf34qY6Nb3wWD25RQ4F5ZR",
+   "status": "in_progress",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "Working through the Impulse years in order.",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-04-06T11:00",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#3D5A4A",
+   "affinity": 10
+  },
+  {
+   "id": 2,
+   "type": "artist",
+   "display_name": "Floating Points",
+   "spotify_uri": "spotify:artist:yEeeby3abP3E2Zs8IQ9Y7a",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "Electronic producer; Promises is the way in.",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-08-19T22:00",
+   "explored_at": "2026-09-01T22:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#2E3F5C",
+   "affinity": 8
+  },
+  {
+   "id": 3,
+   "type": "artist",
+   "display_name": "Pharoah Sanders",
+   "spotify_uri": "spotify:artist:qhB6baeCN6Zj4a3dDVhYRn",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "Came here from Promises. Start with Thembi.",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-04-14T17:00",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#5C4630",
+   "affinity": 6
+  },
+  {
+   "id": 4,
+   "type": "artist",
+   "display_name": "Prateek Kuhad",
+   "spotify_uri": "spotify:artist:NJFoBinF5aJXVuLkSIc47W",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "Ishaan's pick. Quiet, lyrical, Hindi and English.",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-04-11T16:00",
+   "explored_at": "2026-05-05T16:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#4F5B6B",
+   "affinity": 7
+  },
+  {
+   "id": 5,
+   "type": "artist",
+   "display_name": "Kate Bush",
+   "spotify_uri": "spotify:artist:9xVQ2zg4mZaouqKLiMcVbp",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-02-16T11:00",
+   "explored_at": "2026-03-08T11:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#6B3A4A",
+   "affinity": 5
+  },
+  {
+   "id": 6,
+   "type": "artist",
+   "display_name": "Massive Attack",
+   "spotify_uri": "spotify:artist:r5yHUig43kiJfahqSIjOug",
+   "status": "in_progress",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "Bristol sound. Mezzanine done, Blue Lines next.",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-01-28T10:00",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#2B4F7A",
+   "affinity": 5
+  },
+  {
+   "id": 7,
+   "type": "artist",
+   "display_name": "Miles Davis",
+   "spotify_uri": "spotify:artist:MAd7V3DnI8lFPPwtV5ASPZ",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-03-25T09:00",
+   "explored_at": "2026-04-18T09:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#22324A",
+   "affinity": 4
+  },
+  {
+   "id": 8,
+   "type": "artist",
+   "display_name": "John Coltrane",
+   "spotify_uri": "spotify:artist:tZHjQMhuOzE95B9EgE0Vrb",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-04-29T11:00",
+   "explored_at": "2026-05-22T11:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#3B3B44",
+   "affinity": 4
+  },
+  {
+   "id": 9,
+   "type": "artist",
+   "display_name": "Madvillain",
+   "spotify_uri": "spotify:artist:I09QYNdaKy8isWydfhl3Tv",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "Ishaan insists. Listen front to back.",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-06-17T13:00",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#8A6A2E",
+   "affinity": 2
+  },
+  {
+   "id": 10,
+   "type": "artist",
+   "display_name": "Sufjan Stevens",
+   "spotify_uri": "spotify:artist:PPP6UeP3C4DSA7Lc360a9Y",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2025-06-30T21:00",
+   "explored_at": "2025-07-22T21:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#5E6F63",
+   "affinity": 3
+  },
+  {
+   "id": 11,
+   "type": "artist",
+   "display_name": "LCD Soundsystem",
+   "spotify_uri": "spotify:artist:d14tDdO9eGzMcNU77sVTUU",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-07-29T14:00",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#585858",
+   "affinity": 2
+  },
+  {
+   "id": 12,
+   "type": "artist",
+   "display_name": "Air",
+   "spotify_uri": "spotify:artist:6lLlGUriAX1DyyXN9iYw1m",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-04-12T10:00",
+   "explored_at": "2026-04-26T10:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#4A5A6B",
+   "affinity": 2
+  },
+  {
+   "id": 13,
+   "type": "artist",
+   "display_name": "Bill Evans",
+   "spotify_uri": "spotify:artist:isGXNwAMnEYYnWLeEdpoms",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2025-12-22T13:00",
+   "explored_at": "2026-01-03T13:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#2F3B4A",
+   "affinity": 3
+  },
+  {
+   "id": 14,
+   "type": "artist",
+   "display_name": "Kelly Lee Owens",
+   "spotify_uri": "spotify:artist:FqPlpECXVMk11oHUGCiczM",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-06-11T21:00",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#4A4F59",
+   "affinity": 2
+  },
+  {
+   "id": 15,
+   "type": "artist",
+   "display_name": "Radiohead",
+   "spotify_uri": "spotify:artist:zN5E6EUCLDUdvdr0UwfMpf",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-02-02T21:00",
+   "explored_at": "2026-02-23T21:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#3B4A5C",
+   "affinity": 3
+  },
+  {
+   "id": 16,
+   "type": "artist",
+   "display_name": "Bjork",
+   "spotify_uri": "spotify:artist:wOojmCUuBRoeL5pykPTPly",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-08-06T22:00",
+   "explored_at": "2026-08-19T22:00",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "tint": "#4F3B5C",
+   "affinity": 2
+  },
+  {
+   "id": 17,
+   "type": "album",
+   "display_name": "Journey in Satchidananda",
+   "spotify_uri": "spotify:album:819bvTpf9dqcUgxM9ZZ810",
+   "status": "explored",
+   "priority": null,
+   "rating": 4.5,
+   "review": "Harp and tanpura doing what most records can't. The title track is the reason to start here.",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz",
+    "spiritual"
+   ],
+   "added_at": "2026-06-20T10:46",
+   "explored_at": "2026-06-27T10:46",
+   "reviewed_at": "2026-06-28T10:46",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Alice Coltrane",
+   "album": null,
+   "artist_id": 1,
+   "tint": "#3D5A4A",
+   "via_phone": false
+  },
+  {
+   "id": 18,
+   "type": "album",
+   "display_name": "Ptah, the El Daoud",
+   "spotify_uri": "spotify:album:lx8RtCqtD1GDIWFmbKGYQr",
+   "status": "planned",
+   "priority": "high",
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "jazz",
+    "spiritual"
+   ],
+   "added_at": "2026-10-12T11:33",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Alice Coltrane",
+   "album": null,
+   "artist_id": 1,
+   "tint": "#4A5A3B",
+   "via_phone": false
+  },
+  {
+   "id": 19,
+   "type": "album",
+   "display_name": "Promises",
+   "spotify_uri": "spotify:album:vTgbqvXQqwuW8Y9XW1tSnB",
+   "status": "in_progress",
+   "priority": null,
+   "rating": 4.5,
+   "review": "Movement 6 is where it opens up. Sanders barely plays and it still holds the whole record together.",
+   "notes": "",
+   "favourite": true,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "Meera",
+   "tags": [
+    "late-night",
+    "jazz",
+    "headphones"
+   ],
+   "added_at": "2026-10-04T12:03",
+   "explored_at": null,
+   "reviewed_at": "2026-10-18T12:03",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Floating Points",
+   "album": null,
+   "artist_id": 2,
+   "tint": "#2E3F5C",
+   "via_phone": true,
+   "tracklist": [
+    "Movement 1",
+    "Movement 2",
+    "Movement 3",
+    "Movement 4",
+    "Movement 5",
+    "Movement 6",
+    "Movement 7",
+    "Movement 8",
+    "Movement 9"
+   ]
+  },
+  {
+   "id": 20,
+   "type": "album",
+   "display_name": "Thembi",
+   "spotify_uri": "spotify:album:p9B9Udk7Z3KhXXZUon6uZ3",
+   "status": "planned",
+   "priority": "medium",
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "Ishaan",
+   "tags": [
+    "jazz",
+    "spiritual"
+   ],
+   "added_at": "2026-10-18T08:49",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Pharoah Sanders",
+   "album": null,
+   "artist_id": 3,
+   "tint": "#5C4630",
+   "via_phone": false
+  },
+  {
+   "id": 21,
+   "type": "album",
+   "display_name": "cold/mess (single)",
+   "spotify_uri": "spotify:album:n6WSZ1mvw4SKdWcWCiHSWY",
+   "status": "explored",
+   "priority": null,
+   "rating": 5,
+   "review": "Three minutes, no wasted line.",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "Ishaan",
+   "tags": [
+    "hindi-indie",
+    "late-night"
+   ],
+   "added_at": "2026-03-22T15:12",
+   "explored_at": "2026-04-01T15:12",
+   "reviewed_at": "2026-03-26T15:12",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Prateek Kuhad",
+   "album": null,
+   "artist_id": 4,
+   "tint": "#4F5B6B",
+   "via_phone": false
+  },
+  {
+   "id": 22,
+   "type": "album",
+   "display_name": "Hounds of Love",
+   "spotify_uri": "spotify:album:iXuuyxGxZvyCrS8Q7PSK4g",
+   "status": "in_progress",
+   "priority": null,
+   "rating": 5,
+   "review": "Side two is a suite. Never shuffle it.",
+   "notes": "",
+   "favourite": true,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "art-pop",
+    "headphones"
+   ],
+   "added_at": "2026-09-13T23:32",
+   "explored_at": null,
+   "reviewed_at": "2026-09-23T23:32",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Kate Bush",
+   "album": null,
+   "artist_id": 5,
+   "tint": "#6B3A4A",
+   "via_phone": false,
+   "tracklist": [
+    "Running Up That Hill",
+    "Hounds of Love",
+    "The Big Sky",
+    "Mother Stands for Comfort",
+    "Cloudbusting",
+    "And Dream of Sheep",
+    "Under Ice",
+    "Waking the Witch",
+    "Watching You Without Me",
+    "Jig of Life",
+    "Hello Earth",
+    "The Morning Fog"
+   ]
+  },
+  {
+   "id": 23,
+   "type": "album",
+   "display_name": "Mezzanine",
+   "spotify_uri": "spotify:album:DgJo7vn9yjfgN9Gu8zTEly",
+   "status": "explored",
+   "priority": null,
+   "rating": 4.5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "trip-hop",
+    "late-night"
+   ],
+   "added_at": "2025-09-13T15:27",
+   "explored_at": "2025-09-17T15:27",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Massive Attack",
+   "album": null,
+   "artist_id": 6,
+   "tint": "#33333A",
+   "via_phone": false
+  },
+  {
+   "id": 24,
+   "type": "album",
+   "display_name": "Blue Lines",
+   "spotify_uri": "spotify:album:uVAgrEAjRWPLQCMK5kN1LZ",
+   "status": "planned",
+   "priority": "medium",
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "Meera",
+   "tags": [
+    "trip-hop"
+   ],
+   "added_at": "2026-09-25T11:25",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Massive Attack",
+   "album": null,
+   "artist_id": 6,
+   "tint": "#2B4F7A",
+   "via_phone": false
+  },
+  {
+   "id": 25,
+   "type": "album",
+   "display_name": "Kind of Blue",
+   "spotify_uri": "spotify:album:LXdIWz47woEu65GH2vnBHm",
+   "status": "explored",
+   "priority": null,
+   "rating": 5,
+   "review": "Still the front door to jazz.",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz"
+   ],
+   "added_at": "2024-05-01T22:28",
+   "explored_at": "2024-05-03T22:28",
+   "reviewed_at": "2024-05-16T22:28",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Miles Davis",
+   "album": null,
+   "artist_id": 7,
+   "tint": "#22324A",
+   "via_phone": false,
+   "tracklist": [
+    "So What",
+    "Freddie Freeloader",
+    "Blue in Green",
+    "All Blues",
+    "Flamenco Sketches"
+   ]
+  },
+  {
+   "id": 26,
+   "type": "album",
+   "display_name": "Bitches Brew",
+   "spotify_uri": "spotify:album:swhqyGP9YwWaViK5H3piBR",
+   "status": "abandoned",
+   "priority": null,
+   "rating": 3,
+   "review": "Stopped at Spanish Key. Try again with time to spare.",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz",
+    "fusion"
+   ],
+   "added_at": "2026-05-31T12:52",
+   "explored_at": null,
+   "reviewed_at": "2026-06-16T12:52",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Miles Davis",
+   "album": null,
+   "artist_id": 7,
+   "tint": "#5C4630",
+   "via_phone": false,
+   "tracklist": [
+    "Pharaoh's Dance",
+    "Bitches Brew",
+    "Spanish Key",
+    "John McLaughlin",
+    "Miles Runs the Voodoo Down",
+    "Sanctuary",
+    "Feio"
+   ]
+  },
+  {
+   "id": 27,
+   "type": "album",
+   "display_name": "A Love Supreme",
+   "spotify_uri": "spotify:album:5pG5csE4Gt7T0LZQxwHd82",
+   "status": "explored",
+   "priority": null,
+   "rating": 5,
+   "review": "Part one is a prayer you can hum.",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz",
+    "spiritual"
+   ],
+   "added_at": "2024-11-17T10:17",
+   "explored_at": "2024-11-19T10:17",
+   "reviewed_at": "2024-12-10T10:17",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "John Coltrane",
+   "album": null,
+   "artist_id": 8,
+   "tint": "#3B3B44",
+   "via_phone": false
+  },
+  {
+   "id": 28,
+   "type": "album",
+   "display_name": "Blue Train",
+   "spotify_uri": "spotify:album:G3BCxJeJXmDISWhBHMp1G2",
+   "status": "explored",
+   "priority": null,
+   "rating": 4,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": true,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz"
+   ],
+   "added_at": "2025-12-22T15:07",
+   "explored_at": "2025-12-29T15:07",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "John Coltrane",
+   "album": null,
+   "artist_id": 8,
+   "tint": "#2B4F7A",
+   "via_phone": false
+  },
+  {
+   "id": 29,
+   "type": "album",
+   "display_name": "Madvillainy",
+   "spotify_uri": "spotify:album:kWZCWUFxS6gqfRgVYruPWJ",
+   "status": "planned",
+   "priority": "high",
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "Ishaan",
+   "tags": [
+    "hip-hop"
+   ],
+   "added_at": "2026-10-16T08:01",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Madvillain",
+   "album": null,
+   "artist_id": 9,
+   "tint": "#8A6A2E",
+   "via_phone": false
+  },
+  {
+   "id": 30,
+   "type": "album",
+   "display_name": "Carrie & Lowell",
+   "spotify_uri": "spotify:album:rujke8PM3r804eluGRA35g",
+   "status": "explored",
+   "priority": null,
+   "rating": 4.5,
+   "review": "Too sad for most days. Winter record.",
+   "notes": "",
+   "favourite": false,
+   "revisit": true,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "folk",
+    "late-night"
+   ],
+   "added_at": "2026-05-11T14:14",
+   "explored_at": "2026-05-23T14:14",
+   "reviewed_at": "2026-05-20T14:14",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Sufjan Stevens",
+   "album": null,
+   "artist_id": 10,
+   "tint": "#5E6F63",
+   "via_phone": false
+  },
+  {
+   "id": 31,
+   "type": "album",
+   "display_name": "Sound of Silver",
+   "spotify_uri": "spotify:album:WgIcFiI2TBAHS0GNzLZKF2",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "dance"
+   ],
+   "added_at": "2026-08-15T20:55",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "LCD Soundsystem",
+   "album": null,
+   "artist_id": 11,
+   "tint": "#585858",
+   "via_phone": false
+  },
+  {
+   "id": 32,
+   "type": "album",
+   "display_name": "Moon Safari",
+   "spotify_uri": "spotify:album:B0LO5UHWfCFWn05Gq59Pb2",
+   "status": "explored",
+   "priority": null,
+   "rating": 4,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "electronic"
+   ],
+   "added_at": "2026-01-31T17:13",
+   "explored_at": "2026-02-13T17:13",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Air",
+   "album": null,
+   "artist_id": 12,
+   "tint": "#4A5A6B",
+   "via_phone": false
+  },
+  {
+   "id": 33,
+   "type": "album",
+   "display_name": "Waltz for Debby",
+   "spotify_uri": "spotify:album:eE5bzXsm9gvjoucOmKkV9I",
+   "status": "explored",
+   "priority": null,
+   "rating": 4.5,
+   "review": "Recorded live; you can hear the glasses clink.",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz",
+    "piano"
+   ],
+   "added_at": "2025-11-22T20:01",
+   "explored_at": "2025-12-03T20:01",
+   "reviewed_at": "2025-12-04T20:01",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Bill Evans",
+   "album": null,
+   "artist_id": 13,
+   "tint": "#2F3B4A",
+   "via_phone": false
+  },
+  {
+   "id": 34,
+   "type": "album",
+   "display_name": "Inner Song",
+   "spotify_uri": "spotify:album:qrjvWeRkipW8wXmWarqp1q",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "electronic"
+   ],
+   "added_at": "2026-10-09T12:02",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Kelly Lee Owens",
+   "album": null,
+   "artist_id": 14,
+   "tint": "#4A4F59",
+   "via_phone": false
+  },
+  {
+   "id": 35,
+   "type": "album",
+   "display_name": "In Rainbows",
+   "spotify_uri": "spotify:album:28eNz6OrSZ3e1eYhFVG0Tp",
+   "status": "explored",
+   "priority": null,
+   "rating": 4.5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "art-rock"
+   ],
+   "added_at": "2025-06-05T15:05",
+   "explored_at": "2025-06-07T15:05",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Radiohead",
+   "album": null,
+   "artist_id": 15,
+   "tint": "#3B4A5C",
+   "via_phone": false
+  },
+  {
+   "id": 36,
+   "type": "album",
+   "display_name": "Kid A",
+   "spotify_uri": "spotify:album:xWvY5gX4llUGp4sGFkmDEl",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "art-rock",
+    "electronic"
+   ],
+   "added_at": "2026-05-21T10:47",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Radiohead",
+   "album": null,
+   "artist_id": 15,
+   "tint": "#3B3B3B",
+   "via_phone": false
+  },
+  {
+   "id": 37,
+   "type": "album",
+   "display_name": "Homogenic",
+   "spotify_uri": "spotify:album:4UwhIn2defC4c9LGfliJda",
+   "status": "explored",
+   "priority": null,
+   "rating": 4,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": true,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "art-pop"
+   ],
+   "added_at": "2026-03-12T22:31",
+   "explored_at": "2026-03-26T22:31",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Bjork",
+   "album": null,
+   "artist_id": 16,
+   "tint": "#4F3B5C",
+   "via_phone": false
+  },
+  {
+   "id": 38,
+   "type": "album",
+   "display_name": "Elaenia",
+   "spotify_uri": "spotify:album:U3VHh6iDhVIjXITTTn7vZC",
+   "status": "planned",
+   "priority": "low",
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "electronic"
+   ],
+   "added_at": "2026-09-18T12:00",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Floating Points",
+   "album": null,
+   "artist_id": 2,
+   "tint": "#2E4A5C",
+   "via_phone": false
+  },
+  {
+   "id": 39,
+   "type": "album",
+   "display_name": "Universal Consciousness",
+   "spotify_uri": "spotify:album:xU1IT4qWzSHODwyxD4b59l",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "jazz",
+    "spiritual"
+   ],
+   "added_at": "2026-10-12T17:05",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Alice Coltrane",
+   "album": null,
+   "artist_id": 1,
+   "tint": "#4A3D5A",
+   "via_phone": false
+  },
+  {
+   "id": 40,
+   "type": "album",
+   "display_name": "Karam",
+   "spotify_uri": "spotify:album:8cqeWHu7jNEVvuVP1A0yVh",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "jazz"
+   ],
+   "added_at": "2026-08-04T16:23",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Pharoah Sanders",
+   "album": null,
+   "artist_id": 3,
+   "tint": "#5C3D30",
+   "via_phone": false
+  },
+  {
+   "id": 41,
+   "type": "album",
+   "display_name": "Spirit of Eden",
+   "spotify_uri": "spotify:album:Jk9QMOK7rL0KmLrP7yxCj0",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "Meera",
+   "tags": [
+    "art-rock"
+   ],
+   "added_at": "2026-06-20T22:25",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Talk Talk",
+   "album": null,
+   "artist_id": null,
+   "tint": "#4A5A50",
+   "via_phone": false
+  },
+  {
+   "id": 42,
+   "type": "album",
+   "display_name": "The Koln Concert",
+   "spotify_uri": "spotify:album:N4POtb4NxRmHs3H63rgIex",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "jazz",
+    "piano"
+   ],
+   "added_at": "2026-05-21T17:16",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Keith Jarrett",
+   "album": null,
+   "artist_id": null,
+   "tint": "#5C4630",
+   "via_phone": false
+  },
+  {
+   "id": 43,
+   "type": "album",
+   "display_name": "Maggot Brain",
+   "spotify_uri": "spotify:album:HRWKCnNozRu1pmePwuyZZD",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "funk"
+   ],
+   "added_at": "2026-04-21T12:15",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Funkadelic",
+   "album": null,
+   "artist_id": null,
+   "tint": "#5A3B3B",
+   "via_phone": false
+  },
+  {
+   "id": 44,
+   "type": "album",
+   "display_name": "Pet Sounds",
+   "spotify_uri": "spotify:album:Sdm8ftIV3wxZ8AUQLIJGll",
+   "status": "explored",
+   "priority": null,
+   "rating": 4,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "pop"
+   ],
+   "added_at": "2025-02-25T10:03",
+   "explored_at": "2025-03-12T10:03",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "The Beach Boys",
+   "album": null,
+   "artist_id": null,
+   "tint": "#5A6B4A",
+   "via_phone": false
+  },
+  {
+   "id": 45,
+   "type": "album",
+   "display_name": "Remain in Light",
+   "spotify_uri": "spotify:album:JUZgP7AfA4DWvpVZESwLmS",
+   "status": "explored",
+   "priority": null,
+   "rating": 3.5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "new-wave"
+   ],
+   "added_at": "2025-08-24T16:25",
+   "explored_at": "2025-09-02T16:25",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Talking Heads",
+   "album": null,
+   "artist_id": null,
+   "tint": "#6B5A3B",
+   "via_phone": false
+  },
+  {
+   "id": 46,
+   "type": "album",
+   "display_name": "Blackstar",
+   "spotify_uri": "spotify:album:CF5BLZ5KFNGpaCu1ltQOQl",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "art-rock"
+   ],
+   "added_at": "2025-10-03T21:08",
+   "explored_at": "2025-10-22T21:08",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "David Bowie",
+   "album": null,
+   "artist_id": null,
+   "tint": "#2A2A2E",
+   "via_phone": false
+  },
+  {
+   "id": 47,
+   "type": "album",
+   "display_name": "Pink Moon",
+   "spotify_uri": "spotify:album:Lm3VHazN8hWXeotsD5HvFO",
+   "status": "explored",
+   "priority": null,
+   "rating": 4.5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": true,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "folk"
+   ],
+   "added_at": "2025-07-25T14:24",
+   "explored_at": "2025-08-04T14:24",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Nick Drake",
+   "album": null,
+   "artist_id": null,
+   "tint": "#5C5A3B",
+   "via_phone": false
+  },
+  {
+   "id": 48,
+   "type": "album",
+   "display_name": "Ghost Notes",
+   "spotify_uri": "spotify:album:zJsqtz182RjmvpUzbV04Px",
+   "status": "not_for_me",
+   "priority": null,
+   "rating": 2,
+   "review": "Too polished for me.",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz"
+   ],
+   "added_at": "2026-07-20T20:41",
+   "explored_at": "2026-08-05T20:41",
+   "reviewed_at": "2026-08-05T20:41",
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Veronica Swift",
+   "album": null,
+   "artist_id": null,
+   "tint": "#3B4A4A",
+   "via_phone": false
+  },
+  {
+   "id": 49,
+   "type": "album",
+   "display_name": "Random Access Memories",
+   "spotify_uri": "spotify:album:o6E99Xh6yqkifsmvT5Zn20",
+   "status": "not_for_me",
+   "priority": null,
+   "rating": 2.5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "dance"
+   ],
+   "added_at": "2026-01-31T22:28",
+   "explored_at": "2026-02-09T22:28",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Daft Punk",
+   "album": null,
+   "artist_id": null,
+   "tint": "#3B3B44",
+   "via_phone": false
+  },
+  {
+   "id": 50,
+   "type": "track",
+   "display_name": "Movement 6",
+   "spotify_uri": "spotify:track:w2fjJz8eGXeRim764JXybC",
+   "status": "explored",
+   "priority": null,
+   "rating": 5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "late-night"
+   ],
+   "added_at": "2026-10-04T12:14",
+   "explored_at": "2026-10-18T20:20",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Floating Points",
+   "album": "Promises",
+   "artist_id": 2,
+   "tint": "#2E3F5C",
+   "via_phone": false
+  },
+  {
+   "id": 51,
+   "type": "track",
+   "display_name": "Love Is Everywhere",
+   "spotify_uri": "spotify:track:Eoc00YJTHzKfruFUXFZF1z",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "spiritual"
+   ],
+   "added_at": "2026-10-18T20:16",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Pharoah Sanders",
+   "album": "Thembi",
+   "artist_id": 3,
+   "tint": "#5C4630",
+   "via_phone": false
+  },
+  {
+   "id": 52,
+   "type": "track",
+   "display_name": "cold/mess",
+   "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+   "status": "explored",
+   "priority": null,
+   "rating": 5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "Ishaan",
+   "tags": [
+    "hindi-indie"
+   ],
+   "added_at": "2026-03-22T21:45",
+   "explored_at": "2026-04-02T21:45",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Prateek Kuhad",
+   "album": "cold/mess (single)",
+   "artist_id": 4,
+   "tint": "#4F5B6B",
+   "via_phone": false
+  },
+  {
+   "id": 53,
+   "type": "track",
+   "display_name": "Hope",
+   "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+   "status": "explored",
+   "priority": null,
+   "rating": 4,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "hindi-indie"
+   ],
+   "added_at": "2026-09-08T19:43",
+   "explored_at": "2026-09-22T19:43",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Prateek Kuhad",
+   "album": "Hope (single)",
+   "artist_id": 4,
+   "tint": "#4F5B6B",
+   "via_phone": false
+  },
+  {
+   "id": 54,
+   "type": "track",
+   "display_name": "Teardrop",
+   "spotify_uri": "spotify:track:dBvEVQwg3yc9xP3D1c9Q3j",
+   "status": "explored",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "trip-hop"
+   ],
+   "added_at": "2025-09-13T11:39",
+   "explored_at": "2025-09-30T11:39",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Massive Attack",
+   "album": "Mezzanine",
+   "artist_id": 6,
+   "tint": "#2B4F7A",
+   "via_phone": false
+  },
+  {
+   "id": 55,
+   "type": "track",
+   "display_name": "Running Up That Hill",
+   "spotify_uri": "spotify:track:SvjuKk75xALCBfxXlT2Jgk",
+   "status": "explored",
+   "priority": null,
+   "rating": 4,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "art-pop"
+   ],
+   "added_at": "2026-09-13T09:11",
+   "explored_at": "2026-09-27T09:11",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Kate Bush",
+   "album": "Hounds of Love",
+   "artist_id": 5,
+   "tint": "#6B3A4A",
+   "via_phone": false
+  },
+  {
+   "id": 56,
+   "type": "track",
+   "display_name": "Blue in Green",
+   "spotify_uri": "spotify:track:LSA605H5MQzu7ZzmDOMnqJ",
+   "status": "explored",
+   "priority": null,
+   "rating": 5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz"
+   ],
+   "added_at": "2024-05-01T20:53",
+   "explored_at": "2024-05-14T20:53",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Miles Davis",
+   "album": "Kind of Blue",
+   "artist_id": 7,
+   "tint": "#22324A",
+   "via_phone": false
+  },
+  {
+   "id": 57,
+   "type": "track",
+   "display_name": "Naima",
+   "spotify_uri": "spotify:track:jUCNYwSCKNlvU1eQFpenP2",
+   "status": "explored",
+   "priority": null,
+   "rating": 4,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz"
+   ],
+   "added_at": "2025-02-25T21:05",
+   "explored_at": "2025-02-28T21:05",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "John Coltrane",
+   "album": "Giant Steps",
+   "artist_id": 8,
+   "tint": "#3B3B44",
+   "via_phone": false
+  },
+  {
+   "id": 58,
+   "type": "track",
+   "display_name": "Peace Piece",
+   "spotify_uri": "spotify:track:4pw3GCl4vcLNHLzzd2Glji",
+   "status": "explored",
+   "priority": null,
+   "rating": 5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz",
+    "piano"
+   ],
+   "added_at": "2025-12-22T20:02",
+   "explored_at": "2026-01-07T20:02",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Bill Evans",
+   "album": "Everybody Digs Bill Evans",
+   "artist_id": 13,
+   "tint": "#2F3B4A",
+   "via_phone": false
+  },
+  {
+   "id": 59,
+   "type": "track",
+   "display_name": "Lonnie's Lament",
+   "spotify_uri": "spotify:track:J0kmcwpeyy41qE6UjzTznO",
+   "status": "explored",
+   "priority": null,
+   "rating": 2,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "jazz"
+   ],
+   "added_at": "2026-02-10T18:59",
+   "explored_at": "2026-02-20T18:59",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "John Coltrane",
+   "album": "Crescent",
+   "artist_id": 8,
+   "tint": "#3B3B44",
+   "via_phone": false
+  },
+  {
+   "id": 60,
+   "type": "track",
+   "display_name": "Smooth Operator",
+   "spotify_uri": "spotify:track:qV8xVB0pxlJqin9cFKtKTN",
+   "status": "explored",
+   "priority": null,
+   "rating": 1.5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "not-jazz"
+   ],
+   "added_at": "2025-06-05T16:58",
+   "explored_at": "2025-06-20T16:58",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Sade",
+   "album": "Diamond Life",
+   "artist_id": null,
+   "tint": "#5A4A3B",
+   "via_phone": false
+  },
+  {
+   "id": 61,
+   "type": "track",
+   "display_name": "Glow",
+   "spotify_uri": "spotify:track:CPmAFQ4f2UZYKARu64Gd5D",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [
+    "electronic"
+   ],
+   "added_at": "2026-10-09T10:32",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Kelly Lee Owens",
+   "album": "Inner Song",
+   "artist_id": 14,
+   "tint": "#4A4F59",
+   "via_phone": false
+  },
+  {
+   "id": 62,
+   "type": "track",
+   "display_name": "Turn Around",
+   "spotify_uri": "spotify:track:VjSBE8QTdvhFlYsngm7nrI",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-10-17T11:26",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Ruth Radelet",
+   "album": "Turn Around (single)",
+   "artist_id": null,
+   "tint": "#4A4F59",
+   "via_phone": true
+  },
+  {
+   "id": 63,
+   "type": "track",
+   "display_name": "Pyramids",
+   "spotify_uri": "spotify:track:aHNGlGCSFBFF9IuwbCK4PG",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "Meera",
+   "tags": [
+    "r-and-b"
+   ],
+   "added_at": "2026-10-14T17:17",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Frank Ocean",
+   "album": "channel ORANGE",
+   "artist_id": null,
+   "tint": "#5C3D30",
+   "via_phone": false
+  },
+  {
+   "id": 64,
+   "type": "track",
+   "display_name": "Sun Is Shining",
+   "spotify_uri": "spotify:track:XEfp6fT260UuqErSwN2uIE",
+   "status": "planned",
+   "priority": null,
+   "rating": null,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": true,
+   "recommended_by": "",
+   "tags": [],
+   "added_at": "2026-10-15T15:32",
+   "explored_at": null,
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Bob Marley",
+   "album": "Kaya",
+   "artist_id": null,
+   "tint": "#5A6B3B",
+   "via_phone": false
+  },
+  {
+   "id": 65,
+   "type": "track",
+   "display_name": "Journey in Satchidananda",
+   "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+   "status": "explored",
+   "priority": null,
+   "rating": 4.5,
+   "review": "",
+   "notes": "",
+   "favourite": false,
+   "revisit": false,
+   "in_backlog": false,
+   "recommended_by": "",
+   "tags": [
+    "spiritual"
+   ],
+   "added_at": "2026-06-20T11:03",
+   "explored_at": "2026-06-28T11:03",
+   "reviewed_at": null,
+   "provenance": {
+    "display_name": "promoted"
+   },
+   "artist": "Alice Coltrane",
+   "album": "Journey in Satchidananda",
+   "artist_id": 1,
+   "tint": "#3D5A4A",
+   "via_phone": false
+  }
+ ],
+ "captures": [
+  {
+   "id": 1,
+   "raw_link": "open.spotify.com/album/dMD2NL92DG2ckfwDq0qKQh",
+   "received_at": "2026-10-18T09:41",
+   "source": "shortcut",
+   "state": "name_needed"
+  },
+  {
+   "id": 2,
+   "raw_link": "spotify.link/NBdJ4D2",
+   "received_at": "2026-10-17T22:05",
+   "source": "shortcut",
+   "state": "unresolved"
+  }
+ ],
+ "history": [
+  {
+   "item_id": 1,
+   "from": "",
+   "to": "planned",
+   "at": "2026-04-06T11:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 1,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-04-07T11:00",
+   "note": ""
+  },
+  {
+   "item_id": 2,
+   "from": "",
+   "to": "planned",
+   "at": "2026-08-19T22:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 2,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-08-20T22:00",
+   "note": ""
+  },
+  {
+   "item_id": 2,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-09-01T22:00",
+   "note": ""
+  },
+  {
+   "item_id": 3,
+   "from": "",
+   "to": "planned",
+   "at": "2026-04-14T17:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 4,
+   "from": "",
+   "to": "planned",
+   "at": "2026-04-11T16:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 4,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-04-12T16:00",
+   "note": ""
+  },
+  {
+   "item_id": 4,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-05-05T16:00",
+   "note": ""
+  },
+  {
+   "item_id": 5,
+   "from": "",
+   "to": "planned",
+   "at": "2026-02-16T11:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 5,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-02-17T11:00",
+   "note": ""
+  },
+  {
+   "item_id": 5,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-03-08T11:00",
+   "note": ""
+  },
+  {
+   "item_id": 6,
+   "from": "",
+   "to": "planned",
+   "at": "2026-01-28T10:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 6,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-01-29T10:00",
+   "note": ""
+  },
+  {
+   "item_id": 7,
+   "from": "",
+   "to": "planned",
+   "at": "2026-03-25T09:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 7,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-03-26T09:00",
+   "note": ""
+  },
+  {
+   "item_id": 7,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-04-18T09:00",
+   "note": ""
+  },
+  {
+   "item_id": 8,
+   "from": "",
+   "to": "planned",
+   "at": "2026-04-29T11:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 8,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-04-30T11:00",
+   "note": ""
+  },
+  {
+   "item_id": 8,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-05-22T11:00",
+   "note": ""
+  },
+  {
+   "item_id": 9,
+   "from": "",
+   "to": "planned",
+   "at": "2026-06-17T13:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 10,
+   "from": "",
+   "to": "planned",
+   "at": "2025-06-30T21:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 10,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-07-01T21:00",
+   "note": ""
+  },
+  {
+   "item_id": 10,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-07-22T21:00",
+   "note": ""
+  },
+  {
+   "item_id": 11,
+   "from": "",
+   "to": "planned",
+   "at": "2026-07-29T14:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 12,
+   "from": "",
+   "to": "planned",
+   "at": "2026-04-12T10:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 12,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-04-13T10:00",
+   "note": ""
+  },
+  {
+   "item_id": 12,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-04-26T10:00",
+   "note": ""
+  },
+  {
+   "item_id": 13,
+   "from": "",
+   "to": "planned",
+   "at": "2025-12-22T13:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 13,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-12-23T13:00",
+   "note": ""
+  },
+  {
+   "item_id": 13,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-01-03T13:00",
+   "note": ""
+  },
+  {
+   "item_id": 14,
+   "from": "",
+   "to": "planned",
+   "at": "2026-06-11T21:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 15,
+   "from": "",
+   "to": "planned",
+   "at": "2026-02-02T21:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 15,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-02-03T21:00",
+   "note": ""
+  },
+  {
+   "item_id": 15,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-02-23T21:00",
+   "note": ""
+  },
+  {
+   "item_id": 16,
+   "from": "",
+   "to": "planned",
+   "at": "2026-08-06T22:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 16,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-08-07T22:00",
+   "note": ""
+  },
+  {
+   "item_id": 16,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-08-19T22:00",
+   "note": ""
+  },
+  {
+   "item_id": 17,
+   "from": "",
+   "to": "planned",
+   "at": "2026-06-20T10:46",
+   "note": "Added"
+  },
+  {
+   "item_id": 17,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-06-21T10:46",
+   "note": ""
+  },
+  {
+   "item_id": 17,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-06-27T10:46",
+   "note": ""
+  },
+  {
+   "item_id": 17,
+   "from": "",
+   "to": "review",
+   "at": "2026-06-28T10:46",
+   "note": "Review written"
+  },
+  {
+   "item_id": 18,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-12T11:33",
+   "note": "Added"
+  },
+  {
+   "item_id": 19,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-04T12:03",
+   "note": "Shared from iPhone, named on PC"
+  },
+  {
+   "item_id": 19,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-10-05T12:03",
+   "note": ""
+  },
+  {
+   "item_id": 19,
+   "from": "",
+   "to": "review",
+   "at": "2026-10-18T12:03",
+   "note": "Review written"
+  },
+  {
+   "item_id": 20,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-18T08:49",
+   "note": "Added"
+  },
+  {
+   "item_id": 21,
+   "from": "",
+   "to": "planned",
+   "at": "2026-03-22T15:12",
+   "note": "Added"
+  },
+  {
+   "item_id": 21,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-03-23T15:12",
+   "note": ""
+  },
+  {
+   "item_id": 21,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-04-01T15:12",
+   "note": ""
+  },
+  {
+   "item_id": 21,
+   "from": "",
+   "to": "review",
+   "at": "2026-03-26T15:12",
+   "note": "Review written"
+  },
+  {
+   "item_id": 22,
+   "from": "",
+   "to": "planned",
+   "at": "2026-09-13T23:32",
+   "note": "Added"
+  },
+  {
+   "item_id": 22,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-09-14T23:32",
+   "note": ""
+  },
+  {
+   "item_id": 22,
+   "from": "",
+   "to": "review",
+   "at": "2026-09-23T23:32",
+   "note": "Review written"
+  },
+  {
+   "item_id": 23,
+   "from": "",
+   "to": "planned",
+   "at": "2025-09-13T15:27",
+   "note": "Added"
+  },
+  {
+   "item_id": 23,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-09-14T15:27",
+   "note": ""
+  },
+  {
+   "item_id": 23,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-09-17T15:27",
+   "note": ""
+  },
+  {
+   "item_id": 24,
+   "from": "",
+   "to": "planned",
+   "at": "2026-09-25T11:25",
+   "note": "Added"
+  },
+  {
+   "item_id": 25,
+   "from": "",
+   "to": "planned",
+   "at": "2024-05-01T22:28",
+   "note": "Added"
+  },
+  {
+   "item_id": 25,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2024-05-02T22:28",
+   "note": ""
+  },
+  {
+   "item_id": 25,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2024-05-03T22:28",
+   "note": ""
+  },
+  {
+   "item_id": 25,
+   "from": "",
+   "to": "review",
+   "at": "2024-05-16T22:28",
+   "note": "Review written"
+  },
+  {
+   "item_id": 26,
+   "from": "",
+   "to": "planned",
+   "at": "2026-05-31T12:52",
+   "note": "Added"
+  },
+  {
+   "item_id": 26,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-06-01T12:52",
+   "note": ""
+  },
+  {
+   "item_id": 26,
+   "from": "in_progress",
+   "to": "abandoned",
+   "at": "2026-06-05T12:52",
+   "note": ""
+  },
+  {
+   "item_id": 26,
+   "from": "",
+   "to": "review",
+   "at": "2026-06-16T12:52",
+   "note": "Review written"
+  },
+  {
+   "item_id": 27,
+   "from": "",
+   "to": "planned",
+   "at": "2024-11-17T10:17",
+   "note": "Added"
+  },
+  {
+   "item_id": 27,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2024-11-18T10:17",
+   "note": ""
+  },
+  {
+   "item_id": 27,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2024-11-19T10:17",
+   "note": ""
+  },
+  {
+   "item_id": 27,
+   "from": "",
+   "to": "review",
+   "at": "2024-12-10T10:17",
+   "note": "Review written"
+  },
+  {
+   "item_id": 28,
+   "from": "",
+   "to": "planned",
+   "at": "2025-12-22T15:07",
+   "note": "Added"
+  },
+  {
+   "item_id": 28,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-12-23T15:07",
+   "note": ""
+  },
+  {
+   "item_id": 28,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-12-29T15:07",
+   "note": ""
+  },
+  {
+   "item_id": 29,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-16T08:01",
+   "note": "Added"
+  },
+  {
+   "item_id": 30,
+   "from": "",
+   "to": "planned",
+   "at": "2026-05-11T14:14",
+   "note": "Added"
+  },
+  {
+   "item_id": 30,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-05-12T14:14",
+   "note": ""
+  },
+  {
+   "item_id": 30,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-05-23T14:14",
+   "note": ""
+  },
+  {
+   "item_id": 30,
+   "from": "",
+   "to": "review",
+   "at": "2026-05-20T14:14",
+   "note": "Review written"
+  },
+  {
+   "item_id": 31,
+   "from": "",
+   "to": "planned",
+   "at": "2026-08-15T20:55",
+   "note": "Added"
+  },
+  {
+   "item_id": 32,
+   "from": "",
+   "to": "planned",
+   "at": "2026-01-31T17:13",
+   "note": "Added"
+  },
+  {
+   "item_id": 32,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-02-01T17:13",
+   "note": ""
+  },
+  {
+   "item_id": 32,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-02-13T17:13",
+   "note": ""
+  },
+  {
+   "item_id": 33,
+   "from": "",
+   "to": "planned",
+   "at": "2025-11-22T20:01",
+   "note": "Added"
+  },
+  {
+   "item_id": 33,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-11-23T20:01",
+   "note": ""
+  },
+  {
+   "item_id": 33,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-12-03T20:01",
+   "note": ""
+  },
+  {
+   "item_id": 33,
+   "from": "",
+   "to": "review",
+   "at": "2025-12-04T20:01",
+   "note": "Review written"
+  },
+  {
+   "item_id": 34,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-09T12:02",
+   "note": "Added"
+  },
+  {
+   "item_id": 35,
+   "from": "",
+   "to": "planned",
+   "at": "2025-06-05T15:05",
+   "note": "Added"
+  },
+  {
+   "item_id": 35,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-06-06T15:05",
+   "note": ""
+  },
+  {
+   "item_id": 35,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-06-07T15:05",
+   "note": ""
+  },
+  {
+   "item_id": 36,
+   "from": "",
+   "to": "planned",
+   "at": "2026-05-21T10:47",
+   "note": "Added"
+  },
+  {
+   "item_id": 37,
+   "from": "",
+   "to": "planned",
+   "at": "2026-03-12T22:31",
+   "note": "Added"
+  },
+  {
+   "item_id": 37,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-03-13T22:31",
+   "note": ""
+  },
+  {
+   "item_id": 37,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-03-26T22:31",
+   "note": ""
+  },
+  {
+   "item_id": 38,
+   "from": "",
+   "to": "planned",
+   "at": "2026-09-18T12:00",
+   "note": "Added"
+  },
+  {
+   "item_id": 39,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-12T17:05",
+   "note": "Added"
+  },
+  {
+   "item_id": 40,
+   "from": "",
+   "to": "planned",
+   "at": "2026-08-04T16:23",
+   "note": "Added"
+  },
+  {
+   "item_id": 41,
+   "from": "",
+   "to": "planned",
+   "at": "2026-06-20T22:25",
+   "note": "Added"
+  },
+  {
+   "item_id": 42,
+   "from": "",
+   "to": "planned",
+   "at": "2026-05-21T17:16",
+   "note": "Added"
+  },
+  {
+   "item_id": 43,
+   "from": "",
+   "to": "planned",
+   "at": "2026-04-21T12:15",
+   "note": "Added"
+  },
+  {
+   "item_id": 44,
+   "from": "",
+   "to": "planned",
+   "at": "2025-02-25T10:03",
+   "note": "Added"
+  },
+  {
+   "item_id": 44,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-02-26T10:03",
+   "note": ""
+  },
+  {
+   "item_id": 44,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-03-12T10:03",
+   "note": ""
+  },
+  {
+   "item_id": 45,
+   "from": "",
+   "to": "planned",
+   "at": "2025-08-24T16:25",
+   "note": "Added"
+  },
+  {
+   "item_id": 45,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-08-25T16:25",
+   "note": ""
+  },
+  {
+   "item_id": 45,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-09-02T16:25",
+   "note": ""
+  },
+  {
+   "item_id": 46,
+   "from": "",
+   "to": "planned",
+   "at": "2025-10-03T21:08",
+   "note": "Added"
+  },
+  {
+   "item_id": 46,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-10-04T21:08",
+   "note": ""
+  },
+  {
+   "item_id": 46,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-10-22T21:08",
+   "note": ""
+  },
+  {
+   "item_id": 47,
+   "from": "",
+   "to": "planned",
+   "at": "2025-07-25T14:24",
+   "note": "Added"
+  },
+  {
+   "item_id": 47,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-07-26T14:24",
+   "note": ""
+  },
+  {
+   "item_id": 47,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-08-04T14:24",
+   "note": ""
+  },
+  {
+   "item_id": 48,
+   "from": "",
+   "to": "planned",
+   "at": "2026-07-20T20:41",
+   "note": "Added"
+  },
+  {
+   "item_id": 48,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-07-21T20:41",
+   "note": ""
+  },
+  {
+   "item_id": 48,
+   "from": "in_progress",
+   "to": "not_for_me",
+   "at": "2026-08-05T20:41",
+   "note": ""
+  },
+  {
+   "item_id": 48,
+   "from": "",
+   "to": "review",
+   "at": "2026-08-05T20:41",
+   "note": "Review written"
+  },
+  {
+   "item_id": 49,
+   "from": "",
+   "to": "planned",
+   "at": "2026-01-31T22:28",
+   "note": "Added"
+  },
+  {
+   "item_id": 49,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-02-01T22:28",
+   "note": ""
+  },
+  {
+   "item_id": 49,
+   "from": "in_progress",
+   "to": "not_for_me",
+   "at": "2026-02-09T22:28",
+   "note": ""
+  },
+  {
+   "item_id": 50,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-04T12:14",
+   "note": "Added"
+  },
+  {
+   "item_id": 50,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-10-05T12:14",
+   "note": ""
+  },
+  {
+   "item_id": 50,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-10-18T20:20",
+   "note": ""
+  },
+  {
+   "item_id": 51,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-18T20:16",
+   "note": "Added"
+  },
+  {
+   "item_id": 52,
+   "from": "",
+   "to": "planned",
+   "at": "2026-03-22T21:45",
+   "note": "Added"
+  },
+  {
+   "item_id": 52,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-03-23T21:45",
+   "note": ""
+  },
+  {
+   "item_id": 52,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-04-02T21:45",
+   "note": ""
+  },
+  {
+   "item_id": 53,
+   "from": "",
+   "to": "planned",
+   "at": "2026-09-08T19:43",
+   "note": "Added"
+  },
+  {
+   "item_id": 53,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-09-09T19:43",
+   "note": ""
+  },
+  {
+   "item_id": 53,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-09-22T19:43",
+   "note": ""
+  },
+  {
+   "item_id": 54,
+   "from": "",
+   "to": "planned",
+   "at": "2025-09-13T11:39",
+   "note": "Added"
+  },
+  {
+   "item_id": 54,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-09-14T11:39",
+   "note": ""
+  },
+  {
+   "item_id": 54,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-09-30T11:39",
+   "note": ""
+  },
+  {
+   "item_id": 55,
+   "from": "",
+   "to": "planned",
+   "at": "2026-09-13T09:11",
+   "note": "Added"
+  },
+  {
+   "item_id": 55,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-09-14T09:11",
+   "note": ""
+  },
+  {
+   "item_id": 55,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-09-27T09:11",
+   "note": ""
+  },
+  {
+   "item_id": 56,
+   "from": "",
+   "to": "planned",
+   "at": "2024-05-01T20:53",
+   "note": "Added"
+  },
+  {
+   "item_id": 56,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2024-05-02T20:53",
+   "note": ""
+  },
+  {
+   "item_id": 56,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2024-05-14T20:53",
+   "note": ""
+  },
+  {
+   "item_id": 57,
+   "from": "",
+   "to": "planned",
+   "at": "2025-02-25T21:05",
+   "note": "Added"
+  },
+  {
+   "item_id": 57,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-02-26T21:05",
+   "note": ""
+  },
+  {
+   "item_id": 57,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-02-28T21:05",
+   "note": ""
+  },
+  {
+   "item_id": 58,
+   "from": "",
+   "to": "planned",
+   "at": "2025-12-22T20:02",
+   "note": "Added"
+  },
+  {
+   "item_id": 58,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-12-23T20:02",
+   "note": ""
+  },
+  {
+   "item_id": 58,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-01-07T20:02",
+   "note": ""
+  },
+  {
+   "item_id": 59,
+   "from": "",
+   "to": "planned",
+   "at": "2026-02-10T18:59",
+   "note": "Added"
+  },
+  {
+   "item_id": 59,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-02-11T18:59",
+   "note": ""
+  },
+  {
+   "item_id": 59,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-02-20T18:59",
+   "note": ""
+  },
+  {
+   "item_id": 60,
+   "from": "",
+   "to": "planned",
+   "at": "2025-06-05T16:58",
+   "note": "Added"
+  },
+  {
+   "item_id": 60,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2025-06-06T16:58",
+   "note": ""
+  },
+  {
+   "item_id": 60,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2025-06-20T16:58",
+   "note": ""
+  },
+  {
+   "item_id": 61,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-09T10:32",
+   "note": "Added"
+  },
+  {
+   "item_id": 62,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-17T11:26",
+   "note": "Shared from iPhone, named on PC"
+  },
+  {
+   "item_id": 63,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-14T17:17",
+   "note": "Added"
+  },
+  {
+   "item_id": 64,
+   "from": "",
+   "to": "planned",
+   "at": "2026-10-15T15:32",
+   "note": "Added"
+  },
+  {
+   "item_id": 65,
+   "from": "",
+   "to": "planned",
+   "at": "2026-06-20T11:03",
+   "note": "Added"
+  },
+  {
+   "item_id": 65,
+   "from": "planned",
+   "to": "in_progress",
+   "at": "2026-06-21T11:03",
+   "note": ""
+  },
+  {
+   "item_id": 65,
+   "from": "in_progress",
+   "to": "explored",
+   "at": "2026-06-28T11:03",
+   "note": ""
+  }
+ ],
+ "saved_filters": [
+  {
+   "id": 1,
+   "name": "5 star jazz",
+   "definition": {
+    "tags": [
+     "jazz"
+    ],
+    "min_rating": 5
+   }
+  },
+  {
+   "id": 2,
+   "name": "Late night, explored",
+   "definition": {
+    "tags": [
+     "late-night"
+    ],
+    "status": "explored"
+   }
+  }
+ ],
+ "counts": {
+  "library": 65,
+  "albums": 33,
+  "tracks": 16,
+  "artists": 16,
+  "backlog": 26,
+  "in_progress": 4,
+  "revisit": 4,
+  "playlists": 6
+ },
+ "listening": {
+  "recent": [
+   {
+    "ended_at": "2026-10-18T21:20",
+    "ms": 252000,
+    "track": "Love Is Everywhere",
+    "artist": "Pharoah Sanders",
+    "album": "Thembi",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "now_playing": true,
+    "duration_ms": 571000,
+    "spotify_uri": "spotify:track:Eoc00YJTHzKfruFUXFZF1z",
+    "item_id": 51,
+    "rating": null
+   },
+   {
+    "ended_at": "2026-10-17T23:42",
+    "ms": 417177,
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "album": "Hope (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "item_id": 53,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T23:17",
+    "ms": 358881,
+    "track": "Naima",
+    "artist": "John Coltrane",
+    "album": "Giant Steps",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:jUCNYwSCKNlvU1eQFpenP2",
+    "item_id": 57,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T23:17",
+    "ms": 481425,
+    "track": "Blue in Green",
+    "artist": "Miles Davis",
+    "album": "Kind of Blue",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:LSA605H5MQzu7ZzmDOMnqJ",
+    "item_id": 56,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T22:42",
+    "ms": 318144,
+    "track": "Teardrop",
+    "artist": "Massive Attack",
+    "album": "Mezzanine",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:dBvEVQwg3yc9xP3D1c9Q3j",
+    "item_id": 54,
+    "rating": null
+   },
+   {
+    "ended_at": "2026-10-17T22:29",
+    "ms": 417177,
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "album": "Hope (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "item_id": 53,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T22:29",
+    "ms": 358881,
+    "track": "Naima",
+    "artist": "John Coltrane",
+    "album": "Giant Steps",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:jUCNYwSCKNlvU1eQFpenP2",
+    "item_id": 57,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T22:17",
+    "ms": 280282,
+    "track": "Running Up That Hill",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:SvjuKk75xALCBfxXlT2Jgk",
+    "item_id": 55,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T21:49",
+    "ms": 288581,
+    "track": "Freddie Freeloader",
+    "artist": "Miles Davis",
+    "album": "Kind of Blue",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:l24sbmNCqzqYvg4utmwjyO",
+    "item_id": 25,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T21:44",
+    "ms": 334674,
+    "track": "Pyramids",
+    "artist": "Frank Ocean",
+    "album": "channel ORANGE",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:aHNGlGCSFBFF9IuwbCK4PG",
+    "item_id": 63,
+    "rating": null
+   },
+   {
+    "ended_at": "2026-10-17T21:32",
+    "ms": 417177,
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "album": "Hope (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "item_id": 53,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T21:30",
+    "ms": 12675,
+    "track": "La femme d'argent",
+    "artist": "Air",
+    "album": "Moon Safari",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": true,
+    "private": false,
+    "counts": false,
+    "spotify_uri": "spotify:track:nNLPFrLjRrapwKqPsZ3KX9",
+    "item_id": 32,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T21:27",
+    "ms": 245080,
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "album": "cold/mess (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "item_id": 52,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T21:17",
+    "ms": 322818,
+    "track": "Running Up That Hill",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:SvjuKk75xALCBfxXlT2Jgk",
+    "item_id": 55,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T21:04",
+    "ms": 336734,
+    "track": "Movement 6",
+    "artist": "Floating Points",
+    "album": "Promises",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:w2fjJz8eGXeRim764JXybC",
+    "item_id": 50,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T20:32",
+    "ms": 6589,
+    "track": "Blue Train",
+    "artist": "John Coltrane",
+    "album": "Blue Train",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": true,
+    "private": false,
+    "counts": false,
+    "spotify_uri": "spotify:track:Jv3lTrophbAROqeoytWJlz",
+    "item_id": 28,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T20:11",
+    "ms": 458299,
+    "track": "Movement 3",
+    "artist": "Floating Points",
+    "album": "Promises",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:4tlejaCm7V2WXvnUCagQ0k",
+    "item_id": 19,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-17T19:54",
+    "ms": 417177,
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "album": "Hope (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "item_id": 53,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T19:40",
+    "ms": 336734,
+    "track": "Movement 6",
+    "artist": "Floating Points",
+    "album": "Promises",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:w2fjJz8eGXeRim764JXybC",
+    "item_id": 50,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T19:38",
+    "ms": 245080,
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "album": "cold/mess (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "item_id": 52,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T19:09",
+    "ms": 519115,
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "item_id": 65,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-17T18:44",
+    "ms": 465172,
+    "track": "Black Milk",
+    "artist": "Massive Attack",
+    "album": "Mezzanine",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:IYVcBkwCJPL16IMwkCa9BQ",
+    "item_id": 23,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-17T18:41",
+    "ms": 469695,
+    "track": "So What",
+    "artist": "Miles Davis",
+    "album": "Kind of Blue",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:XZcOfK0olsVOSJBYJp9RaO",
+    "item_id": 25,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T18:36",
+    "ms": 529449,
+    "track": "Kelly Watch the Stars",
+    "artist": "Air",
+    "album": "Moon Safari",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:WZWjrmy7ezkW6TrhPYAzzC",
+    "item_id": 32,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T18:12",
+    "ms": 203448,
+    "track": "Where Pathways Meet",
+    "artist": "Sun Ra",
+    "album": "Lanquidity",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:w1siPmBCp6P4JYr6KsOQDn",
+    "item_id": null,
+    "rating": null
+   },
+   {
+    "ended_at": "2026-10-17T16:39",
+    "ms": 305260,
+    "track": "And Dream of Sheep",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:5nrI0DDJ3ygsPCX2mE7Lmq",
+    "item_id": 22,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T16:13",
+    "ms": 245080,
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "album": "cold/mess (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "item_id": 52,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T16:11",
+    "ms": 233808,
+    "track": "All I Need",
+    "artist": "Air",
+    "album": "Moon Safari",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:Z4muahHVRYWuS43M4h9Y3V",
+    "item_id": 32,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T16:09",
+    "ms": 508607,
+    "track": "Flamenco Sketches",
+    "artist": "Miles Davis",
+    "album": "Kind of Blue",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:zCGzk6Azg6CO99oJkJRHC6",
+    "item_id": 25,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T15:14",
+    "ms": 325979,
+    "track": "Let It Happen",
+    "artist": "Tame Impala",
+    "album": "Currents",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:ROIj1EJp4pU64b9CojSpTo",
+    "item_id": null,
+    "rating": null
+   },
+   {
+    "ended_at": "2026-10-17T14:33",
+    "ms": 279379,
+    "track": "Lonnie's Lament",
+    "artist": "John Coltrane",
+    "album": "Crescent",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:J0kmcwpeyy41qE6UjzTznO",
+    "item_id": 59,
+    "rating": 2
+   },
+   {
+    "ended_at": "2026-10-17T14:22",
+    "ms": 192326,
+    "track": "Blue in Green",
+    "artist": "Miles Davis",
+    "album": "Kind of Blue",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:LSA605H5MQzu7ZzmDOMnqJ",
+    "item_id": 56,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T14:20",
+    "ms": 203448,
+    "track": "Where Pathways Meet",
+    "artist": "Sun Ra",
+    "album": "Lanquidity",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:w1siPmBCp6P4JYr6KsOQDn",
+    "item_id": null,
+    "rating": null
+   },
+   {
+    "ended_at": "2026-10-17T13:35",
+    "ms": 417177,
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "album": "Hope (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "item_id": 53,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T13:17",
+    "ms": 12448,
+    "track": "Glow",
+    "artist": "Kelly Lee Owens",
+    "album": "Inner Song",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": true,
+    "private": false,
+    "counts": false,
+    "spotify_uri": "spotify:track:CPmAFQ4f2UZYKARu64Gd5D",
+    "item_id": 61,
+    "rating": null
+   },
+   {
+    "ended_at": "2026-10-17T12:57",
+    "ms": 241806,
+    "track": "Cloudbusting",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:mF5k3kQWl8I0Ct027OVmLJ",
+    "item_id": 22,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T12:35",
+    "ms": 238253,
+    "track": "Under Ice",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:0O96Z6YI8g9tqOH7wlQm1T",
+    "item_id": 22,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T12:22",
+    "ms": 340274,
+    "track": "Teardrop",
+    "artist": "Massive Attack",
+    "album": "Mezzanine",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:dBvEVQwg3yc9xP3D1c9Q3j",
+    "item_id": 54,
+    "rating": null
+   },
+   {
+    "ended_at": "2026-10-17T12:11",
+    "ms": 386231,
+    "track": "Hounds of Love",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:91DCgT31kOqbiDnuVQ0Apu",
+    "item_id": 22,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T11:54",
+    "ms": 500809,
+    "track": "Blue Train",
+    "artist": "John Coltrane",
+    "album": "Blue Train",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:Jv3lTrophbAROqeoytWJlz",
+    "item_id": 28,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T11:20",
+    "ms": 500809,
+    "track": "Blue Train",
+    "artist": "John Coltrane",
+    "album": "Blue Train",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:Jv3lTrophbAROqeoytWJlz",
+    "item_id": 28,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-17T08:44",
+    "ms": 211065,
+    "track": "Resolution",
+    "artist": "John Coltrane",
+    "album": "A Love Supreme",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:hPTjDxGbm0oOTY5YpMn4EP",
+    "item_id": 27,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-17T07:51",
+    "ms": 519115,
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "item_id": 65,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-17T07:22",
+    "ms": 460111,
+    "track": "Hunter",
+    "artist": "Bjork",
+    "album": "Homogenic",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:gKTa0UlfsUWLbYOFqeoltO",
+    "item_id": 37,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-16T22:53",
+    "ms": 320341,
+    "track": "Weird Fishes/Arpeggi",
+    "artist": "Radiohead",
+    "album": "In Rainbows",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:LRtPvD5MwokCfUEI7bcnF7",
+    "item_id": 35,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-16T22:39",
+    "ms": 15008,
+    "track": "I'm Old Fashioned",
+    "artist": "John Coltrane",
+    "album": "Blue Train",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": true,
+    "private": false,
+    "counts": false,
+    "spotify_uri": "spotify:track:VRde5gvN9xJsO35qavKoy8",
+    "item_id": 28,
+    "rating": 4
+   },
+   {
+    "ended_at": "2026-10-16T22:06",
+    "ms": 277193,
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "item_id": 65,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-16T21:20",
+    "ms": 305260,
+    "track": "And Dream of Sheep",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:5nrI0DDJ3ygsPCX2mE7Lmq",
+    "item_id": 22,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-16T20:58",
+    "ms": 212575,
+    "track": "Isis and Osiris",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:zkEauJoDPdb4awA92176dx",
+    "item_id": 17,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-16T20:44",
+    "ms": 220874,
+    "track": "Something About John Coltrane",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:inGbE8LTfuiFWCHJmjqrd9",
+    "item_id": 17,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-16T20:40",
+    "ms": 245080,
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "album": "cold/mess (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "item_id": 52,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-16T17:01",
+    "ms": 470328,
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "album": "cold/mess (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "item_id": 52,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-16T15:36",
+    "ms": 508607,
+    "track": "Flamenco Sketches",
+    "artist": "Miles Davis",
+    "album": "Kind of Blue",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:zCGzk6Azg6CO99oJkJRHC6",
+    "item_id": 25,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-16T14:38",
+    "ms": 277193,
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "item_id": 65,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-16T12:55",
+    "ms": 345982,
+    "track": "That's How I Feel",
+    "artist": "Sun Ra",
+    "album": "Lanquidity",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:p6xM38QT3hH7Maq12EW6qg",
+    "item_id": null,
+    "rating": null
+   },
+   {
+    "ended_at": "2026-10-16T11:41",
+    "ms": 277193,
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "item_id": 65,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-16T10:20",
+    "ms": 180891,
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": true,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "item_id": 65,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-16T10:17",
+    "ms": 245080,
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "album": "cold/mess (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "item_id": 52,
+    "rating": 5
+   },
+   {
+    "ended_at": "2026-10-16T08:40",
+    "ms": 226791,
+    "track": "Movement 4",
+    "artist": "Floating Points",
+    "album": "Promises",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:pZZAQCqAhEHHbblvb1EZKy",
+    "item_id": 19,
+    "rating": 4.5
+   },
+   {
+    "ended_at": "2026-10-16T07:38",
+    "ms": 417177,
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "album": "Hope (single)",
+    "source": "logger",
+    "platform": "windows",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "item_id": 53,
+    "rating": 4
+   }
+  ],
+  "earlier_desktop": 265,
+  "unmatched": [
+   {
+    "track": "Teardrop",
+    "artist": "Massive Attack",
+    "detail": "You have the track and the album Mezzanine",
+    "choice": "Link to the track",
+    "plays": 3
+   },
+   {
+    "track": "Running Up That Hill",
+    "artist": "Kate Bush",
+    "detail": "You have the track and the album Hounds of Love",
+    "choice": "Link to the track",
+    "plays": 2
+   },
+   {
+    "track": "Blue in Green",
+    "artist": "Miles Davis",
+    "detail": "Track and album both in your library",
+    "choice": "Link to the track",
+    "plays": 1
+   }
+  ],
+  "charts": {
+   "7d": {
+    "artists": [
+     {
+      "name": "Prateek Kuhad",
+      "by": "",
+      "plays": 20,
+      "hours": 1.9,
+      "item_id": 4,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Alice Coltrane",
+      "by": "",
+      "plays": 22,
+      "hours": 1.9,
+      "item_id": 1,
+      "status": "in_progress",
+      "rating": null
+     },
+     {
+      "name": "Floating Points",
+      "by": "",
+      "plays": 20,
+      "hours": 1.7,
+      "item_id": 2,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "John Coltrane",
+      "by": "",
+      "plays": 17,
+      "hours": 1.6,
+      "item_id": 8,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Kate Bush",
+      "by": "",
+      "plays": 16,
+      "hours": 1.3,
+      "item_id": 5,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Miles Davis",
+      "by": "",
+      "plays": 13,
+      "hours": 1.3,
+      "item_id": 7,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Massive Attack",
+      "by": "",
+      "plays": 14,
+      "hours": 1.2,
+      "item_id": 6,
+      "status": "in_progress",
+      "rating": null
+     },
+     {
+      "name": "Radiohead",
+      "by": "",
+      "plays": 7,
+      "hours": 0.7,
+      "item_id": 15,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Kelly Lee Owens",
+      "by": "",
+      "plays": 4,
+      "hours": 0.4,
+      "item_id": 14,
+      "status": "planned",
+      "rating": null
+     },
+     {
+      "name": "Air",
+      "by": "",
+      "plays": 2,
+      "hours": 0.2,
+      "item_id": 12,
+      "status": "explored",
+      "rating": null
+     }
+    ],
+    "albums": [
+     {
+      "name": "Journey in Satchidananda",
+      "by": "Alice Coltrane",
+      "plays": 22,
+      "hours": 1.9,
+      "item_id": 17,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Promises",
+      "by": "Floating Points",
+      "plays": 20,
+      "hours": 1.7,
+      "item_id": 19,
+      "status": "in_progress",
+      "rating": 4.5
+     },
+     {
+      "name": "Hounds of Love",
+      "by": "Kate Bush",
+      "plays": 16,
+      "hours": 1.3,
+      "item_id": 22,
+      "status": "in_progress",
+      "rating": 5
+     },
+     {
+      "name": "Mezzanine",
+      "by": "Massive Attack",
+      "plays": 14,
+      "hours": 1.2,
+      "item_id": 23,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Kind of Blue",
+      "by": "Miles Davis",
+      "plays": 12,
+      "hours": 1.2,
+      "item_id": 25,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Hope (single)",
+      "by": "Prateek Kuhad",
+      "plays": 9,
+      "hours": 1.0,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "cold/mess (single)",
+      "by": "Prateek Kuhad",
+      "plays": 11,
+      "hours": 0.9,
+      "item_id": 21,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "In Rainbows",
+      "by": "Radiohead",
+      "plays": 7,
+      "hours": 0.7,
+      "item_id": 35,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Blue Train",
+      "by": "John Coltrane",
+      "plays": 5,
+      "hours": 0.6,
+      "item_id": 28,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "Crescent",
+      "by": "John Coltrane",
+      "plays": 7,
+      "hours": 0.5,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     }
+    ],
+    "tracks": [
+     {
+      "name": "Journey in Satchidananda",
+      "by": "Alice Coltrane",
+      "plays": 13,
+      "hours": 1.3,
+      "item_id": 65,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Hope",
+      "by": "Prateek Kuhad",
+      "plays": 9,
+      "hours": 1.0,
+      "item_id": 53,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "cold/mess",
+      "by": "Prateek Kuhad",
+      "plays": 11,
+      "hours": 0.9,
+      "item_id": 52,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Movement 6",
+      "by": "Floating Points",
+      "plays": 11,
+      "hours": 0.9,
+      "item_id": 50,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Teardrop",
+      "by": "Massive Attack",
+      "plays": 7,
+      "hours": 0.7,
+      "item_id": 54,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Lonnie's Lament",
+      "by": "John Coltrane",
+      "plays": 7,
+      "hours": 0.5,
+      "item_id": 59,
+      "status": "explored",
+      "rating": 2
+     },
+     {
+      "name": "Flamenco Sketches",
+      "by": "Miles Davis",
+      "plays": 3,
+      "hours": 0.4,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "Glow",
+      "by": "Kelly Lee Owens",
+      "plays": 4,
+      "hours": 0.4,
+      "item_id": 61,
+      "status": "planned",
+      "rating": null
+     },
+     {
+      "name": "Running Up That Hill",
+      "by": "Kate Bush",
+      "plays": 5,
+      "hours": 0.4,
+      "item_id": 55,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "Movement 3",
+      "by": "Floating Points",
+      "plays": 3,
+      "hours": 0.4,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     }
+    ]
+   },
+   "30d": {
+    "artists": [
+     {
+      "name": "Alice Coltrane",
+      "by": "",
+      "plays": 114,
+      "hours": 8.9,
+      "item_id": 1,
+      "status": "in_progress",
+      "rating": null
+     },
+     {
+      "name": "John Coltrane",
+      "by": "",
+      "plays": 84,
+      "hours": 8.7,
+      "item_id": 8,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Prateek Kuhad",
+      "by": "",
+      "plays": 59,
+      "hours": 5.6,
+      "item_id": 4,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Kate Bush",
+      "by": "",
+      "plays": 61,
+      "hours": 5.3,
+      "item_id": 5,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Massive Attack",
+      "by": "",
+      "plays": 57,
+      "hours": 5.1,
+      "item_id": 6,
+      "status": "in_progress",
+      "rating": null
+     },
+     {
+      "name": "Miles Davis",
+      "by": "",
+      "plays": 52,
+      "hours": 4.8,
+      "item_id": 7,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Floating Points",
+      "by": "",
+      "plays": 40,
+      "hours": 3.6,
+      "item_id": 2,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Radiohead",
+      "by": "",
+      "plays": 25,
+      "hours": 2.5,
+      "item_id": 15,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Bjork",
+      "by": "",
+      "plays": 12,
+      "hours": 1.2,
+      "item_id": 16,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Air",
+      "by": "",
+      "plays": 8,
+      "hours": 0.7,
+      "item_id": 12,
+      "status": "explored",
+      "rating": null
+     }
+    ],
+    "albums": [
+     {
+      "name": "Journey in Satchidananda",
+      "by": "Alice Coltrane",
+      "plays": 114,
+      "hours": 8.9,
+      "item_id": 17,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Hounds of Love",
+      "by": "Kate Bush",
+      "plays": 61,
+      "hours": 5.3,
+      "item_id": 22,
+      "status": "in_progress",
+      "rating": 5
+     },
+     {
+      "name": "Mezzanine",
+      "by": "Massive Attack",
+      "plays": 57,
+      "hours": 5.1,
+      "item_id": 23,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Kind of Blue",
+      "by": "Miles Davis",
+      "plays": 44,
+      "hours": 4.1,
+      "item_id": 25,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Promises",
+      "by": "Floating Points",
+      "plays": 40,
+      "hours": 3.6,
+      "item_id": 19,
+      "status": "in_progress",
+      "rating": 4.5
+     },
+     {
+      "name": "Blue Train",
+      "by": "John Coltrane",
+      "plays": 27,
+      "hours": 3.3,
+      "item_id": 28,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "Hope (single)",
+      "by": "Prateek Kuhad",
+      "plays": 27,
+      "hours": 3.1,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "cold/mess (single)",
+      "by": "Prateek Kuhad",
+      "plays": 32,
+      "hours": 2.5,
+      "item_id": 21,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "In Rainbows",
+      "by": "Radiohead",
+      "plays": 25,
+      "hours": 2.5,
+      "item_id": 35,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "A Love Supreme",
+      "by": "John Coltrane",
+      "plays": 20,
+      "hours": 2.2,
+      "item_id": 27,
+      "status": "explored",
+      "rating": 5
+     }
+    ],
+    "tracks": [
+     {
+      "name": "Journey in Satchidananda",
+      "by": "Alice Coltrane",
+      "plays": 53,
+      "hours": 4.9,
+      "item_id": 65,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Teardrop",
+      "by": "Massive Attack",
+      "plays": 35,
+      "hours": 3.3,
+      "item_id": 54,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Hope",
+      "by": "Prateek Kuhad",
+      "plays": 27,
+      "hours": 3.1,
+      "item_id": 53,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "cold/mess",
+      "by": "Prateek Kuhad",
+      "plays": 32,
+      "hours": 2.5,
+      "item_id": 52,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Naima",
+      "by": "John Coltrane",
+      "plays": 21,
+      "hours": 2.0,
+      "item_id": 57,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "Running Up That Hill",
+      "by": "Kate Bush",
+      "plays": 20,
+      "hours": 1.6,
+      "item_id": 55,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "Movement 6",
+      "by": "Floating Points",
+      "plays": 19,
+      "hours": 1.6,
+      "item_id": 50,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Blue in Green",
+      "by": "Miles Davis",
+      "plays": 18,
+      "hours": 1.4,
+      "item_id": 56,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Lonnie's Lament",
+      "by": "John Coltrane",
+      "plays": 16,
+      "hours": 1.2,
+      "item_id": 59,
+      "status": "explored",
+      "rating": 2
+     },
+     {
+      "name": "Something About John Coltrane",
+      "by": "Alice Coltrane",
+      "plays": 19,
+      "hours": 1.2,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     }
+    ]
+   },
+   "12m": {
+    "artists": [
+     {
+      "name": "Alice Coltrane",
+      "by": "",
+      "plays": 1069,
+      "hours": 85.1,
+      "item_id": 1,
+      "status": "in_progress",
+      "rating": null
+     },
+     {
+      "name": "John Coltrane",
+      "by": "",
+      "plays": 795,
+      "hours": 79.7,
+      "item_id": 8,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Prateek Kuhad",
+      "by": "",
+      "plays": 596,
+      "hours": 56.0,
+      "item_id": 4,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Miles Davis",
+      "by": "",
+      "plays": 537,
+      "hours": 48.3,
+      "item_id": 7,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Massive Attack",
+      "by": "",
+      "plays": 515,
+      "hours": 47.2,
+      "item_id": 6,
+      "status": "in_progress",
+      "rating": null
+     },
+     {
+      "name": "Radiohead",
+      "by": "",
+      "plays": 193,
+      "hours": 19.3,
+      "item_id": 15,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Bill Evans",
+      "by": "",
+      "plays": 146,
+      "hours": 16.1,
+      "item_id": 13,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Air",
+      "by": "",
+      "plays": 139,
+      "hours": 13.2,
+      "item_id": 12,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Bjork",
+      "by": "",
+      "plays": 113,
+      "hours": 10.8,
+      "item_id": 16,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Sufjan Stevens",
+      "by": "",
+      "plays": 90,
+      "hours": 8.5,
+      "item_id": 10,
+      "status": "explored",
+      "rating": null
+     }
+    ],
+    "albums": [
+     {
+      "name": "Journey in Satchidananda",
+      "by": "Alice Coltrane",
+      "plays": 1069,
+      "hours": 85.1,
+      "item_id": 17,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Mezzanine",
+      "by": "Massive Attack",
+      "plays": 515,
+      "hours": 47.2,
+      "item_id": 23,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Kind of Blue",
+      "by": "Miles Davis",
+      "plays": 427,
+      "hours": 37.7,
+      "item_id": 25,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Blue Train",
+      "by": "John Coltrane",
+      "plays": 274,
+      "hours": 32.4,
+      "item_id": 28,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "cold/mess (single)",
+      "by": "Prateek Kuhad",
+      "plays": 354,
+      "hours": 28.5,
+      "item_id": 21,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Hope (single)",
+      "by": "Prateek Kuhad",
+      "plays": 242,
+      "hours": 27.5,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "A Love Supreme",
+      "by": "John Coltrane",
+      "plays": 211,
+      "hours": 20.4,
+      "item_id": 27,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "In Rainbows",
+      "by": "Radiohead",
+      "plays": 193,
+      "hours": 19.3,
+      "item_id": 35,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Giant Steps",
+      "by": "John Coltrane",
+      "plays": 149,
+      "hours": 14.5,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "Moon Safari",
+      "by": "Air",
+      "plays": 139,
+      "hours": 13.2,
+      "item_id": 32,
+      "status": "explored",
+      "rating": 4
+     }
+    ],
+    "tracks": [
+     {
+      "name": "Journey in Satchidananda",
+      "by": "Alice Coltrane",
+      "plays": 516,
+      "hours": 47.0,
+      "item_id": 65,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "cold/mess",
+      "by": "Prateek Kuhad",
+      "plays": 354,
+      "hours": 28.5,
+      "item_id": 52,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Hope",
+      "by": "Prateek Kuhad",
+      "plays": 242,
+      "hours": 27.5,
+      "item_id": 53,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "Teardrop",
+      "by": "Massive Attack",
+      "plays": 259,
+      "hours": 23.6,
+      "item_id": 54,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Blue in Green",
+      "by": "Miles Davis",
+      "plays": 211,
+      "hours": 15.3,
+      "item_id": 56,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Naima",
+      "by": "John Coltrane",
+      "plays": 149,
+      "hours": 14.5,
+      "item_id": 57,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "Shiva-Loka",
+      "by": "Alice Coltrane",
+      "plays": 143,
+      "hours": 13.1,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "Lonnie's Lament",
+      "by": "John Coltrane",
+      "plays": 161,
+      "hours": 12.3,
+      "item_id": 59,
+      "status": "explored",
+      "rating": 2
+     },
+     {
+      "name": "Something About John Coltrane",
+      "by": "Alice Coltrane",
+      "plays": 146,
+      "hours": 8.8,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "Stopover Bombay",
+      "by": "Alice Coltrane",
+      "plays": 132,
+      "hours": 8.4,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     }
+    ]
+   },
+   "all": {
+    "artists": [
+     {
+      "name": "Alice Coltrane",
+      "by": "",
+      "plays": 1069,
+      "hours": 85.1,
+      "item_id": 1,
+      "status": "in_progress",
+      "rating": null
+     },
+     {
+      "name": "John Coltrane",
+      "by": "",
+      "plays": 797,
+      "hours": 79.9,
+      "item_id": 8,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Prateek Kuhad",
+      "by": "",
+      "plays": 596,
+      "hours": 56.0,
+      "item_id": 4,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Miles Davis",
+      "by": "",
+      "plays": 538,
+      "hours": 48.4,
+      "item_id": 7,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Massive Attack",
+      "by": "",
+      "plays": 516,
+      "hours": 47.3,
+      "item_id": 6,
+      "status": "in_progress",
+      "rating": null
+     },
+     {
+      "name": "Radiohead",
+      "by": "",
+      "plays": 193,
+      "hours": 19.3,
+      "item_id": 15,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Bill Evans",
+      "by": "",
+      "plays": 147,
+      "hours": 16.2,
+      "item_id": 13,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Air",
+      "by": "",
+      "plays": 139,
+      "hours": 13.2,
+      "item_id": 12,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Bjork",
+      "by": "",
+      "plays": 113,
+      "hours": 10.8,
+      "item_id": 16,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Sufjan Stevens",
+      "by": "",
+      "plays": 90,
+      "hours": 8.5,
+      "item_id": 10,
+      "status": "explored",
+      "rating": null
+     }
+    ],
+    "albums": [
+     {
+      "name": "Journey in Satchidananda",
+      "by": "Alice Coltrane",
+      "plays": 1069,
+      "hours": 85.1,
+      "item_id": 17,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Mezzanine",
+      "by": "Massive Attack",
+      "plays": 516,
+      "hours": 47.3,
+      "item_id": 23,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Kind of Blue",
+      "by": "Miles Davis",
+      "plays": 428,
+      "hours": 37.8,
+      "item_id": 25,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Blue Train",
+      "by": "John Coltrane",
+      "plays": 274,
+      "hours": 32.4,
+      "item_id": 28,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "cold/mess (single)",
+      "by": "Prateek Kuhad",
+      "plays": 354,
+      "hours": 28.5,
+      "item_id": 21,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Hope (single)",
+      "by": "Prateek Kuhad",
+      "plays": 242,
+      "hours": 27.5,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "A Love Supreme",
+      "by": "John Coltrane",
+      "plays": 212,
+      "hours": 20.5,
+      "item_id": 27,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "In Rainbows",
+      "by": "Radiohead",
+      "plays": 193,
+      "hours": 19.3,
+      "item_id": 35,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "Giant Steps",
+      "by": "John Coltrane",
+      "plays": 149,
+      "hours": 14.5,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "Moon Safari",
+      "by": "Air",
+      "plays": 139,
+      "hours": 13.2,
+      "item_id": 32,
+      "status": "explored",
+      "rating": 4
+     }
+    ],
+    "tracks": [
+     {
+      "name": "Journey in Satchidananda",
+      "by": "Alice Coltrane",
+      "plays": 516,
+      "hours": 47.0,
+      "item_id": 65,
+      "status": "explored",
+      "rating": 4.5
+     },
+     {
+      "name": "cold/mess",
+      "by": "Prateek Kuhad",
+      "plays": 354,
+      "hours": 28.5,
+      "item_id": 52,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Hope",
+      "by": "Prateek Kuhad",
+      "plays": 242,
+      "hours": 27.5,
+      "item_id": 53,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "Teardrop",
+      "by": "Massive Attack",
+      "plays": 259,
+      "hours": 23.6,
+      "item_id": 54,
+      "status": "explored",
+      "rating": null
+     },
+     {
+      "name": "Blue in Green",
+      "by": "Miles Davis",
+      "plays": 212,
+      "hours": 15.3,
+      "item_id": 56,
+      "status": "explored",
+      "rating": 5
+     },
+     {
+      "name": "Naima",
+      "by": "John Coltrane",
+      "plays": 149,
+      "hours": 14.5,
+      "item_id": 57,
+      "status": "explored",
+      "rating": 4
+     },
+     {
+      "name": "Shiva-Loka",
+      "by": "Alice Coltrane",
+      "plays": 143,
+      "hours": 13.1,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "Lonnie's Lament",
+      "by": "John Coltrane",
+      "plays": 162,
+      "hours": 12.4,
+      "item_id": 59,
+      "status": "explored",
+      "rating": 2
+     },
+     {
+      "name": "Something About John Coltrane",
+      "by": "Alice Coltrane",
+      "plays": 146,
+      "hours": 8.8,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     },
+     {
+      "name": "Stopover Bombay",
+      "by": "Alice Coltrane",
+      "plays": 132,
+      "hours": 8.4,
+      "item_id": null,
+      "status": null,
+      "rating": null
+     }
+    ]
+   }
+  },
+  "item_stats": {
+   "8": {
+    "plays": 797,
+    "last": "2026-10-17T23:17"
+   },
+   "27": {
+    "plays": 212,
+    "last": "2026-10-17T08:44"
+   },
+   "13": {
+    "plays": 147,
+    "last": "2026-05-19T09:26"
+   },
+   "58": {
+    "plays": 60,
+    "last": "2026-05-17T22:10"
+   },
+   "59": {
+    "plays": 162,
+    "last": "2026-10-17T14:33"
+   },
+   "6": {
+    "plays": 516,
+    "last": "2026-10-17T22:42"
+   },
+   "23": {
+    "plays": 516,
+    "last": "2026-10-17T22:42"
+   },
+   "7": {
+    "plays": 538,
+    "last": "2026-10-17T23:17"
+   },
+   "25": {
+    "plays": 428,
+    "last": "2026-10-17T23:17"
+   },
+   "56": {
+    "plays": 212,
+    "last": "2026-10-17T23:17"
+   },
+   "1": {
+    "plays": 1069,
+    "last": "2026-10-17T19:09"
+   },
+   "17": {
+    "plays": 1069,
+    "last": "2026-10-17T19:09"
+   },
+   "65": {
+    "plays": 516,
+    "last": "2026-10-17T19:09"
+   },
+   "4": {
+    "plays": 596,
+    "last": "2026-10-17T23:42"
+   },
+   "21": {
+    "plays": 354,
+    "last": "2026-10-17T21:27"
+   },
+   "52": {
+    "plays": 354,
+    "last": "2026-10-17T21:27"
+   },
+   "16": {
+    "plays": 113,
+    "last": "2026-10-17T07:22"
+   },
+   "37": {
+    "plays": 113,
+    "last": "2026-10-17T07:22"
+   },
+   "46": {
+    "plays": 45,
+    "last": "2026-10-14T23:27"
+   },
+   "28": {
+    "plays": 274,
+    "last": "2026-10-17T11:54"
+   },
+   "26": {
+    "plays": 110,
+    "last": "2026-10-12T23:15"
+   },
+   "45": {
+    "plays": 61,
+    "last": "2026-10-13T22:06"
+   },
+   "15": {
+    "plays": 193,
+    "last": "2026-10-16T22:53"
+   },
+   "35": {
+    "plays": 193,
+    "last": "2026-10-16T22:53"
+   },
+   "54": {
+    "plays": 259,
+    "last": "2026-10-17T22:42"
+   },
+   "53": {
+    "plays": 242,
+    "last": "2026-10-17T23:42"
+   },
+   "10": {
+    "plays": 90,
+    "last": "2026-05-18T20:57"
+   },
+   "30": {
+    "plays": 90,
+    "last": "2026-05-18T20:57"
+   },
+   "44": {
+    "plays": 56,
+    "last": "2026-09-30T19:20"
+   },
+   "12": {
+    "plays": 139,
+    "last": "2026-10-17T18:36"
+   },
+   "32": {
+    "plays": 139,
+    "last": "2026-10-17T18:36"
+   },
+   "33": {
+    "plays": 87,
+    "last": "2026-05-19T09:26"
+   },
+   "49": {
+    "plays": 36,
+    "last": "2026-10-02T22:17"
+   },
+   "57": {
+    "plays": 149,
+    "last": "2026-10-17T23:17"
+   },
+   "47": {
+    "plays": 27,
+    "last": "2026-05-16T22:20"
+   },
+   "60": {
+    "plays": 42,
+    "last": "2026-10-13T18:46"
+   },
+   "5": {
+    "plays": 67,
+    "last": "2026-10-17T22:17"
+   },
+   "22": {
+    "plays": 67,
+    "last": "2026-10-17T22:17"
+   },
+   "55": {
+    "plays": 22,
+    "last": "2026-10-17T22:17"
+   },
+   "2": {
+    "plays": 40,
+    "last": "2026-10-17T21:04"
+   },
+   "19": {
+    "plays": 40,
+    "last": "2026-10-17T21:04"
+   },
+   "50": {
+    "plays": 19,
+    "last": "2026-10-17T21:04"
+   },
+   "14": {
+    "plays": 5,
+    "last": "2026-10-15T22:24"
+   },
+   "34": {
+    "plays": 5,
+    "last": "2026-10-15T22:24"
+   },
+   "61": {
+    "plays": 5,
+    "last": "2026-10-15T22:24"
+   },
+   "63": {
+    "plays": 1,
+    "last": "2026-10-17T21:44"
+   },
+   "3": {
+    "plays": 1,
+    "last": "2026-10-18T21:20"
+   },
+   "20": {
+    "plays": 1,
+    "last": "2026-10-18T21:20"
+   },
+   "51": {
+    "plays": 1,
+    "last": "2026-10-18T21:20"
+   }
+  },
+  "export_sample": [
+   {
+    "ended_at": "2026-10-02T23:36",
+    "ms": 280282,
+    "track": "Running Up That Hill",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "export",
+    "platform": "ios",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:SvjuKk75xALCBfxXlT2Jgk",
+    "item_id": 55
+   },
+   {
+    "ended_at": "2026-10-02T22:58",
+    "ms": 513801,
+    "track": "The Big Sky",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "export",
+    "platform": "ios",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:RkC72pwmCuq9eNN0zyGoWH",
+    "item_id": 22
+   },
+   {
+    "ended_at": "2026-10-02T22:35",
+    "ms": 386231,
+    "track": "Hounds of Love",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "export",
+    "platform": "ios",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:91DCgT31kOqbiDnuVQ0Apu",
+    "item_id": 22
+   },
+   {
+    "ended_at": "2026-10-02T21:43",
+    "ms": 519115,
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "export",
+    "platform": "ios",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "item_id": 65
+   },
+   {
+    "ended_at": "2026-10-02T20:49",
+    "ms": 305260,
+    "track": "And Dream of Sheep",
+    "artist": "Kate Bush",
+    "album": "Hounds of Love",
+    "source": "export",
+    "platform": "ios",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:5nrI0DDJ3ygsPCX2mE7Lmq",
+    "item_id": 22
+   },
+   {
+    "ended_at": "2026-10-02T19:13",
+    "ms": 277193,
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "album": "Journey in Satchidananda",
+    "source": "export",
+    "platform": "ios",
+    "skipped": false,
+    "private": false,
+    "counts": true,
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "item_id": 65
+   }
+  ],
+  "stats": {
+   "7d": {
+    "plays": 148,
+    "plays_prev": 111,
+    "ms": 48333975,
+    "ms_prev": 33999099,
+    "new_artists": 3,
+    "unrated_plays": 20,
+    "rated_this_period": 7
+   },
+   "30d": {
+    "plays": 557,
+    "plays_prev": 476,
+    "ms": 180640854,
+    "ms_prev": 153686934,
+    "new_artists": 5,
+    "unrated_plays": 67,
+    "rated_this_period": 8
+   },
+   "12m": {
+    "plays": 4853,
+    "plays_prev": 5,
+    "ms": 1583126670,
+    "ms_prev": 1495702,
+    "new_artists": 25,
+    "unrated_plays": 590,
+    "rated_this_period": 14
+   },
+   "all": {
+    "plays": 4858,
+    "plays_prev": 0,
+    "ms": 1584622372,
+    "ms_prev": 0,
+    "new_artists": 29,
+    "unrated_plays": 590,
+    "rated_this_period": 16
+   }
+  },
+  "monthly": [
+   {
+    "month": "2025-11",
+    "hours": 31.5
+   },
+   {
+    "month": "2025-12",
+    "hours": 30.6
+   },
+   {
+    "month": "2026-01",
+    "hours": 35.0
+   },
+   {
+    "month": "2026-02",
+    "hours": 31.7
+   },
+   {
+    "month": "2026-03",
+    "hours": 35.0
+   },
+   {
+    "month": "2026-04",
+    "hours": 33.0
+   },
+   {
+    "month": "2026-05",
+    "hours": 39.1
+   },
+   {
+    "month": "2026-06",
+    "hours": 34.4
+   },
+   {
+    "month": "2026-07",
+    "hours": 38.9
+   },
+   {
+    "month": "2026-08",
+    "hours": 42.5
+   },
+   {
+    "month": "2026-09",
+    "hours": 47.4
+   },
+   {
+    "month": "2026-10",
+    "hours": 28.6
+   }
+  ],
+  "heatmap": [
+   [
+    0.07,
+    0.06,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.05,
+    0.15,
+    0.43,
+    0.32,
+    0.22,
+    0.26,
+    0.26,
+    0.27,
+    0.25,
+    0.26,
+    0.31,
+    0.32,
+    0.41,
+    0.44,
+    0.55,
+    0.68,
+    0.83,
+    0.53
+   ],
+   [
+    0.18,
+    0.08,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.03,
+    0.17,
+    0.35,
+    0.27,
+    0.23,
+    0.15,
+    0.29,
+    0.28,
+    0.28,
+    0.2,
+    0.2,
+    0.36,
+    0.4,
+    0.5,
+    0.58,
+    0.73,
+    0.79,
+    0.5
+   ],
+   [
+    0.2,
+    0.05,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.06,
+    0.24,
+    0.45,
+    0.3,
+    0.15,
+    0.12,
+    0.18,
+    0.25,
+    0.19,
+    0.26,
+    0.23,
+    0.23,
+    0.39,
+    0.55,
+    0.46,
+    0.84,
+    0.86,
+    0.59
+   ],
+   [
+    0.09,
+    0.04,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.04,
+    0.19,
+    0.36,
+    0.25,
+    0.19,
+    0.19,
+    0.18,
+    0.3,
+    0.28,
+    0.16,
+    0.23,
+    0.23,
+    0.34,
+    0.37,
+    0.47,
+    0.75,
+    0.84,
+    0.5
+   ],
+   [
+    0.12,
+    0.1,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.05,
+    0.14,
+    0.39,
+    0.23,
+    0.2,
+    0.24,
+    0.27,
+    0.28,
+    0.29,
+    0.23,
+    0.26,
+    0.37,
+    0.38,
+    0.39,
+    0.57,
+    0.63,
+    0.92,
+    0.47
+   ],
+   [
+    0.13,
+    0.05,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.04,
+    0.24,
+    0.37,
+    0.28,
+    0.14,
+    0.29,
+    0.42,
+    0.38,
+    0.45,
+    0.34,
+    0.47,
+    0.53,
+    0.71,
+    0.48,
+    0.4,
+    0.74,
+    1.0,
+    0.72
+   ],
+   [
+    0.13,
+    0.01,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.03,
+    0.21,
+    0.39,
+    0.28,
+    0.19,
+    0.35,
+    0.42,
+    0.41,
+    0.48,
+    0.41,
+    0.47,
+    0.48,
+    0.75,
+    0.38,
+    0.5,
+    0.8,
+    0.79,
+    0.5
+   ]
+  ],
+  "skip_rate": 17.0,
+  "phone_share": 42.5,
+  "artists_total": 29,
+  "plays_total": 4858,
+  "unfinished": [
+   {
+    "item_id": 19,
+    "title": "Promises",
+    "played": 6,
+    "total": 9
+   },
+   {
+    "item_id": 22,
+    "title": "Hounds of Love",
+    "played": 7,
+    "total": 12
+   },
+   {
+    "item_id": 26,
+    "title": "Bitches Brew",
+    "played": 2,
+    "total": 7
+   }
+  ],
+  "takes": [
+   {
+    "item_id": 24,
+    "kind": "backlog_never_played",
+    "line": "In your backlog since 25 Sep. Never played."
+   },
+   {
+    "item_id": 30,
+    "kind": "loved_not_played",
+    "line": "You rated it 4.5. Last played 18 May."
+   },
+   {
+    "item_id": 31,
+    "kind": "backlog_never_played",
+    "line": "In your backlog since 15 Aug. Never played."
+   },
+   {
+    "item_id": 33,
+    "kind": "loved_not_played",
+    "line": "You rated it 4.5. Last played 19 May."
+   },
+   {
+    "item_id": 36,
+    "kind": "backlog_never_played",
+    "line": "In your backlog since 21 May. Never played."
+   },
+   {
+    "item_id": 38,
+    "kind": "backlog_never_played",
+    "line": "In your backlog since 18 Sep. Never played."
+   },
+   {
+    "item_id": 40,
+    "kind": "backlog_never_played",
+    "line": "In your backlog since 4 Aug. Never played."
+   },
+   {
+    "item_id": 41,
+    "kind": "backlog_never_played",
+    "line": "In your backlog since 20 Jun. Never played."
+   },
+   {
+    "item_id": 42,
+    "kind": "backlog_never_played",
+    "line": "In your backlog since 21 May. Never played."
+   },
+   {
+    "item_id": 43,
+    "kind": "backlog_never_played",
+    "line": "In your backlog since 21 Apr. Never played."
+   },
+   {
+    "item_id": 47,
+    "kind": "loved_not_played",
+    "line": "You rated it 4.5. Last played 16 May."
+   },
+   {
+    "item_id": 54,
+    "kind": "played_not_rated",
+    "line": "Played 259 times. Never rated."
+   },
+   {
+    "item_id": 58,
+    "kind": "loved_not_played",
+    "line": "You rated it 5. Last played 17 May."
+   }
+  ],
+  "year_review": {
+   "year": 2026,
+   "plays": 4033,
+   "hours": 366,
+   "top_artist": {
+    "name": "Alice Coltrane",
+    "by": "",
+    "plays": 877,
+    "hours": 69.4
+   },
+   "top_album": {
+    "name": "Journey in Satchidananda",
+    "by": "Alice Coltrane",
+    "plays": 877,
+    "hours": 69.4
+   },
+   "explored": 23,
+   "reviews": 7,
+   "busiest_month": "2026-09"
+  },
+  "private_excluded": 112,
+  "freshness": {
+   "logger_last": "2026-10-18T21:20",
+   "export_until": "2026-10-02T23:59"
+  },
+  "import_preview": {
+   "music": 5290,
+   "podcasts_skipped": 1308,
+   "overlap": 312,
+   "playlists": 6,
+   "private": 112,
+   "from": "2025-10-18",
+   "until": "2026-10-02"
+  }
+ },
+ "playlists": [
+  {
+   "name": "Late night jazz",
+   "tracks": [
+    {
+     "track": "Journey in Satchidananda",
+     "artist": "Alice Coltrane",
+     "position": 1,
+     "rating": 4.5,
+     "tags": [
+      "spiritual"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Blue in Green",
+     "artist": "Miles Davis",
+     "position": 2,
+     "rating": 5,
+     "tags": [
+      "jazz"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Naima",
+     "artist": "John Coltrane",
+     "position": 3,
+     "rating": 4,
+     "tags": [
+      "jazz"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Blue in Green",
+     "artist": "Miles Davis",
+     "position": 4,
+     "rating": 5,
+     "tags": [
+      "jazz"
+     ],
+     "duplicate_of": 2,
+     "never_played": false
+    },
+    {
+     "track": "Lonnie's Lament",
+     "artist": "John Coltrane",
+     "position": 5,
+     "rating": 2,
+     "tags": [
+      "jazz"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Peace Piece",
+     "artist": "Bill Evans",
+     "position": 6,
+     "rating": 5,
+     "tags": [
+      "jazz",
+      "piano"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Movement 6",
+     "artist": "Floating Points",
+     "position": 7,
+     "rating": 5,
+     "tags": [
+      "late-night"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Smooth Operator",
+     "artist": "Sade",
+     "position": 8,
+     "rating": 1.5,
+     "tags": [
+      "not-jazz"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    }
+   ],
+   "dupes": 1,
+   "low": 2
+  },
+  {
+   "name": "Sunday slow",
+   "tracks": [
+    {
+     "track": "cold/mess",
+     "artist": "Prateek Kuhad",
+     "position": 1,
+     "rating": 5,
+     "tags": [
+      "hindi-indie"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Hope",
+     "artist": "Prateek Kuhad",
+     "position": 2,
+     "rating": 4,
+     "tags": [
+      "hindi-indie"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "cold/mess",
+     "artist": "Prateek Kuhad",
+     "position": 3,
+     "rating": 5,
+     "tags": [
+      "hindi-indie"
+     ],
+     "duplicate_of": 1,
+     "never_played": false
+    },
+    {
+     "track": "Pink Moon",
+     "artist": "Nick Drake",
+     "position": 4,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Teardrop",
+     "artist": "Massive Attack",
+     "position": 5,
+     "rating": null,
+     "tags": [
+      "trip-hop"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Teardrop",
+     "artist": "Massive Attack",
+     "position": 6,
+     "rating": null,
+     "tags": [
+      "trip-hop"
+     ],
+     "duplicate_of": 5,
+     "never_played": false
+    },
+    {
+     "track": "Peace Piece",
+     "artist": "Bill Evans",
+     "position": 7,
+     "rating": 5,
+     "tags": [
+      "jazz",
+      "piano"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Hope",
+     "artist": "Prateek Kuhad",
+     "position": 8,
+     "rating": 4,
+     "tags": [
+      "hindi-indie"
+     ],
+     "duplicate_of": 2,
+     "never_played": false
+    }
+   ],
+   "dupes": 3,
+   "low": 0
+  },
+  {
+   "name": "Run",
+   "tracks": [
+    {
+     "track": "Running Up That Hill",
+     "artist": "Kate Bush",
+     "position": 1,
+     "rating": 4,
+     "tags": [
+      "art-pop"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Baraat",
+     "artist": "Ritviz",
+     "position": 2,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Let It Happen",
+     "artist": "Tame Impala",
+     "position": 3,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "North American Scum",
+     "artist": "LCD Soundsystem",
+     "position": 4,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": true
+    }
+   ],
+   "dupes": 0,
+   "low": 0
+  },
+  {
+   "name": "Hindi indie",
+   "tracks": [
+    {
+     "track": "cold/mess",
+     "artist": "Prateek Kuhad",
+     "position": 1,
+     "rating": 5,
+     "tags": [
+      "hindi-indie"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Hope",
+     "artist": "Prateek Kuhad",
+     "position": 2,
+     "rating": 4,
+     "tags": [
+      "hindi-indie"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Udd Gaya",
+     "artist": "Ritviz",
+     "position": 3,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": false
+    }
+   ],
+   "dupes": 0,
+   "low": 0
+  },
+  {
+   "name": "Focus",
+   "tracks": [
+    {
+     "track": "Says",
+     "artist": "Nils Frahm",
+     "position": 1,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Kerala",
+     "artist": "Bonobo",
+     "position": 2,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Smooth Operator",
+     "artist": "Sade",
+     "position": 3,
+     "rating": 1.5,
+     "tags": [
+      "not-jazz"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Glow",
+     "artist": "Kelly Lee Owens",
+     "position": 4,
+     "rating": null,
+     "tags": [
+      "electronic"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Lonnie's Lament",
+     "artist": "John Coltrane",
+     "position": 5,
+     "rating": 2,
+     "tags": [
+      "jazz"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Hammers",
+     "artist": "Nils Frahm",
+     "position": 6,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Break Apart",
+     "artist": "Bonobo",
+     "position": 7,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": false
+    }
+   ],
+   "dupes": 0,
+   "low": 2
+  },
+  {
+   "name": "Road trip 2025",
+   "tracks": [
+    {
+     "track": "Running Up That Hill",
+     "artist": "Kate Bush",
+     "position": 1,
+     "rating": 4,
+     "tags": [
+      "art-pop"
+     ],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "The Less I Know the Better",
+     "artist": "Tame Impala",
+     "position": 2,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": false
+    },
+    {
+     "track": "Sun Is Shining",
+     "artist": "Bob Marley",
+     "position": 3,
+     "rating": null,
+     "tags": [],
+     "duplicate_of": null,
+     "never_played": true
+    }
+   ],
+   "dupes": 0,
+   "low": 0
+  }
+ ],
+ "spotify": {
+  "connected": true,
+  "renew_by": "2027-04-14",
+  "top_tracks": {
+   "4w": [
+    {
+     "rank": 1,
+     "track": "Journey in Satchidananda",
+     "artist": "Alice Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 2,
+     "track": "Teardrop",
+     "artist": "Massive Attack",
+     "in_library": true
+    },
+    {
+     "rank": 3,
+     "track": "Hope",
+     "artist": "Prateek Kuhad",
+     "in_library": true
+    },
+    {
+     "rank": 4,
+     "track": "cold/mess",
+     "artist": "Prateek Kuhad",
+     "in_library": true
+    },
+    {
+     "rank": 5,
+     "track": "Naima",
+     "artist": "John Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 6,
+     "track": "Running Up That Hill",
+     "artist": "Kate Bush",
+     "in_library": true
+    },
+    {
+     "rank": 7,
+     "track": "Movement 6",
+     "artist": "Floating Points",
+     "in_library": true
+    },
+    {
+     "rank": 8,
+     "track": "Blue in Green",
+     "artist": "Miles Davis",
+     "in_library": true
+    },
+    {
+     "rank": 9,
+     "track": "Something About John Coltrane",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 10,
+     "track": "Lonnie's Lament",
+     "artist": "John Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 11,
+     "track": "Blue Train",
+     "artist": "John Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 12,
+     "track": "Shiva-Loka",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 13,
+     "track": "Flamenco Sketches",
+     "artist": "Miles Davis",
+     "in_library": false
+    },
+    {
+     "rank": 14,
+     "track": "And Dream of Sheep",
+     "artist": "Kate Bush",
+     "in_library": false
+    },
+    {
+     "rank": 15,
+     "track": "15 Step",
+     "artist": "Radiohead",
+     "in_library": false
+    },
+    {
+     "rank": 16,
+     "track": "Isis and Osiris",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 17,
+     "track": "So What",
+     "artist": "Miles Davis",
+     "in_library": false
+    },
+    {
+     "rank": 18,
+     "track": "Movement 3",
+     "artist": "Floating Points",
+     "in_library": false
+    },
+    {
+     "rank": 19,
+     "track": "The Big Sky",
+     "artist": "Kate Bush",
+     "in_library": false
+    },
+    {
+     "rank": 20,
+     "track": "Psalm",
+     "artist": "John Coltrane",
+     "in_library": false
+    }
+   ],
+   "6m": [
+    {
+     "rank": 1,
+     "track": "Journey in Satchidananda",
+     "artist": "Alice Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 2,
+     "track": "cold/mess",
+     "artist": "Prateek Kuhad",
+     "in_library": true
+    },
+    {
+     "rank": 3,
+     "track": "Hope",
+     "artist": "Prateek Kuhad",
+     "in_library": true
+    },
+    {
+     "rank": 4,
+     "track": "Teardrop",
+     "artist": "Massive Attack",
+     "in_library": true
+    },
+    {
+     "rank": 5,
+     "track": "Blue in Green",
+     "artist": "Miles Davis",
+     "in_library": true
+    },
+    {
+     "rank": 6,
+     "track": "Naima",
+     "artist": "John Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 7,
+     "track": "Shiva-Loka",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 8,
+     "track": "Lonnie's Lament",
+     "artist": "John Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 9,
+     "track": "Black Milk",
+     "artist": "Massive Attack",
+     "in_library": false
+    },
+    {
+     "rank": 10,
+     "track": "Something About John Coltrane",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 11,
+     "track": "Stopover Bombay",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 12,
+     "track": "Flamenco Sketches",
+     "artist": "Miles Davis",
+     "in_library": false
+    },
+    {
+     "rank": 13,
+     "track": "Locomotion",
+     "artist": "John Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 14,
+     "track": "Blue Train",
+     "artist": "John Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 15,
+     "track": "Bitches Brew",
+     "artist": "Miles Davis",
+     "in_library": false
+    },
+    {
+     "rank": 16,
+     "track": "Inertia Creeps",
+     "artist": "Massive Attack",
+     "in_library": false
+    },
+    {
+     "rank": 17,
+     "track": "Isis and Osiris",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 18,
+     "track": "Lazy Bird",
+     "artist": "John Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 19,
+     "track": "So What",
+     "artist": "Miles Davis",
+     "in_library": false
+    },
+    {
+     "rank": 20,
+     "track": "15 Step",
+     "artist": "Radiohead",
+     "in_library": false
+    }
+   ],
+   "1y": [
+    {
+     "rank": 1,
+     "track": "Journey in Satchidananda",
+     "artist": "Alice Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 2,
+     "track": "cold/mess",
+     "artist": "Prateek Kuhad",
+     "in_library": true
+    },
+    {
+     "rank": 3,
+     "track": "Hope",
+     "artist": "Prateek Kuhad",
+     "in_library": true
+    },
+    {
+     "rank": 4,
+     "track": "Teardrop",
+     "artist": "Massive Attack",
+     "in_library": true
+    },
+    {
+     "rank": 5,
+     "track": "Blue in Green",
+     "artist": "Miles Davis",
+     "in_library": true
+    },
+    {
+     "rank": 6,
+     "track": "Naima",
+     "artist": "John Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 7,
+     "track": "Shiva-Loka",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 8,
+     "track": "Lonnie's Lament",
+     "artist": "John Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 9,
+     "track": "Something About John Coltrane",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 10,
+     "track": "Stopover Bombay",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 11,
+     "track": "Flamenco Sketches",
+     "artist": "Miles Davis",
+     "in_library": false
+    },
+    {
+     "rank": 12,
+     "track": "Black Milk",
+     "artist": "Massive Attack",
+     "in_library": false
+    },
+    {
+     "rank": 13,
+     "track": "Locomotion",
+     "artist": "John Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 14,
+     "track": "Isis and Osiris",
+     "artist": "Alice Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 15,
+     "track": "So What",
+     "artist": "Miles Davis",
+     "in_library": false
+    },
+    {
+     "rank": 16,
+     "track": "Inertia Creeps",
+     "artist": "Massive Attack",
+     "in_library": false
+    },
+    {
+     "rank": 17,
+     "track": "Blue Train",
+     "artist": "John Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 18,
+     "track": "I'm Old Fashioned",
+     "artist": "John Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 19,
+     "track": "Psalm",
+     "artist": "John Coltrane",
+     "in_library": false
+    },
+    {
+     "rank": 20,
+     "track": "Bitches Brew",
+     "artist": "Miles Davis",
+     "in_library": false
+    }
+   ]
+  },
+  "top_artists": {
+   "4w": [
+    {
+     "rank": 1,
+     "artist": "John Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 2,
+     "artist": "Alice Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 3,
+     "artist": "Kate Bush",
+     "in_library": true
+    },
+    {
+     "rank": 4,
+     "artist": "Prateek Kuhad",
+     "in_library": true
+    },
+    {
+     "rank": 5,
+     "artist": "Massive Attack",
+     "in_library": true
+    },
+    {
+     "rank": 6,
+     "artist": "Miles Davis",
+     "in_library": true
+    },
+    {
+     "rank": 7,
+     "artist": "Floating Points",
+     "in_library": true
+    },
+    {
+     "rank": 8,
+     "artist": "Radiohead",
+     "in_library": true
+    },
+    {
+     "rank": 9,
+     "artist": "Bjork",
+     "in_library": true
+    },
+    {
+     "rank": 10,
+     "artist": "Air",
+     "in_library": true
+    },
+    {
+     "rank": 11,
+     "artist": "Kelly Lee Owens",
+     "in_library": true
+    },
+    {
+     "rank": 12,
+     "artist": "Sun Ra",
+     "in_library": false
+    },
+    {
+     "rank": 13,
+     "artist": "Talking Heads",
+     "in_library": false
+    },
+    {
+     "rank": 14,
+     "artist": "Nils Frahm",
+     "in_library": false
+    },
+    {
+     "rank": 15,
+     "artist": "Tame Impala",
+     "in_library": false
+    },
+    {
+     "rank": 16,
+     "artist": "Ritviz",
+     "in_library": false
+    },
+    {
+     "rank": 17,
+     "artist": "Sade",
+     "in_library": false
+    },
+    {
+     "rank": 18,
+     "artist": "David Bowie",
+     "in_library": false
+    },
+    {
+     "rank": 19,
+     "artist": "Bonobo",
+     "in_library": false
+    },
+    {
+     "rank": 20,
+     "artist": "Daft Punk",
+     "in_library": false
+    }
+   ],
+   "6m": [
+    {
+     "rank": 1,
+     "artist": "Alice Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 2,
+     "artist": "John Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 3,
+     "artist": "Prateek Kuhad",
+     "in_library": true
+    },
+    {
+     "rank": 4,
+     "artist": "Massive Attack",
+     "in_library": true
+    },
+    {
+     "rank": 5,
+     "artist": "Miles Davis",
+     "in_library": true
+    },
+    {
+     "rank": 6,
+     "artist": "Radiohead",
+     "in_library": true
+    },
+    {
+     "rank": 7,
+     "artist": "Air",
+     "in_library": true
+    },
+    {
+     "rank": 8,
+     "artist": "Kate Bush",
+     "in_library": true
+    },
+    {
+     "rank": 9,
+     "artist": "Bjork",
+     "in_library": true
+    },
+    {
+     "rank": 10,
+     "artist": "Floating Points",
+     "in_library": true
+    },
+    {
+     "rank": 11,
+     "artist": "Bill Evans",
+     "in_library": true
+    },
+    {
+     "rank": 12,
+     "artist": "Talking Heads",
+     "in_library": false
+    },
+    {
+     "rank": 13,
+     "artist": "The Beach Boys",
+     "in_library": false
+    },
+    {
+     "rank": 14,
+     "artist": "Daft Punk",
+     "in_library": false
+    },
+    {
+     "rank": 15,
+     "artist": "Sun Ra",
+     "in_library": false
+    },
+    {
+     "rank": 16,
+     "artist": "David Bowie",
+     "in_library": false
+    },
+    {
+     "rank": 17,
+     "artist": "Nils Frahm",
+     "in_library": false
+    },
+    {
+     "rank": 18,
+     "artist": "Ritviz",
+     "in_library": false
+    },
+    {
+     "rank": 19,
+     "artist": "Tame Impala",
+     "in_library": false
+    },
+    {
+     "rank": 20,
+     "artist": "Bonobo",
+     "in_library": false
+    }
+   ],
+   "1y": [
+    {
+     "rank": 1,
+     "artist": "Alice Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 2,
+     "artist": "John Coltrane",
+     "in_library": true
+    },
+    {
+     "rank": 3,
+     "artist": "Prateek Kuhad",
+     "in_library": true
+    },
+    {
+     "rank": 4,
+     "artist": "Miles Davis",
+     "in_library": true
+    },
+    {
+     "rank": 5,
+     "artist": "Massive Attack",
+     "in_library": true
+    },
+    {
+     "rank": 6,
+     "artist": "Radiohead",
+     "in_library": true
+    },
+    {
+     "rank": 7,
+     "artist": "Bill Evans",
+     "in_library": true
+    },
+    {
+     "rank": 8,
+     "artist": "Air",
+     "in_library": true
+    },
+    {
+     "rank": 9,
+     "artist": "Bjork",
+     "in_library": true
+    },
+    {
+     "rank": 10,
+     "artist": "Sufjan Stevens",
+     "in_library": true
+    },
+    {
+     "rank": 11,
+     "artist": "Talking Heads",
+     "in_library": false
+    },
+    {
+     "rank": 12,
+     "artist": "Kate Bush",
+     "in_library": true
+    },
+    {
+     "rank": 13,
+     "artist": "David Bowie",
+     "in_library": false
+    },
+    {
+     "rank": 14,
+     "artist": "The Beach Boys",
+     "in_library": false
+    },
+    {
+     "rank": 15,
+     "artist": "Daft Punk",
+     "in_library": false
+    },
+    {
+     "rank": 16,
+     "artist": "Ritviz",
+     "in_library": false
+    },
+    {
+     "rank": 17,
+     "artist": "Floating Points",
+     "in_library": true
+    },
+    {
+     "rank": 18,
+     "artist": "Nils Frahm",
+     "in_library": false
+    },
+    {
+     "rank": 19,
+     "artist": "Bonobo",
+     "in_library": false
+    },
+    {
+     "rank": 20,
+     "artist": "Tame Impala",
+     "in_library": false
+    }
+   ]
+  },
+  "recent": [
+   {
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-17T23:42",
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "in_library": "track"
+   },
+   {
+    "track": "Naima",
+    "artist": "John Coltrane",
+    "at": "2026-10-17T23:17",
+    "spotify_uri": "spotify:track:jUCNYwSCKNlvU1eQFpenP2",
+    "in_library": "track"
+   },
+   {
+    "track": "Blue in Green",
+    "artist": "Miles Davis",
+    "at": "2026-10-17T23:17",
+    "spotify_uri": "spotify:track:LSA605H5MQzu7ZzmDOMnqJ",
+    "in_library": "track"
+   },
+   {
+    "track": "Teardrop",
+    "artist": "Massive Attack",
+    "at": "2026-10-17T22:42",
+    "spotify_uri": "spotify:track:dBvEVQwg3yc9xP3D1c9Q3j",
+    "in_library": "track"
+   },
+   {
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-17T22:29",
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "in_library": "track"
+   },
+   {
+    "track": "Naima",
+    "artist": "John Coltrane",
+    "at": "2026-10-17T22:29",
+    "spotify_uri": "spotify:track:jUCNYwSCKNlvU1eQFpenP2",
+    "in_library": "track"
+   },
+   {
+    "track": "Running Up That Hill",
+    "artist": "Kate Bush",
+    "at": "2026-10-17T22:17",
+    "spotify_uri": "spotify:track:SvjuKk75xALCBfxXlT2Jgk",
+    "in_library": "track"
+   },
+   {
+    "track": "Freddie Freeloader",
+    "artist": "Miles Davis",
+    "at": "2026-10-17T21:49",
+    "spotify_uri": "spotify:track:l24sbmNCqzqYvg4utmwjyO",
+    "in_library": "album"
+   },
+   {
+    "track": "Pyramids",
+    "artist": "Frank Ocean",
+    "at": "2026-10-17T21:44",
+    "spotify_uri": "spotify:track:aHNGlGCSFBFF9IuwbCK4PG",
+    "in_library": "track"
+   },
+   {
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-17T21:32",
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "in_library": "track"
+   },
+   {
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-17T21:27",
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "in_library": "track"
+   },
+   {
+    "track": "Running Up That Hill",
+    "artist": "Kate Bush",
+    "at": "2026-10-17T21:17",
+    "spotify_uri": "spotify:track:SvjuKk75xALCBfxXlT2Jgk",
+    "in_library": "track"
+   },
+   {
+    "track": "Movement 6",
+    "artist": "Floating Points",
+    "at": "2026-10-17T21:04",
+    "spotify_uri": "spotify:track:w2fjJz8eGXeRim764JXybC",
+    "in_library": "track"
+   },
+   {
+    "track": "Movement 3",
+    "artist": "Floating Points",
+    "at": "2026-10-17T20:11",
+    "spotify_uri": "spotify:track:4tlejaCm7V2WXvnUCagQ0k",
+    "in_library": "album"
+   },
+   {
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-17T19:54",
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "in_library": "track"
+   },
+   {
+    "track": "Movement 6",
+    "artist": "Floating Points",
+    "at": "2026-10-17T19:40",
+    "spotify_uri": "spotify:track:w2fjJz8eGXeRim764JXybC",
+    "in_library": "track"
+   },
+   {
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-17T19:38",
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "in_library": "track"
+   },
+   {
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "at": "2026-10-17T19:09",
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "in_library": "track"
+   },
+   {
+    "track": "Black Milk",
+    "artist": "Massive Attack",
+    "at": "2026-10-17T18:44",
+    "spotify_uri": "spotify:track:IYVcBkwCJPL16IMwkCa9BQ",
+    "in_library": "album"
+   },
+   {
+    "track": "So What",
+    "artist": "Miles Davis",
+    "at": "2026-10-17T18:41",
+    "spotify_uri": "spotify:track:XZcOfK0olsVOSJBYJp9RaO",
+    "in_library": "album"
+   },
+   {
+    "track": "Kelly Watch the Stars",
+    "artist": "Air",
+    "at": "2026-10-17T18:36",
+    "spotify_uri": "spotify:track:WZWjrmy7ezkW6TrhPYAzzC",
+    "in_library": "album"
+   },
+   {
+    "track": "Where Pathways Meet",
+    "artist": "Sun Ra",
+    "at": "2026-10-17T18:12",
+    "spotify_uri": "spotify:track:w1siPmBCp6P4JYr6KsOQDn",
+    "in_library": null
+   },
+   {
+    "track": "And Dream of Sheep",
+    "artist": "Kate Bush",
+    "at": "2026-10-17T16:39",
+    "spotify_uri": "spotify:track:5nrI0DDJ3ygsPCX2mE7Lmq",
+    "in_library": "album"
+   },
+   {
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-17T16:13",
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "in_library": "track"
+   },
+   {
+    "track": "All I Need",
+    "artist": "Air",
+    "at": "2026-10-17T16:11",
+    "spotify_uri": "spotify:track:Z4muahHVRYWuS43M4h9Y3V",
+    "in_library": "album"
+   },
+   {
+    "track": "Flamenco Sketches",
+    "artist": "Miles Davis",
+    "at": "2026-10-17T16:09",
+    "spotify_uri": "spotify:track:zCGzk6Azg6CO99oJkJRHC6",
+    "in_library": "album"
+   },
+   {
+    "track": "Let It Happen",
+    "artist": "Tame Impala",
+    "at": "2026-10-17T15:14",
+    "spotify_uri": "spotify:track:ROIj1EJp4pU64b9CojSpTo",
+    "in_library": null
+   },
+   {
+    "track": "Lonnie's Lament",
+    "artist": "John Coltrane",
+    "at": "2026-10-17T14:33",
+    "spotify_uri": "spotify:track:J0kmcwpeyy41qE6UjzTznO",
+    "in_library": "track"
+   },
+   {
+    "track": "Blue in Green",
+    "artist": "Miles Davis",
+    "at": "2026-10-17T14:22",
+    "spotify_uri": "spotify:track:LSA605H5MQzu7ZzmDOMnqJ",
+    "in_library": "track"
+   },
+   {
+    "track": "Where Pathways Meet",
+    "artist": "Sun Ra",
+    "at": "2026-10-17T14:20",
+    "spotify_uri": "spotify:track:w1siPmBCp6P4JYr6KsOQDn",
+    "in_library": null
+   },
+   {
+    "track": "Hope",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-17T13:35",
+    "spotify_uri": "spotify:track:C0pIlsW4DVCJnqCETEGmuI",
+    "in_library": "track"
+   },
+   {
+    "track": "Cloudbusting",
+    "artist": "Kate Bush",
+    "at": "2026-10-17T12:57",
+    "spotify_uri": "spotify:track:mF5k3kQWl8I0Ct027OVmLJ",
+    "in_library": "album"
+   },
+   {
+    "track": "Under Ice",
+    "artist": "Kate Bush",
+    "at": "2026-10-17T12:35",
+    "spotify_uri": "spotify:track:0O96Z6YI8g9tqOH7wlQm1T",
+    "in_library": "album"
+   },
+   {
+    "track": "Teardrop",
+    "artist": "Massive Attack",
+    "at": "2026-10-17T12:22",
+    "spotify_uri": "spotify:track:dBvEVQwg3yc9xP3D1c9Q3j",
+    "in_library": "track"
+   },
+   {
+    "track": "Hounds of Love",
+    "artist": "Kate Bush",
+    "at": "2026-10-17T12:11",
+    "spotify_uri": "spotify:track:91DCgT31kOqbiDnuVQ0Apu",
+    "in_library": "album"
+   },
+   {
+    "track": "Blue Train",
+    "artist": "John Coltrane",
+    "at": "2026-10-17T11:54",
+    "spotify_uri": "spotify:track:Jv3lTrophbAROqeoytWJlz",
+    "in_library": "album"
+   },
+   {
+    "track": "Blue Train",
+    "artist": "John Coltrane",
+    "at": "2026-10-17T11:20",
+    "spotify_uri": "spotify:track:Jv3lTrophbAROqeoytWJlz",
+    "in_library": "album"
+   },
+   {
+    "track": "Resolution",
+    "artist": "John Coltrane",
+    "at": "2026-10-17T08:44",
+    "spotify_uri": "spotify:track:hPTjDxGbm0oOTY5YpMn4EP",
+    "in_library": "album"
+   },
+   {
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "at": "2026-10-17T07:51",
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "in_library": "track"
+   },
+   {
+    "track": "Hunter",
+    "artist": "Bjork",
+    "at": "2026-10-17T07:22",
+    "spotify_uri": "spotify:track:gKTa0UlfsUWLbYOFqeoltO",
+    "in_library": "album"
+   },
+   {
+    "track": "Weird Fishes/Arpeggi",
+    "artist": "Radiohead",
+    "at": "2026-10-16T22:53",
+    "spotify_uri": "spotify:track:LRtPvD5MwokCfUEI7bcnF7",
+    "in_library": "album"
+   },
+   {
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "at": "2026-10-16T22:06",
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "in_library": "track"
+   },
+   {
+    "track": "And Dream of Sheep",
+    "artist": "Kate Bush",
+    "at": "2026-10-16T21:20",
+    "spotify_uri": "spotify:track:5nrI0DDJ3ygsPCX2mE7Lmq",
+    "in_library": "album"
+   },
+   {
+    "track": "Isis and Osiris",
+    "artist": "Alice Coltrane",
+    "at": "2026-10-16T20:58",
+    "spotify_uri": "spotify:track:zkEauJoDPdb4awA92176dx",
+    "in_library": "album"
+   },
+   {
+    "track": "Something About John Coltrane",
+    "artist": "Alice Coltrane",
+    "at": "2026-10-16T20:44",
+    "spotify_uri": "spotify:track:inGbE8LTfuiFWCHJmjqrd9",
+    "in_library": "album"
+   },
+   {
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-16T20:40",
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "in_library": "track"
+   },
+   {
+    "track": "cold/mess",
+    "artist": "Prateek Kuhad",
+    "at": "2026-10-16T17:01",
+    "spotify_uri": "spotify:track:31CVuhfQ5GEgRxNEV2iLjQ",
+    "in_library": "track"
+   },
+   {
+    "track": "Flamenco Sketches",
+    "artist": "Miles Davis",
+    "at": "2026-10-16T15:36",
+    "spotify_uri": "spotify:track:zCGzk6Azg6CO99oJkJRHC6",
+    "in_library": "album"
+   },
+   {
+    "track": "Journey in Satchidananda",
+    "artist": "Alice Coltrane",
+    "at": "2026-10-16T14:38",
+    "spotify_uri": "spotify:track:cqbCx4NWtBScGnngy06ecj",
+    "in_library": "track"
+   },
+   {
+    "track": "That's How I Feel",
+    "artist": "Sun Ra",
+    "at": "2026-10-16T12:55",
+    "spotify_uri": "spotify:track:p6xM38QT3hH7Maq12EW6qg",
+    "in_library": null
+   }
+  ]
+ },
+ "settings": {
+  "library_path": "%APPDATA%\\app.runout.desktop\\library.db",
+  "backup_dir": "Documents\\Runout\\Backups",
+  "backups": [
+   {
+    "at": "2026-10-18T09:00",
+    "mb": 14.2
+   },
+   {
+    "at": "2026-10-11T09:00",
+    "mb": 13.9
+   },
+   {
+    "at": "2026-10-04T09:00",
+    "mb": 13.6
+   }
+  ],
+  "logger": {
+   "on": true,
+   "autostart": true,
+   "include_private": false,
+   "paused_until": null
+  },
+  "capture": {
+   "on": true,
+   "address": "192.168.1.24:47821",
+   "code": "482 913"
+  }
+ },
+ "usage": {
+  "capture_median_s": 6,
+  "days_opened_this_week": 5,
+  "searches_this_week": 11,
+  "rediscover_visits_this_week": 4
+ }
+}

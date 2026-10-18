@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runout settings and data</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F5C46B}a:hover{color:#FFDCA0}
+button,a{transition:transform 100ms cubic-bezier(0.16,1,0.3,1),filter 150ms,background 150ms,box-shadow 150ms}
+button{cursor:pointer}
+button:hover{filter:brightness(1.12)}
+button:active{transform:scale(0.98)}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #F5B544;outline-offset:2px}
+input[type="checkbox"]{accent-color:#F5B544}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="min-height: 1000px; width: 100%; box-sizing: border-box; background: #101113; color: #ECEDEF; font-family: 'Schibsted Grotesk', system-ui, sans-serif; font-size: 14px; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <nav aria-label="Main" style="flex: 1 1 208px; max-width: 220px; box-sizing: border-box; padding: 22px 14px; display: flex; flex-direction: column; gap: 22px; background: #0B0C0E; border-right: 1px solid #23262B">
+    <span style="padding: 0 10px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em">Runout</span>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="9">
+        <a href="#" style="{{n.style}}"><span>{{n.label}}</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">{{n.count}}</span></a>
+      </sc-for>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; box-sizing: border-box; padding: 24px 32px 40px; display: flex; flex-direction: column; gap: 20px">
+    <h1 style="margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em">Settings and data</h1>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start">
+
+      <section aria-labelledby="st-data" style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <h2 id="st-data" style="margin: 0; font-size: 17px; font-weight: 800">Your data</h2>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 12px; color: #A9AEB7">Library location</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px">%APPDATA%\app.runout.desktop\library.db</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 12px; color: #A9AEB7">Backups, weekly, newest 3 kept</span>
+          <span>Last backup today 09:00 · 14.2 MB</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #C3C7CE">Documents\Runout\Backups</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <button type="button" style="height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: #ECEDEF; color: #101113; font: inherit; font-weight: 700">Back up now</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F46; border-radius: 10px; background: transparent; color: #ECEDEF; font: inherit">Restore</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F46; border-radius: 10px; background: transparent; color: #ECEDEF; font: inherit">Export as JSON</button>
+        </div>
+      </section>
+
+      <section aria-labelledby="st-spotify" style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <h2 id="st-spotify" style="margin: 0; font-size: 17px; font-weight: 800">Spotify connection</h2>
+        <span style="line-height: 1.5">Connected. Spotify asks you to sign in again by 14 April 2027.</span>
+        <span style="font-size: 13px; color: #A9AEB7; line-height: 1.5">Used for Playlist Studio, autofill and the From Spotify page. Disconnecting deletes everything Runout cached from Spotify, right away.</span>
+        <div style="display: flex; gap: 8px">
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F46; border-radius: 10px; background: transparent; color: #ECEDEF; font: inherit">Disconnect</button>
+        </div>
+      </section>
+
+      <section aria-labelledby="st-logger" style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <h2 id="st-logger" style="margin: 0; font-size: 17px; font-weight: 800">Desktop logger</h2>
+        <label style="display: flex; justify-content: space-between; align-items: center; gap: 12px"><span>Log what Spotify plays on this PC</span><input type="checkbox" checked="checked" style="width: 18px; height: 18px"></label>
+        <label style="display: flex; justify-content: space-between; align-items: center; gap: 12px"><span>Start with Windows, in the tray</span><input type="checkbox" checked="checked" style="width: 18px; height: 18px"></label>
+        <label style="display: flex; justify-content: space-between; align-items: center; gap: 12px"><span>Include private-session plays in insights</span><input type="checkbox" style="width: 18px; height: 18px"></label>
+        <span style="font-size: 12px; color: #A9AEB7">A play counts after 30 seconds. Only Spotify is logged.</span>
+      </section>
+
+      <section aria-labelledby="st-phone" style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <h2 id="st-phone" style="margin: 0; font-size: 17px; font-weight: 800">Phone capture</h2>
+        <label style="display: flex; justify-content: space-between; align-items: center; gap: 12px"><span>Accept shares from my iPhone on this Wi-Fi</span><input type="checkbox" checked="checked" style="width: 18px; height: 18px"></label>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #A9AEB7">Address</span><span style="font-family: 'JetBrains Mono', monospace">192.168.1.24:47821</span></div>
+          <div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #A9AEB7">Pairing code</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 18px; letter-spacing: 2px">482 913</span></div>
+        </div>
+        <div style="display: flex; gap: 8px">
+          <button type="button" style="height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: #ECEDEF; color: #101113; font: inherit; font-weight: 700">Shortcut steps</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F46; border-radius: 10px; background: transparent; color: #ECEDEF; font: inherit">New code</button>
+        </div>
+      </section>
+
+      <section aria-labelledby="st-import" style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <h2 id="st-import" style="margin: 0; font-size: 17px; font-weight: 800">Spotify history</h2>
+        <span style="line-height: 1.5">Last import covers plays up to 2 October 2026.</span>
+        <span style="font-size: 13px; color: #A9AEB7; line-height: 1.5">Request a fresh copy from Spotify’s privacy page, then import it here. Plays already imported are skipped.</span>
+        <div style="display: flex; gap: 8px">
+          <button type="button" style="height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: #ECEDEF; color: #101113; font: inherit; font-weight: 700">Import an export</button>
+        </div>
+      </section>
+
+      <section aria-labelledby="st-metrics" style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <h2 id="st-metrics" style="margin: 0; font-size: 17px; font-weight: 800">Is Runout working for you?</h2>
+        <span style="font-size: 13px; color: #A9AEB7; line-height: 1.5">Counted on this PC only, never sent anywhere.</span>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+          <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 600">6 s</span><span style="font-size: 12px; color: #A9AEB7">Typical time to save a link</span></div>
+          <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 600">5 of 7</span><span style="font-size: 12px; color: #A9AEB7">Days opened this week</span></div>
+        </div>
+      </section>
+    </div>
+
+    <section aria-labelledby="st-danger" style="border-radius: 16px; border: 1px solid #5A3530; padding: 20px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h2 id="st-danger" style="margin: 0; font-size: 17px; font-weight: 800; color: #FF7A6B">Delete your library</h2>
+        <span style="color: #C3C7CE">Removes every record, note and play from this PC. Backups are kept.</span>
+      </div>
+      <button type="button" style="height: 38px; padding: 0 16px; border: 1px solid #FF7A6B; border-radius: 10px; background: transparent; color: #FF7A6B; font: inherit; font-weight: 700">Delete library</button>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const navBase = 'display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #C3C7CE;';
+    const nav = [['Home', ''], ['Recent plays', ''], ['Insights', ''], ['Backlog', '37'], ['Library', '214'], ['Rediscover', '6'], ['Playlists', '27'], ['From Spotify', ''], ['Settings', '']]
+      .map(([label, count]) => ({ label, count, style: navBase + (label === 'Settings' ? ' background: #1F2226; color: #ECEDEF; font-weight: 700; box-shadow: inset 3px 0 0 #F5B544;' : '') }));
+    return { nav };
+  }
+}
+</script>
+</body>
+</html>

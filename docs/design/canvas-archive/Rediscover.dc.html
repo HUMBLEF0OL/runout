@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runout rediscover</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F5C46B}a:hover{color:#FFDCA0}
+button,a{transition:transform 100ms cubic-bezier(0.16,1,0.3,1),filter 150ms,background 150ms,box-shadow 150ms}
+button{cursor:pointer}
+button:hover{filter:brightness(1.12)}
+button:active{transform:scale(0.98)}
+button:focus-visible,a:focus-visible{outline:2px solid #F5B544;outline-offset:2px}
+a > div[aria-hidden="true"]{transition:transform 150ms cubic-bezier(0.16,1,0.3,1),box-shadow 150ms}
+a:hover > div[aria-hidden="true"]{transform:translateY(-2px);box-shadow:0 12px 24px rgba(0,0,0,0.4)}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="min-height: 1000px; width: 100%; box-sizing: border-box; background: #101113; color: #ECEDEF; font-family: 'Schibsted Grotesk', system-ui, sans-serif; font-size: 14px; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <nav aria-label="Main" style="flex: 1 1 208px; max-width: 220px; box-sizing: border-box; padding: 22px 14px; display: flex; flex-direction: column; gap: 22px; background: #0B0C0E; border-right: 1px solid #23262B">
+    <span style="padding: 0 10px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em">Runout</span>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="5">
+        <a href="#" style="{{n.style}}"><span>{{n.label}}</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">{{n.count}}</span></a>
+      </sc-for>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; box-sizing: border-box; padding: 24px 32px 40px; display: flex; flex-direction: column; gap: 28px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em">Rediscover</h1>
+        <span style="color: #A9AEB7">Shelves built from your own rules. Nothing here is chosen by Spotify.</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <button type="button" style="height: 40px; padding: 0 14px; border: 1px solid #3A3F46; border-radius: 10px; background: transparent; color: #ECEDEF; font: inherit">Edit shelves</button>
+        <button type="button" style="height: 40px; padding: 0 16px; border: 0; border-radius: 10px; background: linear-gradient(180deg, #F8C566, #F0A92E); color: #101113; box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 8px rgba(245,181,68,0.18); font: inherit; font-weight: 700">New shelf from a filter</button>
+      </div>
+    </div>
+
+    <sc-for list="{{shelves}}" as="s" hint-placeholder-count="4">
+      <section style="display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <h2 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.015em">{{s.name}}</h2>
+            <span style="font-size: 13px; color: #A9AEB7">{{s.rule}}</span>
+          </div>
+          <a href="#" style="font-size: 13px; font-weight: 600; white-space: nowrap">See all {{s.count}}</a>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px">
+          <sc-for list="{{s.items}}" as="i" hint-placeholder-count="5">
+            <a href="#" style="display: flex; flex-direction: column; gap: 6px; text-decoration: none; color: #ECEDEF">
+              <div aria-hidden="true" style="aspect-ratio: 1 / 1; border-radius: 10px; background: {{i.tint}}"></div>
+              <span style="font-weight: 600; font-size: 13px; line-height: 1.25">{{i.title}}</span>
+              <span style="font-size: 12px; color: #A9AEB7">{{i.why}}</span>
+            </a>
+          </sc-for>
+          <a href="#" style="display: flex; align-items: center; justify-content: center; aspect-ratio: 1 / 1; border-radius: 10px; border: 1px dashed #3A3F46; font-size: 13px; font-weight: 600; text-decoration: none">Open Spotify</a>
+        </div>
+      </section>
+    </sc-for>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const navBase = 'display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #C3C7CE;';
+    const nav = [['Home', ''], ['Backlog', '37'], ['Library', '214'], ['Rediscover', '6'], ['Settings', '']]
+      .map(([label, count]) => ({ label, count, style: navBase + (label === 'Rediscover' ? ' background: #1F2226; color: #ECEDEF; font-weight: 700; box-shadow: inset 3px 0 0 #F5B544;' : '') }));
+    const shelves = [
+      { name: 'Flagged to revisit', rule: 'Everything you marked “Revisit later”', count: '6', items: [
+        { title: 'Hounds of Love', why: 'Flagged in March', tint: '#6B3A4A' },
+        { title: 'Carrie & Lowell', why: 'For a winter listen', tint: '#5E6F63' },
+        { title: 'Blue Train', why: 'Flagged in July', tint: '#2B4F7A' },
+        { title: 'Homogenic', why: 'Flagged in May', tint: '#4F3B5C' },
+        { title: 'Pink Moon', why: 'Flagged in August', tint: '#5C5A3B' }
+      ] },
+      { name: 'Your best', rule: 'Rated 4.5 or more', count: '23', items: [
+        { title: 'A Love Supreme', why: '★5, explored 2024', tint: '#3B3B44' },
+        { title: 'Kind of Blue', why: '★5, explored 2023', tint: '#2B4F7A' },
+        { title: 'cold/mess', why: '★5 track', tint: '#4F5B6B' },
+        { title: 'Mezzanine', why: '★4.5', tint: '#33333A' },
+        { title: 'Journey in Satchidananda', why: '★4.5', tint: '#3D5A4A' }
+      ] },
+      { name: 'Words still missing', rule: 'Explored, with no review yet', count: '6', items: [
+        { title: 'Moon Safari', why: 'Rated 4, no review', tint: '#4A5A6B' },
+        { title: 'In Rainbows', why: 'Rated 4.5, no review', tint: '#3B4A5C' },
+        { title: 'Blackstar', why: 'No rating either', tint: '#2A2A2E' },
+        { title: 'Pet Sounds', why: 'Rated 4, no review', tint: '#5A6B4A' },
+        { title: 'Remain in Light', why: 'Rated 3.5, no review', tint: '#6B5A3B' }
+      ] },
+      { name: 'Waiting too long', rule: 'In the backlog for more than 60 days', count: '8', items: [
+        { title: 'Sound of Silver', why: 'Added 2 months ago', tint: '#585858' },
+        { title: 'Spirit of Eden', why: 'Added 4 months ago', tint: '#4A5A50' },
+        { title: 'Kid A', why: 'Added 5 months ago', tint: '#3B3B3B' },
+        { title: 'The Köln Concert', why: 'Added 5 months ago', tint: '#5C4630' },
+        { title: 'Maggot Brain', why: 'Added 6 months ago', tint: '#5A3B3B' }
+      ] }
+    ];
+    return { nav, shelves };
+  }
+}
+</script>
+</body>
+</html>

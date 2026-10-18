@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runout, Crate direction: artwork-first home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#FFB37A}a:hover{color:#FFD2AE}
+</style>
+</helmet>
+<div style="min-height: 900px; width: 100%; box-sizing: border-box; background: #121417; color: #EDEEF0; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 15px; display: flex; flex-direction: column">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; padding: 16px 32px; border-bottom: 1px solid #2A2E35">
+    <span style="font-weight: 700; font-size: 20px; letter-spacing: -0.02em">Runout</span>
+    <nav aria-label="Main" style="display: flex; flex-wrap: wrap; gap: 4px">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="6">
+        <a href="#" style="{{n.style}}">{{n.label}}</a>
+      </sc-for>
+    </nav>
+    <form style="margin-left: auto; display: flex; gap: 8px; align-items: center; flex: 0 1 420px; min-width: 260px">
+      <label for="crate-add" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%)">Paste a Spotify link to add it</label>
+      <input id="crate-add" type="text" placeholder="Paste a Spotify link" style="flex: 1 1 auto; min-width: 0; height: 40px; box-sizing: border-box; padding: 0 16px; border: 1px solid #3A3F47; border-radius: 999px; background: #1B1E23; color: #EDEEF0; font: inherit; font-size: 14px">
+      <button type="button" style="height: 40px; padding: 0 18px; border: 0; border-radius: 999px; background: {{accent}}; color: #121417; font: inherit; font-weight: 700; font-size: 14px; white-space: nowrap; cursor: pointer">Add</button>
+    </form>
+  </header>
+
+  <main style="flex: 1 1 auto; box-sizing: border-box; width: 100%; max-width: 1440px; margin: 0 auto; padding: 28px 32px 40px; display: flex; flex-direction: column; gap: 36px">
+
+    <section aria-labelledby="crate-now" style="display: flex; flex-wrap: wrap; gap: 24px; align-items: stretch">
+      <div style="flex: 1 1 380px; max-width: 460px; display: flex; flex-direction: column; gap: 12px">
+        <div role="img" aria-label="Spotify embed placeholder" style="aspect-ratio: 1 / 1; border-radius: 14px; background: #1E2B3F; border: 1px dashed #4A5566; display: flex; align-items: center; justify-content: center; text-align: center; padding: 32px; color: #C3C8D0; font-size: 14px">Spotify embed: artwork and player, shown unaltered</div>
+        <a href="#" style="font-size: 14px; font-weight: 500">Open Spotify</a>
+      </div>
+      <div style="flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 18px; padding: 8px 0">
+        <span style="font-size: 14px; color: #A3A8B1">Now exploring, day 6</span>
+        <h1 id="crate-now" style="margin: 0; font-size: 52px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.02">Promises</h1>
+        <span style="font-size: 18px; color: #C3C8D0">Floating Points, Pharoah Sanders and the London Symphony Orchestra</span>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F47; border-radius: 999px; background: transparent; color: #EDEEF0; font: inherit; font-size: 14px">Planned</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid {{accent}}; border-radius: 999px; background: #3A2516; color: #FFD2AE; font: inherit; font-size: 14px; font-weight: 700">In progress</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F47; border-radius: 999px; background: transparent; color: #EDEEF0; font: inherit; font-size: 14px">Explored</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F47; border-radius: 999px; background: transparent; color: #EDEEF0; font: inherit; font-size: 14px">Not for me</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F47; border-radius: 999px; background: transparent; color: #EDEEF0; font: inherit; font-size: 14px">Abandoned</button>
+          <button type="button" aria-pressed="true" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F47; border-radius: 999px; background: #1B1E23; color: #EDEEF0; font: inherit; font-size: 14px">Revisit later</button>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 13px; color: #A3A8B1">My rating</span>
+            <span aria-label="4.5 of 5 stars" style="font-size: 22px; color: {{accent}}; letter-spacing: 3px">★★★★<span style="color: #4A4F57">★</span></span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 13px; color: #A3A8B1">Recommended by</span>
+            <span>Meera</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 13px; color: #A3A8B1">Tags</span>
+            <span>late-night, jazz, headphones</span>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; max-width: 640px">
+          <label for="crate-note" style="font-size: 13px; color: #A3A8B1">Journal</label>
+          <textarea id="crate-note" rows="3" style="box-sizing: border-box; width: 100%; padding: 14px; border: 1px solid #3A3F47; border-radius: 14px; background: #1B1E23; color: #EDEEF0; font: inherit; line-height: 1.5; resize: vertical">Movement 6 is where it opens up. Needs a full uninterrupted listen with good headphones.</textarea>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="crate-backlog" style="display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px">
+        <h2 id="crate-backlog" style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">Up next in the crate</h2>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px">
+          <button type="button" style="height: 32px; padding: 0 14px; border: 0; border-radius: 999px; background: #EDEEF0; color: #121417; font: inherit; font-size: 13px; font-weight: 700">All 37</button>
+          <button type="button" style="height: 32px; padding: 0 14px; border: 1px solid #3A3F47; border-radius: 999px; background: transparent; color: #EDEEF0; font: inherit; font-size: 13px">Albums</button>
+          <button type="button" style="height: 32px; padding: 0 14px; border: 1px solid #3A3F47; border-radius: 999px; background: transparent; color: #EDEEF0; font: inherit; font-size: 13px">Tracks</button>
+          <button type="button" style="height: 32px; padding: 0 14px; border: 1px solid #3A3F47; border-radius: 999px; background: transparent; color: #EDEEF0; font: inherit; font-size: 13px">Artists</button>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 20px">
+        <sc-for list="{{crate}}" as="c" hint-placeholder-count="6">
+          <a href="#" style="display: flex; flex-direction: column; gap: 8px; text-decoration: none; color: #EDEEF0">
+            <div aria-hidden="true" style="aspect-ratio: 1 / 1; border-radius: 14px; background: {{c.tint}}"></div>
+            <span style="font-weight: 500; font-size: 15px; line-height: 1.25">{{c.title}}</span>
+            <span style="font-size: 13px; color: #A3A8B1">{{c.artist}}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{c.metaColor}}">{{c.meta}}</span>
+          </a>
+        </sc-for>
+      </div>
+      <a href="#" style="font-size: 14px; font-weight: 500; align-self: flex-start">Open Spotify</a>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#FF8A3D","options":["#FF8A3D","#7CC4FF","#E8D44D"]},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#FF8A3D';
+    const nav = ['Home', 'Backlog', 'Library', 'Rediscover', 'Insights', 'Playlists'].map(label => ({
+      label,
+      style: 'display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 999px; text-decoration: none; font-size: 14px;' +
+        (label === 'Home' ? ' background: #EDEEF0; color: #121417; font-weight: 700;' : ' color: #C3C8D0;')
+    }));
+    const crate = [
+      { title: 'Madvillainy', artist: 'Madvillain', meta: 'High priority', tint: '#8A6A2E', hot: true },
+      { title: 'Journey in Satchidananda', artist: 'Alice Coltrane', meta: 'High priority', tint: '#3D5A4A', hot: true },
+      { title: 'Blue Lines', artist: 'Massive Attack', meta: 'Added 11 Oct', tint: '#2B4F7A' },
+      { title: 'cold/mess', artist: 'Prateek Kuhad', meta: 'Track, from phone', tint: '#4F5B6B' },
+      { title: 'Carrie & Lowell', artist: 'Sufjan Stevens', meta: 'Added 9 Oct', tint: '#5E6F63' },
+      { title: 'Hounds of Love', artist: 'Kate Bush', meta: 'In progress', tint: '#6B3A4A', hot: true }
+    ].map(c => ({ ...c, metaColor: c.hot ? accent : '#A3A8B1' }));
+    return { accent, nav, crate };
+  }
+}
+</script>
+</body>
+</html>

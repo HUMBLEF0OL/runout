@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runout insights</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F5C46B}a:hover{color:#FFDCA0}
+button,a{transition:transform 100ms cubic-bezier(0.16,1,0.3,1),filter 150ms,background 150ms,box-shadow 150ms}
+button{cursor:pointer}
+button:hover{filter:brightness(1.12)}
+button:active{transform:scale(0.98)}
+button:focus-visible,a:focus-visible{outline:2px solid #F5B544;outline-offset:2px}
+[role="img"] > div > div[style*="border-radius: 3px"]{transition:filter 150ms}
+[role="img"] > div > div[style*="border-radius: 3px"]:hover{filter:brightness(1.35)}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="min-height: 1000px; width: 100%; box-sizing: border-box; background: #101113; color: #ECEDEF; font-family: 'Schibsted Grotesk', system-ui, sans-serif; font-size: 14px; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <nav aria-label="Main" style="flex: 1 1 208px; max-width: 220px; box-sizing: border-box; padding: 22px 14px; display: flex; flex-direction: column; gap: 22px; background: #0B0C0E; border-right: 1px solid #23262B">
+    <span style="padding: 0 10px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em">Runout</span>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="8">
+        <a href="#" style="{{n.style}}"><span>{{n.label}}</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">{{n.count}}</span></a>
+      </sc-for>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; box-sizing: border-box; padding: 24px 32px 40px; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px">
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <h1 style="margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em">Insights</h1>
+        <div role="tablist" aria-label="Insight group" style="display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: #17191C">
+          <button type="button" role="tab" aria-selected="true" style="height: 34px; padding: 0 14px; border: 0; border-radius: 8px; background: #ECEDEF; color: #101113; font: inherit; font-size: 13px; font-weight: 700">Listening</button>
+          <button type="button" role="tab" aria-selected="false" style="height: 34px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: #C3C7CE; font: inherit; font-size: 13px">Collection</button>
+          <button type="button" role="tab" aria-selected="false" style="height: 34px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: #C3C7CE; font: inherit; font-size: 13px">Your take</button>
+          <button type="button" role="tab" aria-selected="false" style="height: 34px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: #C3C7CE; font: inherit; font-size: 13px">Year in review</button>
+        </div>
+      </div>
+      <div role="group" aria-label="Time range" style="display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: #17191C">
+        <button type="button" style="height: 34px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #C3C7CE; font: inherit; font-size: 13px">30 days</button>
+        <button type="button" style="height: 34px; padding: 0 12px; border: 0; border-radius: 8px; background: #ECEDEF; color: #101113; font: inherit; font-size: 13px; font-weight: 700">12 months</button>
+        <button type="button" style="height: 34px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #C3C7CE; font: inherit; font-size: 13px">All time</button>
+      </div>
+    </div>
+
+    <p style="margin: 0; font-size: 13px; color: #A9AEB7">From your desktop log (live) and your Spotify export (up to 2 Oct). Private sessions excluded. Nothing here comes from the Spotify API.</p>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: stretch">
+      <section aria-labelledby="in-month" style="flex: 1.4 1 480px; min-width: 0; border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline">
+          <h2 id="in-month" style="margin: 0; font-size: 17px; font-weight: 800">Listening time by month</h2>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #C3C7CE">412 h in 12 months</span>
+        </div>
+        <div role="img" aria-label="Bar chart of listening hours per month, peaking in October at 52 hours" style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px; align-items: end; height: 200px">
+          <sc-for list="{{months}}" as="m" hint-placeholder-count="12">
+            <div style="display: flex; flex-direction: column; gap: 6px; align-items: stretch; justify-content: flex-end; height: 100%">
+              <div style="height: {{m.h}}; border-radius: 3px; background: {{m.color}}"></div>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9A9FA8; text-align: center">{{m.label}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section aria-labelledby="in-stats" style="flex: 1 1 280px; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+        <h2 id="in-stats" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%)">Key numbers</h2>
+        <sc-for list="{{stats}}" as="s" hint-placeholder-count="4">
+          <div style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 16px; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 12px; color: #A9AEB7">{{s.label}}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 600">{{s.value}}</span>
+            <span style="font-size: 12px; color: #A9AEB7">{{s.note}}</span>
+          </div>
+        </sc-for>
+      </section>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+      <section aria-labelledby="in-clock" style="flex: 1.4 1 480px; min-width: 0; border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 12px">
+        <h2 id="in-clock" style="margin: 0; font-size: 17px; font-weight: 800">When you listen</h2>
+        <div role="img" aria-label="Heatmap of listening by weekday and hour; most listening on weeknights from 21:00 to 00:00" style="display: flex; flex-direction: column; gap: 3px">
+          <sc-for list="{{heat}}" as="row" hint-placeholder-count="7">
+            <div style="display: grid; grid-template-columns: 36px repeat(24, minmax(0, 1fr)); gap: 3px; align-items: center">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9A9FA8">{{row.day}}</span>
+              <sc-for list="{{row.cells}}" as="c" hint-placeholder-count="24">
+                <div style="height: 16px; border-radius: 3px; background: #F5B544; opacity: {{c.o}}"></div>
+              </sc-for>
+            </div>
+          </sc-for>
+          <div style="display: grid; grid-template-columns: 36px repeat(4, minmax(0, 1fr)); font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9A9FA8; margin-top: 4px">
+            <span></span><span>00</span><span>06</span><span>12</span><span>18</span>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="in-unfinished" style="flex: 1 1 280px; min-width: 0; border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 20px; display: flex; flex-direction: column; gap: 10px">
+        <h2 id="in-unfinished" style="margin: 0; font-size: 17px; font-weight: 800">Unfinished albums</h2>
+        <span style="font-size: 12px; color: #A9AEB7; line-height: 1.45">Only albums whose tracks you’ve added. 41 other albums can’t be checked.</span>
+        <sc-for list="{{unfinished}}" as="u" hint-placeholder-count="3">
+          <a href="#" style="display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; text-decoration: none; color: #ECEDEF">
+            <span style="font-weight: 600">{{u.title}}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #C3C7CE">{{u.progress}}</span>
+          </a>
+        </sc-for>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const navBase = 'display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #C3C7CE;';
+    const nav = [['Home', ''], ['Recent plays', ''], ['Insights', ''], ['Backlog', '37'], ['Library', '214'], ['Rediscover', '6'], ['Playlists', ''], ['Settings', '']]
+      .map(([label, count]) => ({ label, count, style: navBase + (label === 'Insights' ? ' background: #1F2226; color: #ECEDEF; font-weight: 700; box-shadow: inset 3px 0 0 #F5B544;' : '') }));
+    const hours = [28, 31, 26, 33, 37, 29, 24, 30, 35, 41, 46, 52];
+    const labels = ['N', 'D', 'J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O'];
+    const months = hours.map((h, i) => ({ h: Math.round(h / 52 * 170) + 'px', label: labels[i], color: i === 11 ? '#F5B544' : '#4A5059' }));
+    const stats = [
+      { label: 'Plays', value: '9,284', note: 'Played 30 s or more' },
+      { label: 'Skip rate', value: '18%', note: 'Lower on albums than playlists' },
+      { label: 'Artists', value: '612', note: '143 new to you this year' },
+      { label: 'Phone share', value: '41%', note: 'Of plays, from your export' }
+    ];
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const heat = days.map((day, d) => ({
+      day,
+      cells: Array.from({ length: 24 }, (_, h) => {
+        let v = 0.06;
+        if (h >= 8 && h <= 9) v = 0.35;
+        if (h >= 13 && h <= 17) v = d >= 5 ? 0.5 : 0.18;
+        if (h >= 21 || h === 0) v = d <= 4 ? 0.9 : 0.6;
+        if (h >= 1 && h <= 6) v = 0.04;
+        return { o: String(v) };
+      })
+    }));
+    const unfinished = [
+      { title: 'Hounds of Love', progress: '7 of 12 tracks' },
+      { title: 'Promises', progress: '6 of 9 movements' },
+      { title: 'Bitches Brew', progress: '2 of 7 tracks' }
+    ];
+    return { nav, months, stats, heat, unfinished };
+  }
+}
+</script>
+</body>
+</html>

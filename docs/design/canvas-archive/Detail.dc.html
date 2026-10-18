@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runout item detail: Promises</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F5C46B}a:hover{color:#FFDCA0}
+button,a{transition:transform 100ms cubic-bezier(0.16,1,0.3,1),filter 150ms,background 150ms,box-shadow 150ms}
+button{cursor:pointer}
+button:hover{filter:brightness(1.12)}
+button:active{transform:scale(0.98)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #F5B544;outline-offset:2px}
+input:focus,textarea:focus,select:focus{border-color:#F5B544 !important;box-shadow:0 0 0 3px rgba(245,181,68,0.18)}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="min-height: 1000px; width: 100%; box-sizing: border-box; background: #101113; color: #ECEDEF; font-family: 'Schibsted Grotesk', system-ui, sans-serif; font-size: 14px; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <nav aria-label="Main" style="flex: 1 1 208px; max-width: 220px; box-sizing: border-box; padding: 22px 14px; display: flex; flex-direction: column; gap: 22px; background: #0B0C0E; border-right: 1px solid #23262B">
+    <span style="padding: 0 10px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em">Runout</span>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="5">
+        <a href="#" style="{{n.style}}"><span>{{n.label}}</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9A9FA8">{{n.count}}</span></a>
+      </sc-for>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; box-sizing: border-box; padding: 20px 32px 40px; display: flex; flex-direction: column; gap: 24px">
+    <a href="#" style="font-size: 13px; font-weight: 600">Back to backlog</a>
+
+    <section style="display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start">
+      <div style="flex: 0 1 360px; min-width: 280px; display: flex; flex-direction: column; gap: 10px">
+        <div role="img" aria-label="Spotify embed placeholder" style="height: 352px; border-radius: 12px; background: #26303D; border: 1px dashed #4D5866; box-sizing: border-box; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: #C3C7CE">Spotify embed: artwork, tracks and player, shown unaltered</div>
+        <a href="#" style="font-weight: 600">Open Spotify</a>
+      </div>
+
+      <div style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 13px; color: #A9AEB7">Album · added 4 Oct from your iPhone</span>
+          <h1 style="margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -0.025em">Promises</h1>
+          <span style="color: #C3C7CE"><a href="#">Floating Points</a>, <a href="#">Pharoah Sanders</a>, London Symphony Orchestra</span>
+          <span style="font-size: 13px; color: #A9AEB7">Recommended by Meera</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Status</span>
+          <div role="radiogroup" aria-label="Status" style="display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: #17191C; align-self: flex-start">
+            <sc-for list="{{statuses}}" as="s" hint-placeholder-count="5">
+              <button type="button" role="radio" aria-checked="{{s.on}}" style="{{s.style}}">{{s.label}}</button>
+            </sc-for>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 13px; color: #C3C7CE">
+            <label style="display: flex; gap: 8px; align-items: center"><input type="checkbox" style="width: 16px; height: 16px">Revisit later</label>
+            <label style="display: flex; gap: 8px; align-items: center"><input type="checkbox" checked="checked" style="width: 16px; height: 16px">Favourite</label>
+            <label for="dt-prio">Priority</label>
+            <select id="dt-prio" style="height: 34px; padding: 0 8px; border: 1px solid #3A3F46; border-radius: 10px; background: #17191C; color: #ECEDEF; font: inherit"><option>None</option><option>High</option></select>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 32px">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Your rating</span>
+            <span aria-label="4.5 of 5 stars" style="font-size: 26px; color: #F5B544; letter-spacing: 4px">★★★★<span style="color: #4A5059">★</span></span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <span style="font-size: 13px; font-weight: 600; color: #C3C7CE">Tags</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px">
+              <span style="padding: 5px 10px; border-radius: 10px; background: #1F2226">late-night</span>
+              <span style="padding: 5px 10px; border-radius: 10px; background: #1F2226">jazz</span>
+              <span style="padding: 5px 10px; border-radius: 10px; background: #1F2226">headphones</span>
+              <button type="button" style="padding: 5px 10px; border: 1px dashed #3A3F46; border-radius: 10px; background: transparent; color: #C3C7CE; font: inherit">Add tag</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <label for="dt-review" style="font-size: 13px; font-weight: 600; color: #C3C7CE">Review</label>
+          <textarea id="dt-review" rows="4" style="box-sizing: border-box; width: 100%; padding: 12px; border: 1px solid #3A3F46; border-radius: 10px; background: #17191C; color: #ECEDEF; font: inherit; line-height: 1.55; resize: vertical">Movement 6 is where it opens up. Sanders barely plays and it still holds the whole record together. Needs a full uninterrupted listen with good headphones.</textarea>
+        </div>
+      </div>
+    </section>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+      <section aria-labelledby="dt-tracks" style="flex: 1.3 1 420px; min-width: 0; border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 18px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline">
+          <h2 id="dt-tracks" style="margin: 0; font-size: 17px; font-weight: 800">Tracks you’ve noted</h2>
+          <button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #3A3F46; border-radius: 10px; background: transparent; color: #ECEDEF; font: inherit; font-size: 13px">Add a track</button>
+        </div>
+        <sc-for list="{{tracks}}" as="t" hint-placeholder-count="3">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 8px 0">
+            <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">{{t.name}}</span><span style="font-size: 12px; color: #A9AEB7">{{t.note}}</span></span>
+            <span style="font-size: 13px; color: #F5B544; letter-spacing: 1px">{{t.stars}}</span>
+          </div>
+        </sc-for>
+      </section>
+
+      <section aria-labelledby="dt-history" style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+        <div style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 18px; display: flex; flex-direction: column; gap: 10px">
+          <h2 id="dt-history" style="margin: 0; font-size: 17px; font-weight: 800">History</h2>
+          <sc-for list="{{history}}" as="h" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; font-size: 13px">
+              <span style="font-family: 'JetBrains Mono', monospace; color: #9A9FA8">{{h.when}}</span>
+              <span style="color: #C3C7CE">{{h.what}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="border-radius: 16px; background: linear-gradient(180deg, #1A1C20, #16181B); border: 1px solid rgba(255,255,255,0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28); padding: 18px; display: flex; flex-direction: column; gap: 6px">
+          <h2 style="margin: 0; font-size: 17px; font-weight: 800">Your listening</h2>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 600">23 plays · 3h 05m</span>
+          <span style="font-size: 13px; color: #C3C7CE">Last played 2 days ago. Movement 6 is your most played track.</span>
+          <span style="font-size: 12px; color: #A9AEB7">Release 2. Desktop live; other devices up to 2 Oct.</span>
+        </div>
+        <div style="display: flex; gap: 8px">
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #3A3F46; border-radius: 10px; background: transparent; color: #ECEDEF; font: inherit">Remove from backlog</button>
+          <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #5A3530; border-radius: 10px; background: transparent; color: #FF7A6B; font: inherit">Delete</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const navBase = 'display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; text-decoration: none; color: #C3C7CE;';
+    const nav = [['Home', ''], ['Backlog', '37'], ['Library', '214'], ['Rediscover', '6'], ['Settings', '']]
+      .map(([label, count]) => ({ label, count, style: navBase + (label === 'Backlog' ? ' background: #1F2226; color: #ECEDEF; font-weight: 700; box-shadow: inset 3px 0 0 #F5B544;' : '') }));
+    const sBase = 'height: 34px; padding: 0 12px; border: 0; border-radius: 8px; font: inherit; font-size: 13px;';
+    const statuses = ['Planned', 'In progress', 'Explored', 'Not for me', 'Abandoned'].map(label => {
+      const on = label === 'In progress';
+      return { label, on: on ? 'true' : 'false', style: sBase + (on ? ' background: linear-gradient(180deg, #F8C566, #F0A92E); color: #101113; box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 8px rgba(245,181,68,0.18); font-weight: 700;' : ' background: transparent; color: #C3C7CE;') };
+    });
+    const tracks = [
+      { name: 'Movement 6', note: 'The turn. Strings arrive at 2:40.', stars: '★★★★★' },
+      { name: 'Movement 1', note: 'Sets the seven-note motif', stars: '★★★★' },
+      { name: 'Movement 9', note: 'Long fade, best late at night', stars: '★★★½' }
+    ];
+    const history = [
+      { when: '16 Oct', what: 'Review written' },
+      { when: '12 Oct', what: 'Planned to In progress' },
+      { when: '04 Oct', what: 'Shared from iPhone, named on PC' }
+    ];
+    return { nav, statuses, tracks, history };
+  }
+}
+</script>
+</body>
+</html>
