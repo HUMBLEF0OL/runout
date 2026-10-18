@@ -12,6 +12,11 @@ const MIGRATIONS: &[&str] = &[include_str!("../../migrations/0001_init.sql")];
 /// Schema version a fully migrated library has.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 
+/// Current time as the ISO-8601 UTC string every table stores (TSD §3).
+pub fn now() -> String {
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
 /// Open (creating if needed) and migrate the library at `path`.
 pub fn open(path: &Path) -> Result<Connection, AppError> {
     if let Some(dir) = path.parent() {
@@ -47,6 +52,61 @@ pub fn migrate(conn: &mut Connection) -> Result<(), AppError> {
         tx.commit()?;
     }
     Ok(())
+}
+
+/// Synthetic library for tests (TSD §8: never real values): random 22-char ids, made-up names.
+// ponytail: test-only; step 12's 10k perf generator can promote it.
+#[cfg(test)]
+pub fn fixture(conn: &Connection, n: usize) {
+    use rand::RngExt;
+    const CH: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let mut rng = rand::rng();
+    let mut id = || -> String {
+        (0..22)
+            .map(|_| CH[rng.random_range(0..CH.len())] as char)
+            .collect()
+    };
+    conn.execute_batch(
+        r#"INSERT INTO tag(id, name, description) VALUES (1, 'late night', 'after midnight'), (2, 'jazz', NULL);
+           INSERT INTO saved_filter(name, definition_json) VALUES ('Top jazz', '{"tags":["jazz"],"min_rating":4}');"#,
+    )
+    .unwrap();
+    let artist: i64 = conn
+        .query_row(
+            "INSERT INTO item(type, display_name, spotify_uri) VALUES ('artist', 'Synthetic Quartet', ?1) RETURNING id",
+            [format!("spotify:artist:{}", id())],
+            |r| r.get(0),
+        )
+        .unwrap();
+    for i in 0..n {
+        let kind = if i % 3 == 0 { "album" } else { "track" };
+        let it: i64 = conn
+            .query_row(
+                "INSERT INTO item(type, display_name, spotify_uri, status, rating, review, backlog_order)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) RETURNING id",
+                rusqlite::params![
+                    kind,
+                    format!("Fixture {kind} {i}"),
+                    format!("spotify:{kind}:{}", id()),
+                    if i % 2 == 0 { "explored" } else { "planned" },
+                    (i % 2 == 0).then_some(4.5),
+                    (i % 4 == 0).then_some("a made-up review"),
+                    i as i64,
+                ],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute_batch(&format!(
+            "INSERT INTO field_provenance VALUES ({it}, 'display_name', 'promoted'), ({it}, 'rating', 'user');
+             INSERT INTO item_tag VALUES ({it}, {});
+             INSERT INTO item_link VALUES ({it}, {artist}, 'by_artist');
+             INSERT INTO status_history(item_id, from_status, to_status) VALUES ({it}, NULL, 'planned');",
+            1 + i % 2
+        ))
+        .unwrap();
+    }
+    conn.execute("INSERT INTO usage_event(kind) VALUES ('app_open')", [])
+        .unwrap();
 }
 
 #[cfg(test)]
