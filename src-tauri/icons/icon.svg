@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 64 64">
+  <!-- Runout app icon master ("Dog-ear"): the record folded at one edge like a marked page.
+       Regenerate every size with: npx tauri icon src-tauri/icons/icon.svg -->
+  <defs>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F8C566"/><stop offset="1" stop-color="#EEA52B"/>
+    </linearGradient>
+    <clipPath id="body"><path d="M36.86 4.43A28 28 0 1 0 59.57 36.86Z"/></clipPath>
+  </defs>
+  <path d="M36.86 4.43A28 28 0 1 0 59.57 36.86Z" fill="url(#amber)"/>
+  <g clip-path="url(#body)" fill="none" stroke="#C9861C" stroke-opacity=".55" stroke-width="1">
+    <circle cx="32" cy="32" r="22"/>
+    <circle cx="32" cy="32" r="16"/>
+    <path d="M35.36 6.43A28 28 0 0 0 58.07 38.86Z" stroke="#101113" stroke-opacity=".28" stroke-width="3"/>
+  </g>
+  <path d="M36.86 4.43A28 28 0 0 0 59.57 36.86Z" fill="#ECEDEF"/>
+  <circle cx="32" cy="32" r="4" fill="#101113"/>
+</svg>
