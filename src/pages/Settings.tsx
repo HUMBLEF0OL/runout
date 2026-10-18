@@ -3,12 +3,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
-  backupNow, checkBackup, chooseBackupDir, connectSpotify, deleteLibrary, disconnectSpotify, exportLibrary, getCapture, getLoggerStatus,
+  backupNow, checkBackup, chooseBackupDir, deleteLibrary, disconnectSpotify, exportLibrary, getCapture, getLoggerStatus,
   getSettings, getSpotifyStatus, getSuccessMetrics, listBackups, listImports, listTags, moveLibrary, newPairingCode, onEvent, pauseLogger,
-  pickBackup, restoreBackup, resumeLogger, setCaptureEnabled, setLogger, updateSettings, type AppError, type Backup, type RestoreCheck,
+  pickBackup, restoreBackup, resumeLogger, setCaptureEnabled, setLogger, updateSettings, toAppError, type AppError, type Backup, type RestoreCheck,
 } from "../api";
 import { Topbar } from "../components/Shell";
-import { Dialog, Dots, ErrorBanner, SkelRows, Attribution, useToast } from "../components/ui";
+import { ConnectDialog, ShortcutDialog } from "../components/SetupDialogs";
+import { Dialog, Dots, ErrorBanner, SkelRows, useToast } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { day, dayY, pl, time } from "../lib/format";
@@ -36,7 +37,7 @@ function useRun() {
   const [err, setErr] = useState<AppError>();
   const run = async <T,>(key: string, fn: () => Promise<T>): Promise<T | undefined> => {
     setBusy(key); setErr(undefined);
-    try { return await fn(); } catch (e) { setErr(e as AppError); return undefined; } finally { setBusy(undefined); }
+    try { return await fn(); } catch (e) { setErr(toAppError(e)); return undefined; } finally { setBusy(undefined); }
   };
   return { busy, err, setErr, run };
 }
@@ -234,7 +235,7 @@ function RestoreDialog({ backups, onClose }: { backups: Backup[]; onClose: () =>
     try {
       const c = await checkBackup(path);
       setStep(c.ok ? { k: "ok", path, label, check: c } : { k: "fail", error: c.error ?? "The file is damaged." });
-    } catch (e) { setStep({ k: "fail", error: (e as AppError).message }); }
+    } catch (e) { setStep({ k: "fail", error: toAppError(e).message }); }
   };
   const restore = async (path: string, label: string) => {
     setBusy(true);
@@ -242,7 +243,7 @@ function RestoreDialog({ backups, onClose }: { backups: Backup[]; onClose: () =>
       const r = await restoreBackup(path);
       if (!r.ok) { setStep({ k: "fail", error: r.error ?? "The file is damaged." }); return; }
       onClose(); toast(`Restored the backup from ${label}. ${pl(r.counts.library ?? 0, "record")} verified.`);
-    } catch (e) { setStep({ k: "fail", error: (e as AppError).message }); } finally { setBusy(false); }
+    } catch (e) { setStep({ k: "fail", error: toAppError(e).message }); } finally { setBusy(false); }
   };
   if (step.k === "check") return (
     <Dialog title="Restore backup" onClose={onClose}>
@@ -278,58 +279,6 @@ function RestoreDialog({ backups, onClose }: { backups: Backup[]; onClose: () =>
   );
 }
 
-/* ------------------------------------------------------------------ SC-13e Shortcut steps */
-export function ShortcutDialog({ onClose }: { onClose: () => void }) {
-  const cap = useApi(getCapture).data;
-  const [got, setGot] = useState(false);
-  useEffect(() => onEvent("capture-received", () => setGot(true)), []);
-  const addr = cap ? `${cap.address}:${cap.port}` : "…";
-  return (
-    <Dialog title="Set up the iPhone Shortcut" wide onClose={onClose} footer={<button className="btn btn-secondary" onClick={onClose}>Done</button>}>
-      <ol className="m-0 pl-[18px] list-decimal flex flex-col gap-2.5 leading-[1.5]">
-        <li>On your iPhone, open <b>Shortcuts</b> and create a new shortcut named <b>Save to Runout</b>. Turn on <b>Show in Share Sheet</b> and accept <b>URLs</b>.</li>
-        <li>Add <b>Get Contents of URL</b>: URL <span className="font-mono">http://{addr}/capture</span>, method <b>POST</b>, body <b>JSON</b> with <span className="font-mono">code</span> = <span className="font-mono">{cap?.code ?? "…"}</span> and <span className="font-mono">link</span> = Shortcut Input.</li>
-        <li>Add <b>Show Result</b>.</li>
-        <li>Test it: in Spotify, tap Share, then Save to Runout, on the same Wi-Fi as this PC. Allow <b>Local Network</b> when iOS asks.</li>
-      </ol>
-      {got ? <div className="banner" role="status"><span><b>Test share received.</b> <span className="text-text-2">It’s waiting for a name on Home.</span></span></div>
-        : <div className="banner" role="status"><span className="text-text-2">Waiting for a test share…</span><Dots /></div>}
-      <span className="help">If nothing arrives: check your Wi-Fi is set to Private in Windows, and that Windows Firewall allowed Runout.</span>
-    </Dialog>
-  );
-}
-
-/* ------------------------------------------------------------------ SC-13c connect / disconnect */
-export function ConnectDialog({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState<"start" | "wait" | "done" | "fail">("start");
-  const [error, setError] = useState<AppError>();
-  const go = async () => {
-    setStep("wait");
-    try { const s = await connectSpotify(); setStep(s.state === "connected" ? "done" : "fail"); } catch (e) { setError(e as AppError); setStep("fail"); }
-  };
-  if (step === "wait") return (
-    <Dialog title="Connect Spotify" onClose={onClose} footer={<button className="btn btn-secondary" onClick={onClose}>Cancel</button>}>
-      <div className="flex flex-wrap gap-2 items-center"><Dots /><span>Waiting for you to approve in your browser…</span></div>
-      <span className="help">Spotify’s page lists what Runout may do. Check it says Runout, then click Agree.</span>
-    </Dialog>);
-  if (step === "fail") return (
-    <Dialog title="Couldn’t connect" onClose={onClose} footer={<><button className="btn btn-secondary" onClick={onClose}>Close</button><button className="btn btn-primary" onClick={go}>Try again</button></>}>
-      <div className="banner err" role="alert"><span><b className="text-danger">Spotify said no.</b> <span className="text-text-2">{error?.code === "offline" ? error.message
-        : "Developer access needs an active Premium plan on the app owner’s account, and your account added under User Management."}</span></span></div>
-    </Dialog>);
-  if (step === "done") return (
-    <Dialog title="Spotify connected" onClose={onClose} footer={<button className="btn btn-primary" onClick={onClose}>Done</button>}>
-      <span>Playlist Studio, autofill, Saved in Spotify and From Spotify are ready. Spotify will ask you to sign in again in 6 months.</span>
-    </Dialog>);
-  return (
-    <Dialog title="Connect Spotify" onClose={onClose} footer={<><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={go} autoFocus>Open Spotify sign-in</button></>}>
-      <Attribution />
-      <span className="text-text-2 leading-[1.55]">Runout opens Spotify’s sign-in page in your browser. It asks to read and edit your playlists, read your top items and recent plays, and save to your library.</span>
-      <span className="help">Nothing Runout gets from Spotify feeds your insights. Disconnecting deletes it right away.</span>
-    </Dialog>
-  );
-}
-
 function DisconnectDialog({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -337,7 +286,7 @@ function DisconnectDialog({ onClose }: { onClose: () => void }) {
   const go = async () => {
     setBusy(true);
     try { await disconnectSpotify(); onClose(); toast("Spotify disconnected. Everything Runout cached from Spotify is deleted."); }
-    catch (e) { setErr(e as AppError); } finally { setBusy(false); }
+    catch (e) { setErr(toAppError(e)); } finally { setBusy(false); }
   };
   return (
     <Dialog title="Disconnect Spotify?" onClose={onClose}
@@ -358,7 +307,7 @@ function DeleteLibraryDialog({ backupDir, onClose }: { backupDir: string; onClos
     if (v !== "DELETE") { setHelp("Type DELETE in capitals to confirm."); return; }
     setBusy(true);
     try { await deleteLibrary(v); onClose(); toast("Library deleted. Your backups are untouched."); }
-    catch (e) { setHelp((e as AppError).message); } finally { setBusy(false); }
+    catch (e) { setHelp(toAppError(e).message); } finally { setBusy(false); }
   };
   return (
     <Dialog title="Delete your whole library?" onClose={onClose}

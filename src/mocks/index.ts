@@ -9,7 +9,7 @@ import type {
 } from "../api";
 import { invalidate } from "../api";
 import { dev, onDevChange } from "./devState";
-import { parseLink } from "./link";
+import { parseLink } from "../lib/link";
 import { setToday } from "../lib/format";
 
 const D: any = raw;

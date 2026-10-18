@@ -1,5 +1,10 @@
 // Pure logic for SC-03 Backlog reorder and SC-06 Quick add (tested in backlog.test.ts).
-import type { ItemType, ParsedLink } from "../api";
+import type { ItemSummary, ItemType, ParsedLink } from "../api";
+
+const PRIO_ORDER = { high: 0, medium: 1, low: 2 } as const;
+/** Sort comparator: high, medium, low, then no priority (Home "Up next", Home backlog card). Stable, so backlog order holds within a priority. */
+export const byPriority = (a: Pick<ItemSummary, "priority">, b: Pick<ItemSummary, "priority">) =>
+  (a.priority ? PRIO_ORDER[a.priority] : 3) - (b.priority ? PRIO_ORDER[b.priority] : 3);
 
 /** Move `id` onto `toId`'s place in the full backlog order: after it when moving down, before it when moving up. */
 export function moveTo(ids: number[], id: number, toId: number): number[] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLink } from "./link";
+import { linkKind, parseLink } from "./link";
 
 const A = "3QJzdZJYIAcoET1GcfpNGi";
 // Same table M3's links.rs must pass (TSD §4.1).
@@ -24,4 +24,15 @@ const TABLE: [string, ReturnType<typeof parseLink>][] = [
 
 describe("parseLink (TSD §4.1)", () => {
   it.each(TABLE)("%s", (raw, want) => expect(parseLink(raw)).toEqual(want));
+});
+
+describe("linkKind", () => {
+  it("names the kind of valid and unsupported links only", () => {
+    expect(linkKind(`https://open.spotify.com/intl-de/album/${A}`)).toBe("album");
+    expect(linkKind(`https://open.spotify.com/episode/${A}`)).toBe("episode");
+    expect(linkKind(`spotify:playlist:${A}`)).toBe("playlist");
+    expect(linkKind(`https://open.spotify.com/user/${A}`)).toBeUndefined();
+    expect(linkKind("https://spotify.link/aXk3P9q")).toBeUndefined();
+    expect(linkKind("coltrane")).toBeUndefined();
+  });
 });

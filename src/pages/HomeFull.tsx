@@ -10,14 +10,14 @@ import { Topbar } from "../components/Shell";
 import { playSources } from "../components/logic";
 import { useQuickAdd } from "../components/QuickAddContext";
 import {
-  ArtTiles, EmbedSlot, Empty, ErrorBanner, FreshnessNote, LiveDot, OpenSpotify, PlayRow, Seg, SkelRows, SkelTiles, SourceTag, Stat, useToast,
+  ArtTiles, EmbedSlot, Empty, ErrorBanner, FreshnessNote, LiveDot, OpenSpotify, PlayRow, RankRow, Seg, SkelRows, SkelTiles, SourceTag, Stat, useToast,
 } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { hm, mmss, nameOf, num, PRIO, stars, STATUS, statusMeta, TYPE } from "../lib/format";
+import { byPriority } from "../lib/backlog";
 import { MvpBody, StatSkel } from "./HomeMvp";
 
 const RANGES: [Range, string][] = [["7d", "7 days"], ["30d", "30 days"], ["12m", "12 months"], ["all", "All time"]];
-const PRIO_ORDER = { high: 0, medium: 1, low: 2 } as const;
 const hrs = (r: Rank) => `${r.hours.toFixed(1)} h`; // charts rank by listening time (CAP-23)
 /** "37 more than the period before" / "3h 59m more than before". */
 const delta = (now: number, prev: number, fmt: (n: number) => string, more: string, less: string) =>
@@ -42,7 +42,7 @@ export default function HomeFull() {
       <Topbar>{seg}</Topbar>
       <section aria-label="Now and this period" className="flex flex-wrap gap-5 items-stretch">
         <NowCard logger={logger.data} loading={logger.loading} error={!!logger.error} retry={logger.reload} />
-        {!t ? <div className="stats flex-[1_1_300px] grid-cols-2">{[1, 2, 3, 4].map((i) => <div key={i} className="card h-24"><div className="skel h-full" /></div>)}</div>
+        {!t ? <StatSkel className="flex-[1_1_300px] grid-cols-2" />
           : <div className="stats flex-[1_1_300px] grid-cols-2">
               <Stat k="Plays" v={num(t.plays)} d={`${delta(t.plays, t.plays_prev, num, "more", "fewer")} than the period before`} />
               <Stat k="Listening time" v={hm(t.ms)} d={`${delta(t.ms, t.ms_prev, hm, "more", "less")} than before`} />
@@ -137,8 +137,9 @@ function NowCard({ logger, loading, error, retry }: { logger: LoggerStatus | und
 function Charts({ loading, artists, albums, sources }: { loading: boolean; artists: Rank[]; albums: Rank[]; sources: ("U" | "S" | "E")[] }) {
   const add = useQuickAdd();
   const [art, setArt] = useState(false);
-  // Album records give the embed URI for artwork mode.
-  const albumItems = useApi(() => listItems({ type: "album", limit: 1000 })).data?.rows ?? [];
+  // Album records give the embed URI for artwork mode; fetched only once artwork is on.
+  const albums_ = useApi(() => (art ? listItems({ type: "album", limit: 1000 }) : Promise.resolve(null)), [art]);
+  const albumItems = albums_.data?.rows ?? [];
   const max = Math.max(1, ...artists.map((a) => a.hours));
   const top5 = albums.slice(0, 5);
   const saved = top5.map((a) => albumItems.find((i) => i.id === a.item_id)).filter((i): i is ItemSummary => !!i);
@@ -147,21 +148,14 @@ function Charts({ loading, artists, albums, sources }: { loading: boolean; artis
       <div className="flex-[1_1_380px] flex min-w-0 flex-col gap-3.5">
         <div className="flex justify-between items-baseline gap-3"><h2 className="section-title">Top artists</h2><SourceTag sources={sources} /></div>
         {loading ? <SkelRows n={6} /> : !artists.length ? <span className="text-muted">No plays in this period.</span> : artists.slice(0, 6).map((a, n) => (
-          <div key={a.name} className="rank">
-            <span className="font-mono text-faint text-xs">{n + 1}</span>
-            <div className="min-w-0">
-              <span className="font-semibold">{a.item_id ? <Link to={`/item/${a.item_id}`} className="text-inherit">{a.name}</Link> : a.name}</span>
-              <span className="text-muted">{a.status ? `, ${STATUS[a.status].toLowerCase()}` : ", not in your library"}</span>
-              <div className={`bar${a.item_id ? "" : " hot"}`} style={{ width: `${Math.round((a.hours / max) * 100)}%` }} />
-            </div>
-            <span className="font-mono text-text-2 whitespace-nowrap text-xs text-right">{hrs(a)}</span>
-          </div>
+          <RankRow key={a.name} rank={n + 1} name={a.name} href={a.item_id ? `/item/${a.item_id}` : undefined}
+            suffix={a.status ? `${STATUS[a.status].toLowerCase()}` : "not in your library"} value={a.hours} max={max} label={hrs(a)} hot={!a.item_id} />
         ))}
       </div>
       <div className="flex-[1.3_1_460px] flex min-w-0 flex-col gap-3.5">
         <div className="flex justify-between items-baseline gap-3"><h2 className="section-title">Top albums</h2>
           <span className="flex flex-wrap gap-2 items-center"><SourceTag sources={sources} /><button className="btn btn-secondary" aria-pressed={art} onClick={() => setArt(!art)}>{art ? "Hide artwork" : "Show artwork"}</button></span></div>
-        {loading ? <SkelTiles n={5} /> : art ? <ArtTiles items={saved} meta={(it) => statusMeta(it)} />
+        {loading || (art && albums_.loading) ? <SkelTiles n={5} /> : art ? <ArtTiles items={saved} meta={(it) => statusMeta(it)} />
           : <div className="tiles five">{top5.map((a) => {
               const meta = `${a.status ? STATUS[a.status] : ""}${a.rating ? ` ${stars(a.rating)}` : ""}, ${hrs(a)}`;
               return a.item_id
@@ -215,7 +209,7 @@ function TakeCard() {
 
 function BacklogCard() {
   const b = useApi(() => listItems({ in_backlog: true, sort: "backlog_order", limit: 200 }));
-  const top3 = [...(b.data?.rows ?? [])].sort((x, y) => (x.priority ? PRIO_ORDER[x.priority] : 3) - (y.priority ? PRIO_ORDER[y.priority] : 3)).slice(0, 3);
+  const top3 = [...(b.data?.rows ?? [])].sort(byPriority).slice(0, 3);
   return (
     <div className="card flex flex-col gap-3">
       <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">Backlog</h2><span className="font-mono text-muted text-xs">{b.data ? `${num(b.data.total)} waiting` : ""}</span></div>

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Topbar } from "../components/Shell";
 import { useRelease } from "../hooks/useRelease";
-import { ConnectDialog, ShortcutDialog } from "./Settings";
+import { ConnectDialog, ShortcutDialog } from "../components/SetupDialogs";
 
 const later = <span className="text-faint text-xs">Available in a later release</span>;
 

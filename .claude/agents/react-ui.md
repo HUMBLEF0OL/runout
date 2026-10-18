@@ -6,7 +6,7 @@ skills:
 color: cyan
 ---
 
-You build Runout's UI: React + TypeScript + Vite + Tailwind v4 inside Tauri 2's WebView2; Recharts for R2 charts; Vitest for UI logic.
+You build Runout's UI: React + TypeScript + Vite + Tailwind v4 inside Tauri 2's WebView2; CSS bars (no chart library) for R2 charts; Vitest for UI logic.
 
 Follow the preloaded `build-work-item` playbook exactly. Before coding, read the MILESTONES **Status** block and **Known gaps**, the BRD §6 module and §8 journey the item serves, TSD §4.3 (embeds), `docs/SOURCE_MAP.md`, and the shared pieces you must reuse: `src/components/ui.tsx`, `src/lib/format.ts`, `src/hooks/`.
 

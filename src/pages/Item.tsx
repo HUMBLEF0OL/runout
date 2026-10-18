@@ -3,13 +3,13 @@
 import { useCallback, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  autofill, bulkAddAlbumTracks, deleteItem, getItem, getItemListening, isAppError, libraryContains, removeFromSpotifyLibrary,
-  saveToSpotifyLibrary, setStatus, updateItem, type AppError, type ItemDetail, type ItemPatch, type Priority, type Status,
+  autofill, bulkAddAlbumTracks, deleteItem, getItem, getItemListening, libraryContains, removeFromSpotifyLibrary,
+  saveToSpotifyLibrary, setStatus, updateItem, toAppError, type AppError, type ItemDetail, type ItemPatch, type Status,
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import {
-  Attribution, Dialog, Dots, EmbedSlot, Empty, ErrorBanner, FreshnessNote, Rating, SkelBlock, SkelRows, SourceTag,
+  Attribution, Dialog, Dots, EmbedSlot, Empty, ErrorBanner, FreshnessNote, PrioritySelect, Rating, SkelBlock, SkelRows, SourceTag,
   StatusBadge, StatusControl, TagChips, useToast,
 } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
@@ -43,7 +43,7 @@ function Detail({ it }: { it: ItemDetail }) {
 
   const run = async (title: string, p: () => Promise<unknown>) => {
     setErr(undefined);
-    try { await p(); return true; } catch (e) { setErr({ title, e: isAppError(e) ? e : undefined, retry: () => run(title, p) }); return false; }
+    try { await p(); return true; } catch (e) { setErr({ title, e: toAppError(e), retry: () => run(title, p) }); return false; }
   };
   const patch = (title: string, pt: ItemPatch) => run(title, () => updateItem(it.id, pt));
 
@@ -105,9 +105,7 @@ function Detail({ it }: { it: ItemDetail }) {
         }} />Favourite</label>
         {it.in_backlog && <>
           <label htmlFor="dt-prio">Priority</label>
-          <select id="dt-prio" className="input h-[34px]" value={it.priority ?? ""} onChange={(e) => patch("Couldn’t save that change.", { priority: (e.target.value || null) as Priority | null })}>
-            <option value="">None</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-          </select></>}
+          <PrioritySelect id="dt-prio" className="input h-[34px]" value={it.priority ?? ""} onChange={(p) => patch("Couldn’t save that change.", { priority: p || null })} /></>}
         {spotifySave}
       </div>
       <div className="flex flex-wrap gap-2 items-center">
@@ -254,7 +252,7 @@ function EditForm({ it, artistName, onDone }: { it: ItemDetail; artistName: stri
     try {
       await updateItem(it.id, { display_name: name.trim() || null, recommended_by: rec.trim() || null, ...(it.type !== "artist" && artist !== artistName ? { artist_name: artist.trim() || null } : {}) });
       onDone(); toast("Changes saved");
-    } catch (e) { setErr(isAppError(e) ? e : undefined); } finally { setBusy(false); }
+    } catch (e) { setErr(toAppError(e)); } finally { setBusy(false); }
   };
   const links = it.links.filter((l) => l.direction === "from");
   return (
@@ -287,7 +285,7 @@ function FillTracks({ albumId, uri, onClose }: { albumId: number; uri: string; o
   const on = keep ?? new Set(list.map((t) => t.uri));
   const add = async () => {
     try { const r = await bulkAddAlbumTracks(albumId, list.filter((t) => on.has(t.uri)).map(({ uri: u, name }) => ({ uri: u, name }))); onClose(); toast(`${pl(r.length, "track")} added`); }
-    catch (e) { setErr(isAppError(e) ? e : undefined); }
+    catch (e) { setErr(toAppError(e)); }
   };
   return (
     <Dialog title="Fill the track list from Spotify" onClose={onClose} footer={<>

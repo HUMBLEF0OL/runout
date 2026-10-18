@@ -3,8 +3,7 @@
 // src/mocks/; M6/M7 switch to `invoke` by turning it off. Pages never import anything else to reach data.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import * as mocks from "./mocks";
-import { cleanLine, cleanTags, cleanText, LIMITS, lineOrNull, textOrNull } from "./lib/sanitize"; // ponytail: static so mock "today" is set before first render; M6 drops it from the build
+import { cleanLine, cleanTags, cleanText, LIMITS, lineOrNull, textOrNull } from "./lib/sanitize";
 
 /* ------------------------------------------------------------------ §1 conventions */
 export type AppErrorCode =
@@ -16,6 +15,8 @@ export type AppErrorCode =
 export interface AppError { code: AppErrorCode; message: string; existing_id?: number; retry_after_s?: number; detail?: string }
 export interface Page<T> { rows: T[]; total: number; offset: number }
 export const isAppError = (e: unknown): e is AppError => typeof e === "object" && e !== null && "code" in e && "message" in e;
+/** Anything a command rejects with, as an AppError (a non-AppError throw becomes `internal`). */
+export const toAppError = (e: unknown): AppError => (isAppError(e) ? e : { code: "internal", message: "Something went wrong.", detail: String(e) });
 
 /* ------------------------------------------------------------------ §2 shared types */
 export type ItemType = "album" | "track" | "artist";
@@ -138,7 +139,11 @@ export interface Autofill { fields: { artist?: string; album?: string; year?: nu
 export interface SpotifyEntry { uri: string; name: string; artist: string; in_library_id: number | null }
 
 /* ------------------------------------------------------------------ transport */
-const MOCK = import.meta.env.VITE_MOCK !== "0";
+export const MOCK = import.meta.env.VITE_MOCK !== "0";
+// Loaded on demand: main.tsx awaits it before the first render (pins the mock "today"), and a VITE_MOCK=0
+// build drops the mocks and their dataset entirely. The env check sits beside the import, not via MOCK,
+// so the bundler can prove the branch dead.
+export const loadMocks = () => (import.meta.env.VITE_MOCK !== "0" ? import("./mocks") : Promise.reject(new Error("mocks are off")));
 type Listener = () => void;
 const listeners = new Set<Listener>();
 /** Data changed (a write command succeeded, or the dev state switcher moved): readers refetch. */
@@ -147,7 +152,7 @@ export const invalidate = () => listeners.forEach((fn) => fn());
 const READ = /^(get_|list_|search$|parse_link|preview_|check_backup|prefill_title|autofill|load_studio|library_contains|record_page_visit|pick_)/;
 
 async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
-  const res = MOCK ? await mocks.mockCall<T>(cmd, args) : await invoke<T>(cmd, args);
+  const res = MOCK ? await (await loadMocks()).mockCall<T>(cmd, args) : await invoke<T>(cmd, args);
   if (!READ.test(cmd)) invalidate();
   return res;
 }
@@ -159,8 +164,7 @@ export interface EventMap {
 }
 /** Subscribe to a Rust → UI event (API.md §6). Returns an unsubscribe function. */
 export function onEvent<K extends keyof EventMap>(name: K, cb: (payload: EventMap[K]) => void): () => void {
-  if (MOCK) return mocks.mockListen(name, cb as (p: unknown) => void);
-  const p = listen<EventMap[K]>(name, (e) => cb(e.payload));
+  const p = MOCK ? loadMocks().then((m) => m.mockListen(name, cb as (p: unknown) => void)) : listen<EventMap[K]>(name, (e) => cb(e.payload));
   return () => { p.then((un) => un()); };
 }
 

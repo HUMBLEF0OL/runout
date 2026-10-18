@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getOnline, onEvent, onInvalidate, type AppError } from "../api";
 
 export interface ApiState<T> { data: T | undefined; error: AppError | undefined; loading: boolean; reload: () => void }
@@ -20,10 +20,25 @@ export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = []): ApiState<
   return { data: state.data, error: state.error, loading: state.loading && state.data === undefined, reload: run };
 }
 
+// One shared online state for every subscriber (every EmbedSlot uses it): one `get_online` per subscribe
+// cycle and one `online-changed` listener, instead of one of each per component.
+let online: boolean | undefined;
+const subs = new Set<() => void>();
+const setOnline = (v: boolean) => { if (v !== online) { online = v; subs.forEach((f) => f()); } };
+let stop: (() => void) | undefined;
+function subscribeOnline(fn: () => void) {
+  subs.add(fn);
+  if (subs.size === 1) {
+    const unEvent = onEvent("online-changed", setOnline);
+    const unInvalidate = onInvalidate(() => getOnline().then(setOnline, () => {})); // dev state switch
+    getOnline().then(setOnline, () => {});
+    stop = () => { unEvent(); unInvalidate(); };
+  }
+  return () => { subs.delete(fn); if (!subs.size) { stop?.(); online = undefined; } };
+}
+
 /** Online state from `get_online` + `online-changed` (TSD §4.3). Embeds and short links depend on it. */
 export function useOnline(): boolean {
-  const { data } = useApi(getOnline);
-  const [live, setLive] = useState<boolean | undefined>();
-  useEffect(() => onEvent("online-changed", setLive), []);
-  return live ?? data ?? false; // unknown = offline: no embed mounts before get_online answers (TSD §4.3)
+  // unknown = offline: no embed mounts before get_online answers (TSD §4.3)
+  return useSyncExternalStore(subscribeOnline, () => online ?? false);
 }

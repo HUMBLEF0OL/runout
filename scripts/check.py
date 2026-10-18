@@ -71,6 +71,8 @@ def check_ui_purity():
                 bad.append(f"{rel}:{i}: hard-coded source tag fallback; use `?? []`")
             if "]${" in line:  # Tailwind can't see an arbitrary-value class glued to ${...}; the rule is never generated
                 bad.append(f"{rel}:{i}: put a space between ']' and '${{' in class strings")
+            if re.search(r"e as AppError|isAppError\(e\) \? e : undefined", line):  # a non-AppError throw would vanish or crash
+                bad.append(f"{rel}:{i}: convert caught errors with toAppError(e) from api.ts")
             if "@tauri-apps/api" in line and rel != "src/api.ts":
                 bad.append(f"{rel}:{i}: only src/api.ts may import @tauri-apps/api")
     if bad:

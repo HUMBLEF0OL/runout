@@ -1,7 +1,7 @@
 // SC-04 Library: album / track / artist tabs, status and rating filters, 20 per page, artwork toggle, save as filter.
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { getCounts, isAppError, listItems, saveFilter, type AppError, type ItemFilter, type ItemType, type Status } from "../api";
+import { getCounts, listItems, saveFilter, toAppError, type AppError, type ItemFilter, type ItemType, type Status } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import { ArtTiles, Dialog, Empty, ErrorBanner, RecordCard, Seg, SkelTiles, useToast } from "../components/ui";
@@ -86,7 +86,7 @@ function SaveFilter({ filter, onClose, onSaved }: { filter: ItemFilter; onClose:
   const [err, setErr] = useState<AppError>();
   const save = async () => {
     if (!name.trim()) return;
-    try { await saveFilter(name.trim(), filter); onSaved(); } catch (e) { setErr(isAppError(e) ? e : undefined); }
+    try { await saveFilter(name.trim(), filter); onSaved(); } catch (e) { setErr(toAppError(e)); }
   };
   return (
     <Dialog title="Save this filter" onClose={onClose} footer={<>

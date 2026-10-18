@@ -1,6 +1,6 @@
 // App shell (DESIGN §4): rail with nav + mono counts + freshness box, main column, offline banner,
 // global quick-add dialog and shortcuts. Pages render their own <Topbar>.
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowsClockwiseIcon, BooksIcon, ChartBarIcon, ClockCounterClockwiseIcon, CompassIcon, GearSixIcon, HouseIcon, PlaylistIcon, QueueIcon,
@@ -12,8 +12,10 @@ import { useShortcuts, type ShortcutAction } from "../hooks/useShortcuts";
 import { fieldButton, freshnessText } from "./logic";
 import { QuickAddCtx, useQuickAdd, type QuickAddOpts } from "./QuickAddContext";
 import QuickAdd from "./QuickAdd";
-import DevSwitcher from "./DevSwitcher";
 import { pl } from "../lib/format";
+
+// Dev builds only: a shipped build drops the switcher. The mocks themselves go only when VITE_MOCK=0 (api.ts).
+const DevSwitcher = import.meta.env.DEV ? lazy(() => import("./DevSwitcher")) : () => null;
 
 const NAV: { to: string; label: string; icon: ReactNode; count?: "backlog" | "library" | "revisit"; rel?: "r2" | "r3" }[] = [
   { to: "/home", label: "Home", icon: <HouseIcon size={20} /> },
@@ -120,7 +122,7 @@ export default function Shell() {
         </main>
       </div>
       {qa && <QuickAdd opts={qa} onClose={() => setQa(null)} />}
-      {import.meta.env.DEV && <DevSwitcher />}
+      <Suspense><DevSwitcher /></Suspense>
     </QuickAddCtx.Provider>
   );
 }

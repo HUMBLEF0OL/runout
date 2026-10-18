@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveTo, qaStep } from "./backlog";
+import { byPriority, moveTo, qaStep } from "./backlog";
 
 describe("moveTo", () => {
   it("moves up before the target and down after it", () => {
@@ -37,5 +37,12 @@ describe("qaStep", () => {
     expect(qaStep({ ...base, parsed })).toBe("duplicate");
     expect(qaStep({ ...base, parsed, self: 7 })).toBe("form");
     expect(qaStep({ ...base, parsed: { ...parsed, existing_id: undefined } })).toBe("form");
+  });
+});
+
+describe("byPriority", () => {
+  it("orders high, medium, low, none and keeps order within a priority", () => {
+    const rows = [{ id: 1, priority: null }, { id: 2, priority: "low" }, { id: 3, priority: "high" }, { id: 4, priority: null }, { id: 5, priority: "medium" }] as const;
+    expect([...rows].sort(byPriority).map((r) => r.id)).toEqual([3, 5, 2, 1, 4]);
   });
 });

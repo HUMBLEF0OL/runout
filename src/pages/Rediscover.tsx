@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   createPlaylistFromFilter, createPlaylistFromItems, deleteSavedFilter, getRediscover, getTakeInsights, listItems, listSavedFilters, listTags,
-  saveFilter, type AppError, type ItemFilter, type ItemSummary, type SavedFilter, type Status,
+  saveFilter, toAppError, type AppError, type ItemFilter, type ItemSummary, type SavedFilter, type Status,
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { Dialog, Dots, Empty, ErrorBanner, ItemSet, SkelTiles, Attribution, useToast } from "../components/ui";
@@ -141,7 +141,7 @@ function MakePlaylistDialog({ make, onClose }: { make: Make; onClose: () => void
       const r = make.filterId != null ? await createPlaylistFromFilter(make.filterId, name.trim(), !priv) : await createPlaylistFromItems(rows.map((i) => i.id), name.trim(), !priv);
       onClose();
       toast(`${name.trim()} created on Spotify with ${pl(r.added, "track")}${r.skipped_no_uri ? `. ${pl(r.skipped_no_uri, "record")} without a Spotify link skipped` : ""}.`);
-    } catch (e) { setErr(e as AppError); } finally { setBusy(false); }
+    } catch (e) { setErr(toAppError(e)); } finally { setBusy(false); }
   };
   return (
     <Dialog title={`New Spotify playlist from “${make.title}”`} onClose={onClose}
@@ -174,7 +174,7 @@ function NewShelfDialog({ tags, start, onClose, onSaved }: { tags: string[]; sta
   const [err, setErr] = useState<AppError>();
   const go = async () => {
     setBusy(true);
-    try { const s = await saveFilter(name.trim(), def); toast("Shelf added to Rediscover"); onSaved(s); } catch (e) { setErr(e as AppError); } finally { setBusy(false); }
+    try { const s = await saveFilter(name.trim(), def); toast("Shelf added to Rediscover"); onSaved(s); } catch (e) { setErr(toAppError(e)); } finally { setBusy(false); }
   };
   return (
     <Dialog title="New shelf" onClose={onClose}

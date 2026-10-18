@@ -18,7 +18,7 @@ Items marked **⚑ verify** are assumptions to confirm in the named milestone. E
 | App shell | **Tauri 2** (Rust core + system WebView2) | Already installed toolchain (Rust 1.98 + MSVC, Node 26, WebView2) → zero new installs; small binary; native tray; web UI hosts Spotify embeds naturally |
 | UI | **React + TypeScript + Vite** | Most common, boring choice; good list/table/chart ecosystem |
 | Styling | **Tailwind CSS v4** (`@tailwindcss/vite`) | User decision 18 Oct 2026. Design tokens live in `@theme` with Tailwind's default palette removed, so only DESIGN §3 tokens exist as utilities; multi-state recipes (buttons, cards, segmented, rating, skeleton) stay in `@layer components` |
-| Charts (R2) | Recharts | Free, React-native, enough for bar/line/heatmap |
+| Charts (R2) | CSS bars, heatmap grid and rank rows (no chart library) | Every R2 chart is a bar, rank or heatmap; plain markup + tokens keeps them themable and adds no bundle weight. Recharts was planned in M2 and dropped unused |
 | Database | **SQLite** via `rusqlite` (bundled), **FTS5** for search, WAL mode | Serverless, transactional (NFR-05), fast (NFR-04) |
 | Migrations | Numbered SQL files run at startup, `PRAGMA user_version` | No migration framework needed |
 | Windows media session | `windows` crate → `Windows.Media.Control` (SMTC) | Official OS API; proven on this PC (Spotify 1.305, 18 Oct 2026) |

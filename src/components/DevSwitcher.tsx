@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
 import { dev, onDevChange, setDev, type Release, type View } from "../mocks/devState";
-import { simulateCapture } from "../mocks";
+import { loadMocks } from "../api";
 import { useQuickAdd } from "./QuickAddContext";
 
 const A = "3QJzdZJYIAcoET1GcfpNGi";
@@ -27,7 +27,7 @@ export default function DevSwitcher() {
           {["normal", "empty", "loading", "offline", "error"].map((v) => <option key={v} value={v}>{v}</option>)}</select></label>
         <span>Quick add with:</span>
         <div className="grid">{links.map(([t, l]) => <a key={t} href="#" onClick={(e) => { e.preventDefault(); add({ link: l }); }}>{t}</a>)}
-          <a href="#" onClick={(e) => { e.preventDefault(); simulateCapture(); }}>iPhone share</a></div>
+          <a href="#" onClick={(e) => { e.preventDefault(); loadMocks().then((m) => m.simulateCapture()); }}>iPhone share</a></div>
         <span>Screens:</span>
         <div className="grid">{SCREENS.map(([h, t]) => <Link key={h} to={h}>{t}</Link>)}</div>
       </div>

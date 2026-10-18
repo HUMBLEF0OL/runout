@@ -74,7 +74,7 @@ function UnmatchedCard() {
   const [choosing, setChoosing] = useState<Unmatched | null>(null);
   const link = (u: Unmatched, itemId: number) => api.linkPlay(u.event_id, itemId).then(
     () => { setChoosing(null); toast(`Linked. ${pl(u.plays, "play")} now count for this record`); },
-    (e) => toast(e.message));
+    (e) => toast(api.toAppError(e).message));
   if (um.error) return <ErrorBanner error={um.error} title="Couldn't load unmatched plays." onRetry={um.reload} />;
   if (!um.data?.length) return null;
   return (
@@ -119,7 +119,7 @@ export default function Plays() {
   const logger = useApi(api.getLoggerStatus);
 
   const groups = new Map<string, Play[]>();
-  plays.data?.rows.forEach((p) => { const k = dayLabel(p); groups.set(k, [...(groups.get(k) ?? []), p]); });
+  plays.data?.rows.forEach((p) => { const k = dayLabel(p); const g = groups.get(k); if (g) g.push(p); else groups.set(k, [p]); });
   const n = (s: typeof unrated) => (s.data ? ` ${s.data.total}` : "");
 
   let content;

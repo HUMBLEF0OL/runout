@@ -1,7 +1,7 @@
 // SC-13b Tags: counts, rename, merge, delete (confirm).
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { deleteTag, listTags, mergeTags, renameTag, type AppError, type Tag } from "../api";
+import { deleteTag, listTags, mergeTags, renameTag, toAppError, type AppError, type Tag } from "../api";
 import { Topbar } from "../components/Shell";
 import { Dialog, Dots, Empty, ErrorBanner, SkelRows, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
@@ -54,7 +54,7 @@ function TagDialog({ act, all, onClose }: { act: Act; all: Tag[]; onClose: () =>
       if (k === "merge") { const t = await mergeTags(tag.id, into); toast(`Merged ${tag.name} into ${t.name}`); }
       if (k === "delete") { await deleteTag(tag.id); toast(`Tag ${tag.name} removed from ${pl(tag.item_count, "record")}`); }
       onClose();
-    } catch (e) { setErr(e as AppError); } finally { setBusy(false); }
+    } catch (e) { setErr(toAppError(e)); } finally { setBusy(false); }
   };
   const cancel = <button className="btn btn-secondary" onClick={onClose}>Cancel</button>;
   const label = k === "rename" ? "Rename" : k === "merge" ? "Merge" : "Delete tag";

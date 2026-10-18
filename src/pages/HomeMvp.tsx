@@ -8,14 +8,13 @@ import { useQuickAdd } from "../components/QuickAddContext";
 import { ArtTiles, ErrorBanner, ItemSet, OpenSpotify, SkelRows, Stat, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { age, ago, daysSince, nameOf, PRIO, stars, TYPE, uriLink } from "../lib/format";
+import { byPriority } from "../lib/backlog";
 import FirstRun from "./FirstRun";
 
-const PRIO_ORDER = { high: 0, medium: 1, low: 2 } as const;
-const byPriority = (a: ItemSummary, b: ItemSummary) => (a.priority ? PRIO_ORDER[a.priority] : 3) - (b.priority ? PRIO_ORDER[b.priority] : 3);
 const from = (it: ItemSummary) => (it.recommended_by ? `, from ${it.recommended_by}` : "");
 const withScheme = (raw: string) => (/^https?:\/\//.test(raw) ? raw : `https://${raw}`);
 
-export const StatSkel = () => <div className="stats">{[1, 2, 3, 4].map((i) => <div key={i} className="card h-24"><div className="skel h-full" /></div>)}</div>;
+export const StatSkel = ({ className = "" }: { className?: string }) => <div className={`stats ${className}`}>{[1, 2, 3, 4].map((i) => <div key={i} className="card h-24"><div className="skel h-full" /></div>)}</div>;
 
 export default function HomeMvp() {
   const d = useApi(getDashboard);

@@ -51,14 +51,15 @@ function TopList({ title, rows, kind, src }: { title: string; rows: Rank[]; kind
 function Listening({ range }: { range: Range }) {
   const li = useApi(() => api.getListeningInsights(range), [range]);
   const take = useApi(api.getTakeInsights);
-  const year = useApi(() => api.getListeningInsights("12m"));
+  const year = useApi(() => (range === "12m" ? Promise.resolve(null) : api.getListeningInsights("12m")), [range]); // 12m: reuse li
+  const yearMs = range === "12m" ? li.data?.data.totals.ms : year.data?.data.totals.ms;
   if (li.loading) return <Loading />;
   if (li.error) return <ErrorBanner error={li.error} title="Couldn't load insights." onRetry={li.reload} />;
   const d = li.data!.data; const t = d.totals; const src = li.data!.sources;
   return <>
     <div className="flex flex-wrap gap-7 items-start">
       <Card title="Listening time by month" src={src} className="flex-[1.4_1_480px]">
-        <span className="font-mono text-text-2 text-sm">{year.data ? `${hm(year.data.data.totals.ms)} in the last 12 months` : ""}</span>
+        <span className="font-mono text-text-2 text-sm">{yearMs != null ? `${hm(yearMs)} in the last 12 months` : ""}</span>
         <Bars values={d.monthly.map((m) => m.hours)} labels={d.monthly.map((m) => initial(m.month))} label="Listening hours per month for the last 12 months" />
       </Card>
       <section className="flex-[1_1_320px] min-w-0 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3">

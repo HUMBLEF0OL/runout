@@ -17,7 +17,7 @@ function Choose() {
   const [path, setPath] = useState<string | null>(null);
   const [err, setErr] = useState<AppError | undefined>((useLocation().state as { error?: AppError } | null)?.error);
   const [busy, setBusy] = useState(false);
-  const choose = () => { setBusy(true); setErr(undefined); api.pickImportSource().then(setPath, setErr).finally(() => setBusy(false)); };
+  const choose = () => { setBusy(true); setErr(undefined); api.pickImportSource().then(setPath, (e) => setErr(api.toAppError(e))).finally(() => setBusy(false)); };
   return <>
     <div className="card flex flex-col gap-3 items-center text-center p-10 border border-dashed border-line-strong">
       <b className="text-lg">Choose the folder or .zip from Spotify's email</b>
@@ -47,7 +47,7 @@ function Check({ path }: { path: string }) {
   if (!p.music) return <Empty h="No music plays in this export" line="It may hold only account details. Request Extended streaming history from Spotify for your plays."><Link className="btn btn-secondary" to="/import/1">Choose another</Link></Empty>;
   const run = () => {
     setRunning(true); setRunErr(undefined);
-    api.runImport(path).then((result) => nav("/import/3", { state: { result, preview: p } }), (e) => { setRunErr(e); setRunning(false); });
+    api.runImport(path).then((result) => nav("/import/3", { state: { result, preview: p } }), (e) => { setRunErr(api.toAppError(e)); setRunning(false); });
   };
   const rows: [string, string, number, "" | "text-muted" | "text-accent"][] = [
     ["Music plays", `${dayY(p.from)} to ${dayY(p.until)}`, p.music, ""],

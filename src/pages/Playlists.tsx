@@ -122,16 +122,16 @@ function Studio() {
   const d = draft.data;
   const changes = d.tracks.map((t, i) => ({ t, i })).filter(({ i }) => cut.has(i));
   const toggle = (i: number, v: "keep" | "cut") => setCut((s) => { const n = new Set(s); if (v === "cut") n.add(i); else n.delete(i); return n; });
-  const openConfirm = () => { setBusy(true); api.previewStudioApply(d, keepList(d.tracks, cut)).then((diff) => setConfirm({ d, diff }), setApplyErr).finally(() => setBusy(false)); };
+  const openConfirm = () => { setBusy(true); api.previewStudioApply(d, keepList(d.tracks, cut)).then((diff) => setConfirm({ d, diff }), (e) => setApplyErr(api.toAppError(e))).finally(() => setBusy(false)); };
   const apply = () => {
     setBusy(true);
     api.applyStudioDraft(d, keepList(d.tracks, cut)).then(() => {
       setConfirm(null);
       toast(`${pl(changes.length, "change")} applied to ${sel.name}. Undo is available for 30 days.`, () => api.undoLastApply(sel.uri));
       draft.reload(); last.reload();
-    }, (e: AppError) => { setConfirm(null); setApplyErr(e); }).finally(() => setBusy(false));
+    }, (e) => { setConfirm(null); setApplyErr(api.toAppError(e)); }).finally(() => setBusy(false));
   };
-  const undo = () => api.undoLastApply(sel.uri).then(() => { toast(`${sel.name} restored to how it was before you applied`); draft.reload(); last.reload(); }, setApplyErr);
+  const undo = () => api.undoLastApply(sel.uri).then(() => { toast(`${sel.name} restored to how it was before you applied`); draft.reload(); last.reload(); }, (e) => setApplyErr(api.toAppError(e)));
 
   return wrap(<>
     <Attribution uri={sel.uri} name={sel.name}><span className="text-text-2 text-sm">Tracks from Spotify, read just now, with your own ratings and tags. No listening data is used here.</span></Attribution>

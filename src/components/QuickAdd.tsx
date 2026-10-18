@@ -3,19 +3,19 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import {
-  autofill, bulkAddAlbumTracks, createItem, deleteItem, getItem, isAppError, linkItems, parseLink, prefillTitle, resolveLink, updateItem,
+  autofill, bulkAddAlbumTracks, createItem, deleteItem, getItem, isAppError, linkItems, parseLink, prefillTitle, resolveLink, toAppError, updateItem,
   type ItemDetail, type ItemType, type ParsedLink, type Priority,
 } from "../api";
 import { useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { an, day, nameOf, openUrl, STATUS } from "../lib/format";
 import { qaStep } from "../lib/backlog";
-import { parseLinkLocal } from "./linkLocal";
+import { linkKind } from "../lib/link";
 import type { QuickAddOpts } from "./QuickAddContext";
-import { Attribution, Dialog, Dots, EmbedSlot, useToast } from "./ui";
+import { Attribution, Dialog, Dots, EmbedSlot, PrioritySelect, useToast } from "./ui";
 
 type Resolved = { uri: string; type: ItemType; existing_id?: number };
-const msg = (e: unknown) => (isAppError(e) ? e.message : "Something went wrong.");
+const msg = (e: unknown) => toAppError(e).message;
 
 export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClose: () => void }) {
   const t0 = useRef(performance.now()); // capture_ms: open → save (FR-045)
@@ -67,7 +67,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
     return () => { live = false; };
   }, [link, online]);
 
-  const step = qaStep({ manual, link, online, kind: parseLinkLocal(link).kind, self: naming, parsed, resolved });
+  const step = qaStep({ manual, link, online, kind: linkKind(link), self: naming, parsed, resolved });
   const uri = parsed?.uri ?? resolved?.uri;
   const kind = parsed?.type ?? resolved?.type ?? type;
   const existingId = parsed?.existing_id ?? resolved?.existing_id;
@@ -185,7 +185,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
       foot = cancel;
       break;
     case "podcast":
-      state = <span className="help err">This is a podcast {parseLinkLocal(link).kind}. Runout keeps albums, tracks and artists.</span>;
+      state = <span className="help err">This is a podcast {linkKind(link)}. Runout keeps albums, tracks and artists.</span>;
       foot = <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>;
       break;
     case "playlist":
@@ -235,9 +235,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
           </fieldset>)}
         <div className="tiles grid-cols-2">
           <div className="field"><label className="label" htmlFor="qa-prio">Priority</label>
-            <select id="qa-prio" className="input" value={prio} onChange={(e) => setPrio(e.target.value as Priority | "")}>
-              <option value="">None</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-            </select></div>
+            <PrioritySelect id="qa-prio" value={prio} onChange={setPrio} /></div>
           <div className="field"><label className="label" htmlFor="qa-rec">Recommended by</label>
             <input id="qa-rec" className="input" placeholder="Optional" value={rec} onChange={(e) => setRec(e.target.value)} /></div>
         </div>

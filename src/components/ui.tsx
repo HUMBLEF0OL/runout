@@ -2,8 +2,8 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { XIcon as X } from "@phosphor-icons/react";
-import type { AppError, Freshness, ItemSummary, Play, Source, Status } from "../api";
-import { ago, mmss, time, nameOf, num, openUrl, STATUS, STATUS_ORDER, stars, statusMeta, sub } from "../lib/format";
+import type { AppError, Freshness, ItemSummary, Play, Priority, Source, Status } from "../api";
+import { ago, mmss, time, nameOf, openUrl, PRIO, STATUS, STATUS_ORDER, stars, statusMeta, sub, TYPE } from "../lib/format";
 import { freshnessText, ratingClick, ratingKey, sourceText } from "./logic";
 import { useOnline } from "../hooks/useApi";
 import { safeUri } from "../lib/sanitize";
@@ -131,12 +131,19 @@ export function Rating({ value, onChange, label = "Your rating" }: { value: numb
 export const StatusControl = ({ value, onChange }: { value: Status; onChange: (s: Status) => void }) =>
   <Seg label="Status" radio accent options={STATUS_ORDER.map((s) => [s, STATUS[s]])} value={value} onChange={onChange} />;
 
+/** Priority <select> (quick add, item detail); "" means none. */
+export const PrioritySelect = ({ id, value, onChange, className = "input" }: { id: string; value: Priority | ""; onChange: (p: Priority | "") => void; className?: string }) => (
+  <select id={id} className={className} value={value} onChange={(e) => onChange(e.target.value as Priority | "")}>
+    <option value="">None</option>{(Object.keys(PRIO) as Priority[]).map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
+  </select>
+);
+
 /* ------------------------------------------------------------------ rows and cards */
 /** Record card (default, text-first; no artwork). */
 export function RecordCard({ it, meta, act }: { it: ItemSummary; meta?: ReactNode; act?: boolean }) {
   return (
     <Link to={`/item/${it.id}`} className="card hover flex flex-col gap-1 text-inherit">
-      <span className="text-muted text-xs">{it.type === "album" ? "Album" : it.type === "track" ? "Track" : "Artist"}</span>
+      <span className="text-muted text-xs">{TYPE[it.type]}</span>
       <span className="font-bold">{nameOf(it)}</span>
       {it.type !== "artist" && <span className="text-muted text-sm">{sub(it)}</span>}
       <span className={`font-mono text-xs ${act ? "text-accent" : "text-text-2"}`}>{meta ?? statusMeta(it)}</span>
@@ -156,7 +163,7 @@ export function RankRow({ rank, name, by, href, suffix, value, max, label, hot }
         <div className="truncate">{href ? <Link to={href} className="text-text font-semibold">{name}</Link> : <b>{name}</b>}{by && <span className="text-muted"> {by}</span>}{suffix && <span className="text-muted text-xs"> {suffix}</span>}</div>
         <div className={`bar${hot ? " hot" : ""}`} style={{ width: `${Math.max(2, (value / (max || 1)) * 100)}%` }} />
       </div>
-      <span className="font-mono text-text-2 text-xs text-right">{label}</span>
+      <span className="font-mono text-text-2 whitespace-nowrap text-xs text-right">{label}</span>
     </div>
   );
 }
@@ -171,10 +178,7 @@ export function PlayRow({ p, onRate, onSave, wide }: { p: Play; onRate?: (p: Pla
           : <b className={`truncate ${p.skipped ? "text-faint" : ""}`}>{p.track_name}</b>}
         <span className="text-muted truncate text-xs">{p.artist_name}{p.source === "export" ? ", phone or other device" : ""}</span>
       </span>
-      {p.skipped ? <span className="text-faint text-xs">Skipped, not counted</span>
-        : p.item?.rating ? <Stars r={p.item.rating} />
-        : p.item ? <button className="btn btn-secondary s" onClick={() => onRate?.(p)}>Rate</button>
-        : <button className="btn btn-secondary s" onClick={() => onSave?.(p)}>Save to backlog</button>}
+      {p.skipped ? <span className="text-faint text-xs">Skipped, not counted</span> : <PlayAction p={p} onRate={onRate} onSave={onSave} save="Save to backlog" />}
       <span className="font-mono text-faint text-xs text-right">{ago(p.ended_at_local)}</span>
     </div>
   );
@@ -193,13 +197,18 @@ function PlayRowWide({ p, onRate, onSave }: { p: Play; onRate?: (p: Play) => voi
       <span className="text-muted text-xs">{p.source === "logger" ? "This PC" : "Phone"}</span>
       <span className={`font-mono text-xs ${dim ? "text-faint" : "text-text-2"}`}>{mmss(p.ms_played)}</span>
       <span className="text-sm justify-self-end">
-        {dim ? <span className="text-faint">Skipped, not counted</span>
-          : p.item?.rating ? <Stars r={p.item.rating} />
-          : p.item ? <button className="btn btn-secondary s" onClick={() => onRate?.(p)} aria-label={`Rate ${p.track_name}`}>Rate</button>
-          : <button className="btn btn-secondary s" onClick={() => onSave?.(p)} aria-label={`Save ${p.track_name} to backlog`}>Save</button>}
+        {dim ? <span className="text-faint">Skipped, not counted</span> : <PlayAction p={p} onRate={onRate} onSave={onSave} save="Save" />}
       </span>
     </div>
   );
+}
+
+/** Your stars, else Rate (play linked to a record), else Save (not in your library). */
+function PlayAction({ p, onRate, onSave, save }: { p: Play; onRate?: (p: Play) => void; onSave?: (p: Play) => void; save: string }) {
+  if (p.item?.rating) return <Stars r={p.item.rating} />;
+  return p.item
+    ? <button className="btn btn-secondary s" onClick={() => onRate?.(p)} aria-label={`Rate ${p.track_name}`}>Rate</button>
+    : <button className="btn btn-secondary s" onClick={() => onSave?.(p)} aria-label={`Save ${p.track_name} to backlog`}>{save}</button>;
 }
 
 /* ------------------------------------------------------------------ Spotify content */
@@ -212,7 +221,6 @@ export const OpenSpotify = ({ uri, name }: { uri?: string | null; name?: string 
 export const Attribution = ({ uri, name, children }: { uri?: string | null; name?: string; children?: ReactNode }) =>
   <span className="flex flex-wrap gap-2 items-center"><SpotifyLogo />{children}<OpenSpotify uri={uri} name={name} /></span>;
 
-/** Embed URL derived from the stored URI (TSD §4.3). */
 /** Embed URL derived from the stored URI (TSD §4.3); null for a malformed URI, so nothing is mounted. */
 export const embedUrl = (uri: string) => { const u = safeUri(uri); return u ? `https://open.spotify.com/embed/${u.type}/${u.id}` : null; };
 
@@ -326,4 +334,3 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export { num };

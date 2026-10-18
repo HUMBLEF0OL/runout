@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowDownIcon, ArrowUpIcon } from "@phosphor-icons/react";
 import {
-  discardUnresolved, isAppError, listItems, listUnresolved, reorderBacklog, retryUnresolved, setStatus, updateItem,
-  type AppError, type ItemSummary, type ItemType, type Priority,
+  discardUnresolved, listItems, listUnresolved, reorderBacklog, retryUnresolved, setStatus, updateItem,
+  toAppError, type AppError, type ItemSummary, type ItemType, type Priority,
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
@@ -30,7 +30,7 @@ export default function Backlog() {
   const [drag, setDrag] = useState<number | null>(null);
   const [actErr, setActErr] = useState<AppError>();
 
-  const run = async (p: Promise<unknown>) => { setActErr(undefined); try { await p; return true; } catch (e) { setActErr(isAppError(e) ? e : undefined); return false; } };
+  const run = async (p: Promise<unknown>) => { setActErr(undefined); try { await p; return true; } catch (e) { setActErr(toAppError(e)); return false; } };
 
   const all = items.data?.rows ?? [];
   const named = all.filter((i) => i.display_name);
@@ -65,7 +65,7 @@ export default function Backlog() {
   };
   const retry = async () => {
     try { const r = await retryUnresolved(); toast(r.resolved ? `${pl(r.resolved, "link")} opened` : "Still can’t open the link. Runout tries again when you’re back online."); }
-    catch (e) { setActErr(isAppError(e) ? e : undefined); }
+    catch (e) { setActErr(toAppError(e)); }
   };
 
   const planned = named.filter((i) => i.status === "planned").length;

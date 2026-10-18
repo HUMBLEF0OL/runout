@@ -1,6 +1,6 @@
 // Pure logic behind components (tested in logic.test.ts).
 import type { Freshness, Play, Source } from "../api";
-import { parseLinkLocal } from "./linkLocal";
+import { linkKind, parseLink } from "../lib/link";
 import { day } from "../lib/format";
 
 /** Rating keyboard (DESIGN §5): arrows ±0.5, Home/End, clamp 0–5. Returns null for keys it doesn't handle. */
@@ -24,9 +24,9 @@ export function ratingClick(current: number | null, index: number, leftHalf: boo
 export function fieldButton(value: string): { mode: "add" | "search"; label: string } {
   const v = value.trim();
   if (!v) return { mode: "add", label: "Add" };
-  const p = parseLinkLocal(v);
+  const p = parseLink(v);
   if (p.state === "short") return { mode: "add", label: "Add link" };
-  if (p.state === "ok" || p.state === "unsupported") return { mode: "add", label: p.kind ? `Add ${p.kind}` : "Add" };
+  if (p.state === "ok" || p.state === "unsupported") return { mode: "add", label: `Add ${linkKind(v)}` };
   return { mode: "search", label: "Search" };
 }
 
