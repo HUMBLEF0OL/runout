@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 use tauri::{AppHandle, Manager};
 
+use crate::backup;
 use crate::error::Result;
 use crate::settings::{self, Settings};
 
@@ -57,35 +58,20 @@ impl AppState {
 }
 
 /// Start-up recovery (TSD §4.10), before library.db is opened: a restore that failed half-way leaves
-/// `<library>.restore-failed` beside `<library>.pre-restore` (backup.rs). If the library is then
-/// missing or fails `integrity_check`, the pre-restore copy goes back in its place and the marker is
-/// removed. Returns `true` when it recovered. Names match `backup.rs`'s `sibling(.., "pre-restore")`
-/// and `marker(..)`.
+/// a marker (`backup::marker`). While it exists, `library.db.pre-restore` IS the user's library
+/// (library.db may be the half-restored file), so it goes back in place whatever library.db holds,
+/// then the marker is removed. Returns `true` when it put pre-restore back.
 pub fn recover_library(library: &std::path::Path) -> bool {
-    let side = |p: &std::path::Path, ext: &str| PathBuf::from(format!("{}{ext}", p.display()));
-    let (pre, marker) = (
-        side(library, ".pre-restore"),
-        side(library, ".restore-failed"),
-    );
-    if !pre.exists() || !marker.exists() {
+    let (pre, marker) = (backup::pre_restore(library), backup::marker(library));
+    if !marker.exists() {
         return false;
     }
-    let healthy = library.exists()
-        && Connection::open_with_flags(library, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .and_then(|c| c.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0)))
-            .is_ok_and(|ok| ok == "ok");
-    if healthy {
-        return false;
-    }
-    for ext in ["", "-wal", "-shm"] {
-        let (from, to) = (side(&pre, ext), side(library, ext));
-        let _ = std::fs::remove_file(&to);
-        if from.exists() && std::fs::rename(&from, &to).is_err() {
-            return false; // marker stays: next start tries again
-        }
+    let moved = pre.exists();
+    if moved && backup::move_db(&pre, library).is_err() {
+        return false; // marker stays: next start tries again
     }
     let _ = std::fs::remove_file(marker);
-    true
+    moved
 }
 
 /// Library file name inside the folder `move_library` picks.
@@ -100,6 +86,12 @@ impl AppState {
         let to = dir.join(LIBRARY_FILE);
         let mut conn = self.db.lock().unwrap();
         let from = PathBuf::from(&self.settings.lock().unwrap().library_path);
+        if backup::marker(&from).exists() {
+            return Err(AppError::new(
+                crate::error::Code::Conflict,
+                "A restore didn't finish. Restart Runout before moving the library.",
+            ));
+        }
         if to == from {
             return Ok(from.to_string_lossy().into_owned());
         }
@@ -139,6 +131,7 @@ impl AppState {
         for side in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{side}", from.display()));
         }
+        let _ = backup::remove_pre_restore(&from); // it belonged to the old location
         Ok(to.to_string_lossy().into_owned())
     }
 }
@@ -177,10 +170,28 @@ mod tests {
         std::fs::write(&lib, b"not a database").unwrap();
         std::fs::write(&marker, b"").unwrap();
         assert!(recover_library(&lib));
-        std::fs::copy(&lib, &pre).unwrap();
+        // healthy (half-restored) library + marker → pre-restore still wins
+        for side in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{side}", lib.display()));
+        }
+        drop(crate::db::open(&lib).unwrap()); // empty but passes integrity_check
+        let good = crate::db::open(&pre).unwrap();
+        crate::db::fixture(&good, 2);
+        let want: i64 = good
+            .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
+            .unwrap();
+        drop(good);
         std::fs::write(&marker, b"").unwrap();
-        assert!(!recover_library(&lib), "healthy library stays");
-        assert!(pre.exists());
+        assert!(recover_library(&lib), "marker → pre-restore goes back");
+        assert!(!pre.exists() && !marker.exists());
+        let n: i64 = crate::db::open(&lib)
+            .unwrap()
+            .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, want);
+        // marker without pre-restore → marker cleared
+        std::fs::write(&marker, b"").unwrap();
+        assert!(!recover_library(&lib) && !marker.exists());
         let _ = std::fs::remove_dir_all(d);
     }
 
@@ -211,7 +222,20 @@ mod tests {
                 .unwrap()
         };
         let before = n(&st);
+        // a failed restore's marker → refused, nothing moves
+        let marker = backup::marker(&old);
+        std::fs::write(&marker, b"").unwrap();
+        let e = st.move_library(&d.join("b")).unwrap_err();
+        assert_eq!(e.code, crate::error::Code::Conflict);
+        assert!(old.exists() && !d.join("b").exists());
+        std::fs::remove_file(&marker).unwrap();
+        // a leftover pre-restore of the old location goes with the old file
+        std::fs::write(backup::pre_restore(&old), b"old").unwrap();
         let new = st.move_library(&d.join("b")).unwrap();
+        assert!(
+            !backup::pre_restore(&old).exists(),
+            "old pre-restore removed"
+        );
         assert_eq!(PathBuf::from(&new), d.join("b").join(LIBRARY_FILE));
         assert_eq!(n(&st), before, "live connection is the moved file");
         assert!(!old.exists(), "old file removed after success");

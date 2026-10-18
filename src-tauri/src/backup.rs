@@ -89,10 +89,23 @@ fn sibling(path: &Path, ext: &str) -> PathBuf {
     PathBuf::from(format!("{}.{ext}", path.display()))
 }
 
-/// Marker beside the library: a restore failed half-way and `library.db.pre-restore` may hold the
-/// only good copy, so it must not be cleaned up.
-fn marker(library_path: &Path) -> PathBuf {
+/// Marker beside the library: a restore failed half-way and `library.db.pre-restore` holds the
+/// user's library, so it must not be cleaned up (state.rs `recover_library` puts it back).
+pub(crate) fn marker(library_path: &Path) -> PathBuf {
     sibling(library_path, "restore-failed")
+}
+
+/// `library.db.pre-restore`: the library as it was before the last restore.
+pub(crate) fn pre_restore(library_path: &Path) -> PathBuf {
+    sibling(library_path, "pre-restore")
+}
+
+/// Stand-in while library.db is closed, and what stays live if it can't be reopened: an empty
+/// in-memory db that refuses every write, so nothing is silently written to memory and lost.
+fn refusing() -> Result<Connection> {
+    let c = Connection::open_in_memory()?;
+    c.pragma_update(None, "query_only", true)?;
+    Ok(c)
 }
 
 #[cfg(test)]
@@ -322,7 +335,7 @@ pub fn check_backup(zip_path: &Path, library_path: &Path) -> Result<RestoreCheck
 }
 
 /// Move `from` (+ any `-wal`/`-shm` left beside it) to `to`.
-fn move_db(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn move_db(from: &Path, to: &Path) -> std::io::Result<()> {
     for side in ["-wal", "-shm"] {
         let (f, t) = (
             PathBuf::from(format!("{}{side}", from.display())),
@@ -358,6 +371,7 @@ fn reopen_old(conn: &mut Connection, library_path: &Path, pre: &Path) -> Result<
     } else if library_path.exists() {
         library_path // nothing was moved
     } else {
+        *conn = refusing()?;
         return Err(reopen_failed("no library file left"));
     };
     match crate::db::open(target) {
@@ -367,6 +381,7 @@ fn reopen_old(conn: &mut Connection, library_path: &Path, pre: &Path) -> Result<
         }
         Err(e) => {
             let _ = keep_pre();
+            *conn = refusing()?;
             Err(reopen_failed(e.message))
         }
     }
@@ -382,9 +397,20 @@ fn reopen_failed(detail: impl Into<String>) -> AppError {
 
 /// `restore_backup`: verify, then swap files under the AppState lock. The live connection is closed,
 /// the old file becomes `library.db.pre-restore`, and the restored file is reopened (and migrated).
-/// Any failure before the swap leaves the library untouched.
+/// Any failure before the swap leaves the library untouched. If the old library can't be reopened
+/// either, the live connection refuses writes until restart.
 pub fn restore_backup(
     db: &Mutex<Connection>,
+    library_path: &Path,
+    zip_path: &Path,
+) -> Result<RestoreCheck> {
+    restore_locked(&mut db.lock().unwrap(), library_path, zip_path)
+}
+
+/// [`restore_backup`] with the db lock already held: commands.rs reads `library_path` under it,
+/// so a concurrent `move_library` can't change it mid-restore (lock order db → settings).
+pub fn restore_locked(
+    conn: &mut Connection,
     library_path: &Path,
     zip_path: &Path,
 ) -> Result<RestoreCheck> {
@@ -396,7 +422,7 @@ pub fn restore_backup(
             return Err(e);
         }
     };
-    let pre = sibling(library_path, "pre-restore");
+    let pre = pre_restore(library_path);
     if marker(library_path).exists() {
         let _ = std::fs::remove_file(&staged);
         return Err(AppError::new(
@@ -404,8 +430,7 @@ pub fn restore_backup(
             "A previous restore didn't finish. Restart Runout before restoring again.",
         ));
     }
-    let mut conn = db.lock().unwrap();
-    let old = std::mem::replace(&mut *conn, Connection::open_in_memory()?);
+    let old = std::mem::replace(conn, refusing()?);
     if let Err((old, e)) = old.close() {
         *conn = old;
         let _ = std::fs::remove_file(&staged);
@@ -414,14 +439,14 @@ pub fn restore_backup(
     remove_db_files(&pre);
     if let Err(e) = move_db(library_path, &pre).and_then(|_| rename(&staged, library_path)) {
         let _ = std::fs::remove_file(&staged);
-        reopen_old(&mut conn, library_path, &pre)?;
+        reopen_old(conn, library_path, &pre)?;
         return Err(e.into());
     }
     match crate::db::open(library_path) {
         Ok(c) => *conn = c,
         Err(e) => {
             let _ = std::fs::remove_file(library_path);
-            reopen_old(&mut conn, library_path, &pre)?;
+            reopen_old(conn, library_path, &pre)?;
             return Err(e);
         }
     }
@@ -648,6 +673,19 @@ mod tests {
         cleanup_pre_restore(&lib);
         assert!(pre.exists(), "marker keeps pre-restore");
         assert_eq!(n_items(&Connection::open(&pre).unwrap()), 3);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Nothing left to reopen: the live connection must refuse writes, not keep a writable
+    /// in-memory db whose data would vanish at exit.
+    #[test]
+    fn failed_reopen_leaves_a_connection_that_refuses_writes() {
+        let d = tmp("reopen-dead");
+        let lib = d.join("library.db");
+        let mut conn = Connection::open_in_memory().unwrap();
+        let e = reopen_old(&mut conn, &lib, &pre_restore(&lib)).unwrap_err();
+        assert!(e.message.contains("Restart Runout"));
+        assert!(conn.execute_batch("CREATE TABLE t(x)").is_err());
         let _ = std::fs::remove_dir_all(d);
     }
 

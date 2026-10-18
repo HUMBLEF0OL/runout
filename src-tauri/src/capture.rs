@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, UdpSocket};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -30,6 +30,8 @@ pub const MAX_BODY: usize = 2048;
 pub const RATE_LIMIT: usize = 10;
 const RATE_WINDOW: Duration = Duration::from_secs(60);
 pub const MAX_WRONG_CODES: u32 = 5;
+/// Requests being served at once; more get 503 without a thread (a stalled body holds one forever).
+pub const MAX_IN_FLIGHT: usize = 4;
 pub const FILE: &str = "capture.json";
 
 /// `true` for 10/8, 172.16/12, 192.168/16, 169.254/16 (IPv4-mapped IPv6 included). Nothing else.
@@ -87,17 +89,11 @@ impl Guard {
         }
     }
 
-    /// NFR-18 checks, in order: private source IP, 10/min, route, ≤ 2 KB, JSON, code (5 wrong → disable), link.
-    pub fn screen(
-        &mut self,
-        ip: IpAddr,
-        method: &str,
-        url: &str,
-        body: &[u8],
-        now: Instant,
-    ) -> Verdict {
+    /// Accept-loop gate, before any thread or body byte: private source IP, then the 10/min window.
+    /// Every LAN request counts, whatever happens to it later (a stalled body included).
+    pub fn admit(&mut self, ip: IpAddr, now: Instant) -> Option<(u16, &'static str)> {
         if !is_private(ip) {
-            return reject(403, "Runout only accepts shares from your home network.");
+            return Some((403, "Runout only accepts shares from your home network."));
         }
         while self
             .recent
@@ -107,9 +103,18 @@ impl Guard {
             self.recent.pop_front();
         }
         if self.recent.len() >= RATE_LIMIT {
-            return reject(429, "Too many shares in a minute. Try again shortly.");
+            return Some((429, "Too many shares in a minute. Try again shortly."));
         }
         self.recent.push_back(now);
+        None
+    }
+
+    /// NFR-18 checks after [`Guard::admit`], in order: private source IP, route, ≤ 2 KB, JSON,
+    /// code (5 wrong → disable), link.
+    pub fn screen(&mut self, ip: IpAddr, method: &str, url: &str, body: &[u8]) -> Verdict {
+        if !is_private(ip) {
+            return reject(403, "Runout only accepts shares from your home network.");
+        }
         if method != "POST" || url.split('?').next() != Some("/capture") {
             return reject(404, "Send POST /capture.");
         }
@@ -192,6 +197,8 @@ struct Persisted {
 struct Shared {
     guard: Mutex<Guard>,
     on: AtomicBool,
+    /// `serve_one` threads running now (≤ [`MAX_IN_FLIGHT`]).
+    in_flight: AtomicUsize,
     file: PathBuf,
     hooks: Hooks,
 }
@@ -208,6 +215,25 @@ impl Shared {
         std::fs::write(&self.file, serde_json::to_vec(&p)?)?;
         Ok(())
     }
+
+    /// The listener stopped by itself (lockout or a socket error): off, persisted, UI told why.
+    fn turn_off(&self, reason: &str) {
+        self.on.store(false, Ordering::SeqCst);
+        let _ = self.persist();
+        (self.hooks.emit)("capture-disabled", serde_json::json!({ "reason": reason }));
+    }
+}
+
+/// [`Guard::admit`] plus the in-flight cap. `None` = a `serve_one` slot was taken (release it after).
+fn gate(sh: &Shared, ip: IpAddr, now: Instant) -> Option<(u16, &'static str)> {
+    if let Some(r) = sh.guard.lock().unwrap().admit(ip, now) {
+        return Some(r);
+    }
+    if sh.in_flight.fetch_add(1, Ordering::SeqCst) >= MAX_IN_FLIGHT {
+        sh.in_flight.fetch_sub(1, Ordering::SeqCst);
+        return Some((503, "Runout is busy. Try again shortly."));
+    }
+    None
 }
 
 /// One request: screen, then save/emit. Returns `(status, text for the Shortcut's "Show result")`.
@@ -220,11 +246,7 @@ fn handle(
     body: &[u8],
     arrived: Instant,
 ) -> (u16, String) {
-    let verdict = sh
-        .guard
-        .lock()
-        .unwrap()
-        .screen(ip, method, url, body, arrived);
+    let verdict = sh.guard.lock().unwrap().screen(ip, method, url, body);
     match verdict {
         Verdict::Reject {
             status,
@@ -234,12 +256,7 @@ fn handle(
             if disable {
                 // The code was under attack: retire it now so a restart or re-enable can't reuse it.
                 *sh.guard.lock().unwrap() = Guard::new(new_code());
-                sh.on.store(false, Ordering::SeqCst);
-                let _ = sh.persist();
-                (sh.hooks.emit)(
-                    "capture-disabled",
-                    serde_json::json!({"reason": "wrong_code"}),
-                );
+                sh.turn_off("wrong_code");
             }
             (status, message.into())
         }
@@ -284,12 +301,9 @@ fn pre_read(
 
 /// One request, on its own thread: a stalled client (or tiny_http draining an unread body on drop)
 /// only ever blocks this thread, never the accept loop or `set_enabled`.
-// ponytail: thread per request; the 10/min limit and MAX_BODY keep it small. Pool it if that changes.
-fn serve_one(mut req: tiny_http::Request, sh: &Shared) {
-    let arrived = Instant::now();
-    let ip = req
-        .remote_addr()
-        .map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |a| a.ip());
+// ponytail: thread per request, capped by `gate` (10/min, MAX_IN_FLIGHT). Pool it if that changes.
+fn serve_one(mut req: tiny_http::Request, sh: &Shared, arrived: Instant) {
+    let ip = ip_of(&req);
     let method = req.method().as_str().to_owned();
     let url = req.url().to_owned();
     let (status, text) = match pre_read(ip, &method, &url, req.body_length()) {
@@ -306,25 +320,52 @@ fn serve_one(mut req: tiny_http::Request, sh: &Shared) {
     let _ = req.respond(tiny_http::Response::from_string(text).with_status_code(status));
 }
 
+fn ip_of(req: &tiny_http::Request) -> IpAddr {
+    req.remote_addr()
+        .map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |a| a.ip())
+}
+
 /// How often the accept loop looks at `stop` / a lockout.
 const POLL: Duration = Duration::from_millis(200);
 
-/// Accept loop: hands each request to [`serve_one`] and stops when `stop` is set or a lockout turns
-/// capture off. On a lockout it closes its own server, so the port stops accepting at once.
+/// Accept loop: [`gate`]s each request, hands it to [`serve_one`] and stops when `stop` is set or
+/// capture turns off (lockout, or a socket error → `capture-disabled {reason: 'error'}`). When it
+/// stops by itself it closes its own server, so the port stops accepting at once.
 fn serve(
     server: Arc<tiny_http::Server>,
     stop: Arc<AtomicBool>,
     sh: Arc<Shared>,
     running: Arc<Mutex<Option<Running>>>,
 ) {
+    // Gate rejects are answered on one thread: dropping a request drains its body, which a stalled
+    // client can block. ponytail: one stalled reject delays later rejects (queued, no new threads).
+    let (reject_tx, reject_rx) = std::sync::mpsc::channel::<(tiny_http::Request, u16, &str)>();
+    std::thread::spawn(move || {
+        for (req, status, text) in reject_rx {
+            let _ = req.respond(tiny_http::Response::from_string(text).with_status_code(status));
+        }
+    });
     while !stop.load(Ordering::SeqCst) && sh.on.load(Ordering::SeqCst) {
         match server.recv_timeout(POLL) {
             Ok(Some(req)) => {
+                let arrived = Instant::now();
+                if let Some((status, text)) = gate(&sh, ip_of(&req), arrived) {
+                    let _ = reject_tx.send((req, status, text));
+                    continue;
+                }
                 let sh = sh.clone();
-                std::thread::spawn(move || serve_one(req, &sh));
+                std::thread::spawn(move || {
+                    serve_one(req, &sh, arrived);
+                    sh.in_flight.fetch_sub(1, Ordering::SeqCst);
+                });
             }
             Ok(None) => {}
-            Err(_) => break,
+            Err(_) => {
+                if !stop.load(Ordering::SeqCst) {
+                    sh.turn_off("error");
+                }
+                break;
+            }
         }
     }
     drop(server);
@@ -387,6 +428,7 @@ impl Listener {
             shared: Arc::new(Shared {
                 guard: Mutex::new(Guard::new(code)),
                 on: AtomicBool::new(on),
+                in_flight: AtomicUsize::new(0),
                 file: file.to_owned(),
                 hooks,
             }),
@@ -537,13 +579,11 @@ mod tests {
     #[test]
     fn accepts_good_and_short_links() {
         let mut g = Guard::new("482913".into());
-        let t = Instant::now();
         let v = g.screen(
             LAN,
             "POST",
             "/capture",
             &body("482 913", &format!("  {}  ", album())),
-            t,
         );
         assert_eq!(v, Verdict::Accept(album()));
         let v = g.screen(
@@ -551,12 +591,11 @@ mod tests {
             "POST",
             "/capture",
             &body("482913", "https://spotify.link/aXk3P9q"),
-            t,
         );
         assert_eq!(v, Verdict::Accept("https://spotify.link/aXk3P9q".into()));
-        assert_eq!(status(&g.screen(LAN, "GET", "/capture", b"", t)), 404);
+        assert_eq!(status(&g.screen(LAN, "GET", "/capture", b"")), 404);
         assert_eq!(
-            status(&g.screen(LAN, "POST", "/capture", b"{not json", t)),
+            status(&g.screen(LAN, "POST", "/capture", b"{not json")),
             400
         );
     }
@@ -564,9 +603,8 @@ mod tests {
     #[test]
     fn nfr18_wrong_code_five_times_disables() {
         let mut g = Guard::new("482913".into());
-        let t = Instant::now();
         for i in 1..=5 {
-            let v = g.screen(LAN, "POST", "/capture", &body("111111", &album()), t);
+            let v = g.screen(LAN, "POST", "/capture", &body("111111", &album()));
             let Verdict::Reject {
                 status, disable, ..
             } = v
@@ -586,7 +624,6 @@ mod tests {
                 "POST",
                 "/capture",
                 &body("482913", &album()),
-                Instant::now(),
             );
             assert_eq!(status(&v), 403, "{ip}");
         }
@@ -597,43 +634,70 @@ mod tests {
         let mut g = Guard::new("482913".into());
         let t = Instant::now();
         for _ in 0..10 {
-            assert_eq!(
-                status(&g.screen(LAN, "POST", "/capture", &body("482913", &album()), t)),
-                200
-            );
+            assert_eq!(g.admit(LAN, t), None);
         }
+        assert_eq!(g.admit(LAN, t).unwrap().0, 429);
+        let out = "203.0.113.5".parse().unwrap();
+        assert_eq!(g.admit(out, t).unwrap().0, 403, "IP before the window");
+        assert_eq!(g.admit(LAN, t + Duration::from_secs(61)), None);
+    }
+
+    /// Every request counts against 10/min at the accept loop, before a thread or body read; at
+    /// most MAX_IN_FLIGHT are served at once (stalled bodies hold their slot), the rest get 503.
+    #[test]
+    fn gate_counts_every_request_and_caps_in_flight() {
+        let dir = tmp("gate");
+        let (l, _) = listener(&dir, 0);
+        let sh = &l.shared;
+        let t = Instant::now();
+        for _ in 0..MAX_IN_FLIGHT {
+            assert_eq!(gate(sh, LAN, t), None);
+        }
+        assert_eq!(gate(sh, LAN, t).unwrap().0, 503);
+        assert_eq!(sh.in_flight.load(Ordering::SeqCst), MAX_IN_FLIGHT);
+        sh.in_flight.store(0, Ordering::SeqCst); // those requests finished
+        for _ in 0..RATE_LIMIT - MAX_IN_FLIGHT - 1 {
+            assert_eq!(gate(sh, LAN, t), None);
+            sh.in_flight.fetch_sub(1, Ordering::SeqCst);
+        }
+        assert_eq!(gate(sh, LAN, t).unwrap().0, 429, "the 503 counted too");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn socket_error_turns_capture_off_persists_and_emits() {
+        let dir = tmp("sockerr");
+        let (l, events) = listener(&dir, 0);
+        l.shared.on.store(true, Ordering::SeqCst);
+        l.shared.persist().unwrap();
+        l.shared.turn_off("error");
+        assert!(!l.info().on);
         assert_eq!(
-            status(&g.screen(LAN, "POST", "/capture", &body("482913", &album()), t)),
-            429
+            events.lock().unwrap().as_slice(),
+            &[("capture-disabled", serde_json::json!({"reason": "error"}))]
         );
-        let later = t + Duration::from_secs(61);
-        assert_eq!(
-            status(&g.screen(LAN, "POST", "/capture", &body("482913", &album()), later)),
-            200
-        );
+        drop(l);
+        assert!(!listener(&dir, 0).0.info().on, "off persisted");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn nfr18_body_over_2kb_rejected() {
         let mut g = Guard::new("482913".into());
         let big = body("482913", &format!("{}{}", album(), "x".repeat(MAX_BODY)));
-        assert_eq!(
-            status(&g.screen(LAN, "POST", "/capture", &big, Instant::now())),
-            413
-        );
+        assert_eq!(status(&g.screen(LAN, "POST", "/capture", &big)), 413);
     }
 
     #[test]
     fn nfr18_non_spotify_link_rejected() {
         let mut g = Guard::new("482913".into());
-        let t = Instant::now();
         for link in [
             &format!("{}//blocked.invalid/album/{A}", "https:"), // split so check.py's host scan skips it
             "coltrane",
             &format!("https://open.spotify.com/episode/{A}"),
         ] {
             assert_eq!(
-                status(&g.screen(LAN, "POST", "/capture", &body("482913", link), t)),
+                status(&g.screen(LAN, "POST", "/capture", &body("482913", link))),
                 400,
                 "{link}"
             );

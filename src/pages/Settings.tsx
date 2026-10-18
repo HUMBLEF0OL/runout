@@ -97,7 +97,7 @@ export default function Settings() {
               : <span className="text-muted">No backups yet. Back up now to make the first one.</span>}
             <span className="flex justify-between items-baseline gap-3">
               <span className="font-mono text-text-2 text-xs">{st.backup_dir}</span>
-              <button className="btn btn-ghost s" disabled={!!busy} onClick={() => run("dir", async () => { const d = await chooseBackupDir(); if (d) { await updateSettings({ backup_dir: d }); toast(`Backups now go to ${d}`); } })}>Change folder</button>
+              <button className="btn btn-ghost s" disabled={!!busy} onClick={() => run("dir", async () => { const d = await chooseBackupDir(); if (d) { s.reload(); toast(`Backups now go to ${d}`); } })}>Change folder</button>
             </span>
             <Switch label="Back up weekly" on={st.backup_weekly} onChange={(v) => run("weekly", () => updateSettings({ backup_weekly: v }))} />
             <label className="flex flex-wrap gap-2 items-center text-sm">Warn when a backup is over

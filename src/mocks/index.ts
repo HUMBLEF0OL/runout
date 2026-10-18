@@ -323,7 +323,10 @@ const H: Record<string, Handler> = {
   }),
   get_online: () => dev.view !== "offline",
   get_settings: () => ({ ...settings }),
-  update_settings: ({ patch }) => Object.assign(settings, patch) && { ...settings },
+  update_settings: ({ patch }) => {
+    if ("library_path" in patch || "backup_dir" in patch) fail("validation", "Use the folder pickers to change paths.");
+    return Object.assign(settings, patch) && { ...settings };
+  },
   get_capture: () => ({ ...capture }),
   set_capture_enabled: ({ on }) => { capture.on = on; return { ...capture }; },
   new_pairing_code: () => { capture.code = String(100000 + Math.floor(Math.random() * 900000)).replace(/(\d{3})(\d{3})/, "$1 $2"); return { ...capture }; },
@@ -336,7 +339,7 @@ const H: Record<string, Handler> = {
   pick_backup: () => backups[0]?.path ?? null,
   check_backup: () => ({ ok: true, schema_version: 1, counts: counts() }),
   restore_backup: () => ({ ok: true, schema_version: 1, counts: counts() }),
-  choose_backup_dir: () => "D:\\Backups\\Runout",
+  choose_backup_dir: () => (settings.backup_dir = "D:\\Backups\\Runout"),
   move_library: () => "D:\\Music\\Runout\\library.db",
   delete_library: ({ confirm }) => { if (confirm !== "DELETE") fail("validation", "Type DELETE in capitals to confirm."); items.splice(0); },
   record_page_visit: () => undefined,

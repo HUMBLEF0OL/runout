@@ -35,13 +35,17 @@ impl Settings {
     }
 }
 
-/// `update_settings`: `base` with the keys of `patch` laid over it; unknown keys, wrong types or
-/// `library_path` (only `move_library` changes it) → `validation`.
+/// `update_settings`: `base` with the keys of `patch` laid over it; unknown keys, wrong types or a
+/// path the UI must not choose (API.md §1: only Rust's pickers `move_library` / `choose_backup_dir`
+/// set `library_path` / `backup_dir`) → `validation`.
 pub fn merge(base: &Settings, patch: &Value) -> Result<Settings> {
-    if patch.get("library_path").is_some() {
-        return Err(AppError::validation(
-            "Use Move library to change where the library lives.",
-        ));
+    for (key, what) in [
+        ("library_path", "Use Change location to move the library."),
+        ("backup_dir", "Use Change folder to pick where backups go."),
+    ] {
+        if patch.get(key).is_some() {
+            return Err(AppError::validation(what));
+        }
     }
     overlay(base, patch)
 }
@@ -99,8 +103,11 @@ mod tests {
         assert!(merge(&d, &json!({"nope": 1})).is_err());
         assert!(merge(&d, &json!({"size_warn_mb": "big"})).is_err());
         // only move_library may change library_path
-        let e = merge(&d, &json!({"library_path": "x.db"})).unwrap_err();
-        assert_eq!(e.code, crate::error::Code::Validation);
+        // only the Rust pickers may change paths (API.md §1)
+        for key in ["library_path", "backup_dir"] {
+            let e = merge(&d, &json!({ key: "x" })).unwrap_err();
+            assert_eq!(e.code, crate::error::Code::Validation, "{key}");
+        }
 
         let dir = std::env::temp_dir().join(format!("runout-settings-{}", std::process::id()));
         let path = dir.join(FILE);

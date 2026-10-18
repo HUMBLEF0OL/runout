@@ -273,7 +273,7 @@ pub fn get_settings(st: St<'_>) -> Result<Settings> {
     Ok(settings_now(&st))
 }
 
-/// `library_path` is refused by `settings::merge` (only `move_library` changes it).
+/// `library_path` and `backup_dir` are refused by `settings::merge` (Rust's pickers set them).
 #[tauri::command(async)]
 pub fn update_settings(st: St<'_>, patch: Value) -> Result<Settings> {
     let mut cur = st.settings.lock().unwrap();
@@ -366,14 +366,17 @@ fn zip_arg(path: &str) -> Result<PathBuf> {
 
 #[tauri::command(async)]
 pub fn check_backup(st: St<'_>, path: String) -> Result<RestoreCheck> {
+    let _db = st.db.lock().unwrap(); // lock order db → settings, as move_library: path can't move
     let lib = settings_now(&st).library_path;
     backup::check_backup(&zip_arg(&path)?, Path::new(&lib))
 }
 
 #[tauri::command(async)]
 pub fn restore_backup(st: St<'_>, path: String) -> Result<RestoreCheck> {
+    let zip = zip_arg(&path)?;
+    let mut conn = st.db.lock().unwrap(); // db → settings, as move_library
     let lib = settings_now(&st).library_path;
-    backup::restore_backup(&st.db, Path::new(&lib), &zip_arg(&path)?)
+    backup::restore_locked(&mut conn, Path::new(&lib), &zip)
 }
 
 #[tauri::command(async)]
@@ -403,12 +406,9 @@ pub fn move_library<R: Runtime>(app: AppHandle<R>, st: St<'_>) -> Result<Option<
 
 #[tauri::command(async)]
 pub fn delete_library(st: St<'_>, confirm: String) -> Result<()> {
+    let mut conn = st.db.lock().unwrap(); // db → settings, as move_library
     let lib = settings_now(&st).library_path;
-    cleanup::delete_library(
-        &mut st.db.lock().unwrap(),
-        std::path::Path::new(&lib),
-        &confirm,
-    )
+    cleanup::delete_library(&mut conn, Path::new(&lib), &confirm)
 }
 
 /* ------------------------------------------------------------------ usage */
@@ -527,13 +527,10 @@ mod tests {
         assert_eq!(e["existing_id"], a);
         let e = call(&w, "get_item", json!({"id": 999})).unwrap_err();
         assert_eq!(e["code"], json!("not_found"));
-        let e = call(
-            &w,
-            "update_settings",
-            json!({"patch": {"library_path": "x.db"}}),
-        )
-        .unwrap_err();
-        assert_eq!(e["code"], json!("validation"));
+        for key in ["library_path", "backup_dir"] {
+            let e = call(&w, "update_settings", json!({"patch": { key: "x" }})).unwrap_err();
+            assert_eq!(e["code"], json!("validation"), "{key}");
+        }
         let e = call(&w, "check_backup", json!({"path": "C:\\nope.txt"})).unwrap_err();
         assert_eq!(e["code"], json!("validation"));
         drop(w);

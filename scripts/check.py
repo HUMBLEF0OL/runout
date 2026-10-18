@@ -54,6 +54,39 @@ def check_one_item_summary():
         print("--- one ItemSummary: FAIL (build it with library::items::summary)\n" + "\n".join(bad))
 
 
+def check_events():
+    # Review M3 step 11: every MVP event in API.md §6, and each 'literal' in its payload, is emitted
+    # somewhere in Rust (capture-disabled {reason:'error'} was specified but never sent).
+    # non-test code only: a test's expected payload doesn't prove the app sends it
+    rs = "\n".join(re.split(r"#\[cfg\(test\)\]\r?\nmod tests", p.read_text(encoding="utf-8"))[0]
+                   for p in (TAURI / "src").rglob("*.rs"))
+    if "emit(" not in rs:
+        return
+    spec = (ROOT / "docs/API.md").read_text(encoding="utf-8")
+    sec = re.search(r"^## 6\..*?(?=^## )", spec, re.S | re.M).group(0)
+    rows = re.findall(r"^\| `([a-z-]+)` \| (.*?) \| MVP \|$", sec, re.M)
+    bad = [f"API.md section 6 '{ev}': {lit} never appears as a Rust string literal"
+           for ev, payload in rows for lit in [ev, *re.findall(r"'([a-z_]+)'", payload)]
+           if f'"{lit}"' not in rs]
+    if not rows:
+        bad.append("no MVP events parsed from API.md §6 (table format changed?)")
+    if bad:
+        failures.append("events")
+        print("--- events: FAIL\n" + "\n".join(bad))
+
+
+def check_settings_paths():
+    # API.md §1 (pickers by Rust): update_settings must refuse both paths the UI may not choose.
+    p = TAURI / "src/settings.rs"
+    if not p.exists():
+        return
+    m = re.search(r"pub fn merge\(.*?\n}\n", p.read_text(encoding="utf-8"), re.S)
+    missing = [k for k in ("library_path", "backup_dir") if not m or f'"{k}"' not in m.group(0)]
+    if missing:
+        failures.append("settings paths")
+        print("--- settings paths: FAIL (settings::merge must refuse) " + ", ".join(missing))
+
+
 def check_no_oembed_or_tokens_logged():
     # TSD §7: tokens never logged.
     pat = re.compile(r"(println!|log::\w+!|tracing::\w+!|console\.log)\(.*(token|secret|refresh)", re.I)
@@ -225,6 +258,8 @@ if (ROOT / "package.json").exists():
 check_hosts()
 check_no_oembed_or_tokens_logged()
 check_one_item_summary()
+check_events()
+check_settings_paths()
 check_ui_purity()
 check_contract_and_attribution()
 check_commands()
