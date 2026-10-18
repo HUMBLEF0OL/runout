@@ -9,7 +9,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M0 Foundations | setup | — | — | U-1 | done |
 | M1 Design | design | MVP, R2, R3 | all (SC-01–13) | U-9 | approved 18 Oct 2026 |
 | M2 UI build | UI | MVP, R2, R3 | all, on mock data | — | done 18 Oct 2026 |
-| M3 Backend: MVP core | backend | MVP | CAP-01–17, 35 | — | 3–4 weeks |
+| M3 Backend: MVP core | backend | MVP | CAP-01–17, 35 | — | done 18 Oct 2026 |
 | M4 Backend: listening and insights | backend | R2 | CAP-18–27 | U-2 | 3–4 weeks |
 | M5 Backend: Spotify connected | backend | R3 | CAP-28–34 | U-6, U-7, U-8 (opt.) | 3–4 weeks |
 | M6 Integration: MVP release | integration | MVP | CAP-01–17, 35 | U-3, U-4, U-5 | 1–2 weeks + 2 weeks daily use |
@@ -17,14 +17,15 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M8 Future candidates | — | — | per item | per item | as needed |
 
 ### Status (18 Oct 2026)
-- **Phase:** backend phase, M3 in progress. Branch `dev` → merge to `master`; commits only, no remote.
+- **Phase:** backend phase; M3 done, M4 ∥ M5 next. Branch `dev` → merge to `master`; commits only, no remote.
 - **M0** done. **M1** designs approved (U-9, 18 Oct 2026); its other acceptance lines were never ticked on the boards themselves, and M2 met them in code (states per screen, `tokens.test.ts` contrast, compliance review with no open findings).
 - **M2** done and closed: all 13 screens + design-system page on mock data, Tailwind v4, `src/api.ts` = full API.md contract behind mocks, input sanitization, T4 verified in the real window. Proof: `python scripts/check.py` (92 Vitest tests) and `node scripts/journeys.mjs` (30/30 keyboard-only steps, journeys A–H). Commits `9cd6c2e`, `df6b155`, `fc12844`.
 - **Contract additions made in M2** (backend must implement): `create_playlist_from_items`; dashboard tile fields; `Unmatched.candidates`; `CollectionInsights` stat fields; `NewItem.artist_name/notes/promoted_fields`; `ItemPatch.artist_name`; `ItemSummary.album_name/added_via/recommended_by`; `ItemDetail.track_list` (all in API.md).
 - **Known gaps:** see [Known gaps](#known-gaps) below (G-2 to G-5 closed in M3).
 - **Your open hard stops:** U-1 (request Spotify exports) not recorded as done; U-2 needed by M4; U-6/U-7 by M5; U-3/U-4/U-5 by M6.
 - **M3** steps 1–12 built and through three external spec reviews (all findings fixed); 43 §3 commands registered and checked by `check.py`.
-- **Next:** step 13 (record) and `close-milestone M3`.
+- **M3 closed** 18 Oct 2026: all 8 acceptance lines ticked with evidence; four external spec reviews, every finding fixed. Contract changes in M3: `ItemSummary.notes`, `NewItem.album_id`, `ItemPatch.type`, `search` `type`, `recent_activity` dropped.
+- **Next:** M4 work item 1 (SMTC spike) per `docs/plans/M4-listening-insights.md`; M4 WI 4 waits on **U-2**. M5 starts at its U-6 gate.
 
 ### Known gaps
 Found while building and closing M2 (18 Oct 2026). None blocks a release criterion. "Contract" = needs an API.md change first (API.md §7), then `api.ts`, the mock and Rust together. Remove a row when it's fixed; say in the commit which G-n it closes.
@@ -117,14 +118,14 @@ Work items
 12. Performance generator (10k items).
 
 Acceptance
-- [ ] `cargo test` green, incl. ≥ 15 link-parser cases, promotion rule, duplicate block, tag merge, backup rotation ×4.
-- [ ] Every `api.ts` MVP call has a Rust command with matching types.
-- [ ] NFR-04 on 10k items: search < 200 ms; search finds a word that appears only in a review.
-- [ ] All data persists across restart; merging two tags keeps every item tagged once.
-- [ ] Kill during a large write and during backup → library passes integrity check (NFR-05).
-- [ ] Listener: wrong code ×5 disables it; non-LAN request rejected; 11th request in a minute rejected; body > 2 KB rejected; non-Spotify link rejected (NFR-18).
-- [ ] Backup size recorded against the NFR-11 estimate; restore of the oldest verifies counts.
-- [ ] `docs/EXPORT_FORMAT.md` exists and matches an actual export file.
+- [x] `cargo test` green, incl. ≥ 15 link-parser cases, promotion rule, duplicate block, tag merge, backup rotation ×4. *(18 Oct 2026: `cargo test` 88 lib + integrity + persistence green; `links::tests::parse_table` 35 cases; `provenance` promotion tests; `items` duplicate block; `tags::merge_keeps_every_item_tagged_once`; `backup` rotation ×4 keeps newest 3)*
+- [x] Every `api.ts` MVP call has a Rust command with matching types. *(43 §3 commands in `commands.rs`, enforced by check.py `commands`; serde structs compared field by field in the pre-close review; `commands::tests::invoke_keys_match_api_ts` proves the invoke keys)*
+- [x] NFR-04 on 10k items: search < 200 ms; search finds a word that appears only in a review. *(`tests/perf.rs` release: worst search 24.9 ms, list page 9.9 ms, start 48 ms; review-only word 1 hit in 0.3 ms)*
+- [x] All data persists across restart; merging two tags keeps every item tagged once. *(`tests/persistence.rs`: file DB written, dropped, reopened, full ItemDetail + filters/tags/counts/search equal; tag merge test above)*
+- [x] Kill during a large write and during backup → library passes integrity check (NFR-05). *(`tests/integrity.rs` release: killed mid-write at 400/1300/2700 ms and mid-backup at 30/250/700 ms, `integrity_check` ok every time)*
+- [x] Listener: wrong code ×5 disables it; non-LAN request rejected; 11th request in a minute rejected; body > 2 KB rejected; non-Spotify link rejected (NFR-18). *(`capture` tests for each rule plus socket tests: 413 before read, 411 chunked, 408 stalled, lockout closes the port; std listener with timeouts, G-17)*
+- [x] Backup size recorded against the NFR-11 estimate; restore of the oldest verifies counts. *(`docs/kb/perf-integrity.md`: 10k library 13 MB → 4.2 MB zip vs 10–30 MB estimate; `backup::tests::restore_of_oldest_verifies_counts`)*
+- [x] `docs/EXPORT_FORMAT.md` exists and matches an actual export file. *(`export::tests::doc_matches_a_real_export` compares the doc's keys with a real export)*
 
 ## M4 — Backend: listening and insights
 
