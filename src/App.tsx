@@ -5,12 +5,15 @@ import { ToastProvider } from "./components/ui";
 
 // Each page is its own chunk, fetched on first visit; only the shell loads up front.
 const page = (load: () => Promise<{ default: ComponentType }>) => async () => ({ Component: (await load()).default });
+// Shown while the first page chunk loads (a few ms from disk); blank, like the window before React mounts.
+const HydrateFallback = () => null;
 
 // Hash routes match the prototype (DESIGN §6).
 const router = createHashRouter([
-  { path: "/system", lazy: page(() => import("./pages/System")) },
+  { path: "/system", HydrateFallback, lazy: page(() => import("./pages/System")) },
   {
     element: <Shell />,
+    HydrateFallback,
     children: [
       { path: "/home", lazy: page(() => import("./pages/Home")) },
       { path: "/first-run", lazy: page(() => import("./pages/FirstRun")) },

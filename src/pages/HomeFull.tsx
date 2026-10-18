@@ -32,14 +32,15 @@ export default function HomeFull() {
   const seg = <Seg label="Time range" options={RANGES} value={range} onChange={setRange} />;
 
   const noData = ins.data && ins.data.data.totals.plays === 0 && plays.data?.total === 0;
-  if (noData) return <><Topbar /><EmptyListening /></>;
-  if (ins.error) return <><Topbar>{seg}</Topbar><ErrorBanner title="Couldn’t load your listening." error={ins.error} onRetry={ins.reload} /></>;
+  if (noData) return <><Topbar /><h1 className="sr-only">Home</h1><EmptyListening /></>;
+  if (ins.error) return <><Topbar>{seg}</Topbar><h1 className="sr-only">Home</h1><ErrorBanner title="Couldn’t load your listening." error={ins.error} onRetry={ins.reload} /></>;
 
   const t = ins.data?.data.totals;
   const src = ins.data?.sources ?? []; // no tag until the response says which sources it used (FR-032)
   return (
     <>
       <Topbar>{seg}</Topbar>
+      <h1 className="sr-only">Home</h1>
       <section aria-label="Now and this period" className="flex flex-wrap gap-5 items-stretch">
         <NowCard logger={logger.data} loading={logger.loading} error={!!logger.error} retry={logger.reload} />
         {!t ? <StatSkel className="flex-[1_1_300px] grid-cols-2" />

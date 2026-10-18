@@ -22,6 +22,7 @@ export default function HomeMvp() {
   return (
     <>
       <Topbar />
+      <h1 className="sr-only">Home</h1>
       {d.loading ? <><StatSkel /><SkelRows n={5} /></>
         : d.error || !d.data ? <ErrorBanner title="Couldn’t open your library." error={d.error} onRetry={d.reload} />
         : <MvpBody dash={d.data} />}
