@@ -37,14 +37,18 @@ pub fn check(url: &str) -> Result<Url> {
     }
 }
 
+/// Redirect policy: `prev` = URLs already requested (reqwest counts the original), so redirect n
+/// sees `prev == n`. Follow at most [`MAX_REDIRECTS`] hops, each to an allow-listed URL.
+fn redirect_ok(prev: usize, url: &Url) -> bool {
+    prev <= MAX_REDIRECTS && host_allowed(url)
+}
+
 static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     let policy = redirect::Policy::custom(|attempt| {
-        if attempt.previous().len() >= MAX_REDIRECTS {
-            attempt.error("too many redirects")
-        } else if !host_allowed(attempt.url()) {
-            attempt.error("redirect off the allow-list")
-        } else {
+        if redirect_ok(attempt.previous().len(), attempt.url()) {
             attempt.follow()
+        } else {
+            attempt.error("redirect refused (too many hops or off the allow-list)")
         }
     });
     Client::builder()
@@ -138,6 +142,17 @@ mod tests {
         ] {
             assert_eq!(check(&bad).unwrap_err().code, Code::Validation, "{bad}");
         }
+    }
+
+    #[test]
+    fn redirect_policy_refuses_off_list_hop_and_sixth_hop() {
+        let ok = Url::parse("https://open.spotify.com/album/x").unwrap();
+        let off = Url::parse(&format!("{}//blocked.invalid/", "https:")).unwrap();
+        // `prev` = URLs already requested (the original counts), so redirect n sees prev == n.
+        assert!(redirect_ok(1, &ok));
+        assert!(redirect_ok(5, &ok), "5th hop is allowed");
+        assert!(!redirect_ok(6, &ok), "6th hop is refused");
+        assert!(!redirect_ok(1, &off), "off-allow-list hop is refused");
     }
 
     #[test]

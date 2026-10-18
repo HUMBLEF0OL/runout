@@ -41,7 +41,9 @@ describe("mock commands (API.md)", () => {
     expect((await getItem(b.id)).links).toContainEqual(expect.objectContaining({ kind: "version_of", direction: "to" }));
     await unlinkItems(a.id, b.id, "version_of");
     expect((await getItem(a.id)).links.some((l) => l.kind === "version_of")).toBe(false);
-    expect((await updateItem(a.id, { type: "track" })).type).toBe("track");
+    if (a.spotify_uri) await expect(updateItem(a.id, { type: "track" })).rejects.toMatchObject({ code: "validation" }); // type comes from the link
+    const manual = await createItem({ type: "album", display_name: "Tape from a friend", spotify_uri: null, provenance: "user" });
+    expect((await updateItem(manual.id, { type: "track" })).type).toBe("track");
   });
   it("item summaries carry notes (G-4) and the dashboard has no recent_activity (G-5)", async () => {
     const d = await getDashboard();

@@ -84,6 +84,22 @@ fn classify(kind: &str, id: &str) -> Parsed {
     }
 }
 
+fn strip_scheme(s: &str) -> &str {
+    strip_prefix_ci(s, "https://")
+        .or_else(|| strip_prefix_ci(s, "http://"))
+        .unwrap_or(s)
+}
+
+/// Canonical `https://spotify.link/{code}` for a short link (query and trailing slash dropped).
+fn short_url(raw: &str) -> Option<String> {
+    let s = raw.trim();
+    let code = strip_prefix_ci(strip_scheme(s), "spotify.link/")?;
+    let code = code.split('?').next().unwrap_or("");
+    let code = code.strip_suffix('/').unwrap_or(code);
+    (s.len() <= limit::LINK && !code.is_empty() && code.bytes().all(|b| b.is_ascii_alphanumeric()))
+        .then(|| format!("https://spotify.link/{code}"))
+}
+
 /// Pure parse of a pasted/shared link (TSD §4.1). Never touches the network.
 pub fn parse(raw: &str) -> Parsed {
     let s = raw.trim();
@@ -98,15 +114,10 @@ pub fn parse(raw: &str) -> Parsed {
             _ => Parsed::state(LinkState::Invalid),
         };
     }
-    let rest = strip_prefix_ci(s, "https://")
-        .or_else(|| strip_prefix_ci(s, "http://"))
-        .unwrap_or(s);
+    let rest = strip_scheme(s);
     // spotify.link/{code}[/][?…]
-    if let Some(code) = strip_prefix_ci(rest, "spotify.link/") {
-        let code = code.split('?').next().unwrap_or("");
-        let code = code.strip_suffix('/').unwrap_or(code);
-        let ok = !code.is_empty() && code.bytes().all(|b| b.is_ascii_alphanumeric());
-        return Parsed::state(if ok {
+    if strip_prefix_ci(rest, "spotify.link/").is_some() {
+        return Parsed::state(if short_url(s).is_some() {
             LinkState::Short
         } else {
             LinkState::Invalid
@@ -170,25 +181,19 @@ fn find_open_link(body: &str) -> Option<Parsed> {
         .find(|p| p.state == LinkState::Ok)
 }
 
-/// Resolve a link to `(uri, type)`. Short links follow allow-listed redirects (max 5, 5 s);
-/// connectivity failures return `offline` (the caller queues them, see [`resolve_or_queue`]).
-pub async fn resolve_short(raw: &str) -> Result<(String, ItemType)> {
-    let p = parse(raw);
-    if p.state != LinkState::Short {
+/// The landed URL decides when it is an item or unsupported link; otherwise (still on spotify.link,
+/// or anything else) the first item link in the page body does.
+fn landed(final_url: &str) -> Option<Parsed> {
+    let p = parse(final_url);
+    matches!(p.state, LinkState::Ok | LinkState::Unsupported).then_some(p)
+}
+
+/// Pure end of a short-link resolve: (final URL after redirects, page body) → `(uri, type)`.
+fn resolve_landing(final_url: &str, body: &str) -> Result<(String, ItemType)> {
+    if let Some(p) = landed(final_url) {
         return ok_or_error(p);
     }
-    let s = raw.trim();
-    let rest = strip_prefix_ci(s, "https://")
-        .or_else(|| strip_prefix_ci(s, "http://"))
-        .unwrap_or(s);
-    let resp = net::get(&format!("https://{rest}")).await?;
-    let landed = parse(resp.url().as_str());
-    if landed.state != LinkState::Invalid {
-        return ok_or_error(landed);
-    }
-    // ponytail: whole body read (pages are ~7 KB); cap it if spotify.link ever serves large pages.
-    let body = resp.text().await?;
-    find_open_link(&body).map_or_else(
+    find_open_link(body).map_or_else(
         || {
             Err(AppError::new(
                 Code::InvalidLink,
@@ -197,6 +202,23 @@ pub async fn resolve_short(raw: &str) -> Result<(String, ItemType)> {
         },
         ok_or_error,
     )
+}
+
+/// Resolve a link to `(uri, type)`. Short links follow allow-listed redirects (max 5, 5 s);
+/// connectivity failures return `offline` (the caller queues them, see [`resolve_or_queue`]).
+pub async fn resolve_short(raw: &str) -> Result<(String, ItemType)> {
+    let p = parse(raw);
+    let Some(url) = short_url(raw).filter(|_| p.state == LinkState::Short) else {
+        return ok_or_error(p);
+    };
+    let resp = net::get(&url).await?;
+    let final_url = resp.url().to_string();
+    if let Some(p) = landed(&final_url) {
+        return ok_or_error(p);
+    }
+    // ponytail: whole body read (pages are ~7 KB); cap it if spotify.link ever serves large pages.
+    let body = resp.text().await?;
+    resolve_landing(&final_url, &body)
 }
 
 /// `prefill_title`: oEmbed title for the add dialog (TSD §4.3). The response is read and dropped here;
@@ -252,10 +274,12 @@ pub struct Unresolved {
     pub error: Option<String>,
 }
 
+/// Queue a link for later; a short link is stored in its canonical form, anything else cleaned.
 pub fn queue_unresolved(conn: &Connection, raw: &str, source: CaptureSource) -> Result<i64> {
+    let link = short_url(raw).unwrap_or_else(|| crate::text::clean_line(raw, limit::LINK));
     conn.execute(
         "INSERT INTO unresolved_capture(raw_link, source) VALUES (?1, ?2)",
-        params![raw.trim(), source.as_str()],
+        params![link, source.as_str()],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -479,6 +503,45 @@ mod tests {
         );
         assert_eq!(find_open_link(&html), Some(ok("track")));
         assert_eq!(find_open_link("<html>nothing</html>"), None);
+    }
+
+    #[test]
+    fn landing_on_spotify_link_falls_back_to_body() {
+        let page = format!("<meta content=\"https://open.spotify.com/album/{A}?si=z\">");
+        let here = "https://spotify.link/aXk3P9q";
+        assert_eq!(
+            resolve_landing(here, &page).unwrap(),
+            (format!("spotify:album:{A}"), ItemType::Album)
+        );
+        assert_eq!(
+            resolve_landing(here, "<html>nothing</html>")
+                .unwrap_err()
+                .code,
+            Code::InvalidLink
+        );
+        // landed on an item / unsupported link: the URL decides, the body is ignored
+        let landed = format!("https://open.spotify.com/track/{A}");
+        assert_eq!(resolve_landing(&landed, &page).unwrap().1, ItemType::Track);
+        let show = format!("https://open.spotify.com/show/{A}");
+        assert_eq!(
+            resolve_landing(&show, &page).unwrap_err().code,
+            Code::UnsupportedLink
+        );
+    }
+
+    #[test]
+    fn queue_stores_canonical_short_link() {
+        let c = db::open_in_memory().unwrap();
+        queue_unresolved(
+            &c,
+            " HTTP://spotify.link/aXk3P9q/?si=1 ",
+            CaptureSource::Paste,
+        )
+        .unwrap();
+        queue_unresolved(&c, " odd\u{200B} text ", CaptureSource::Paste).unwrap();
+        let rows = list_unresolved(&c).unwrap();
+        assert_eq!(rows[0].raw_link, "https://spotify.link/aXk3P9q");
+        assert_eq!(rows[1].raw_link, "odd text");
     }
 
     #[test]

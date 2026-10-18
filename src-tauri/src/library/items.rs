@@ -260,12 +260,12 @@ fn track_list(conn: &Connection, album: i64) -> Result<Vec<TrackEntry>> {
     Ok(out)
 }
 
-/// Canonical library URI from a pasted value (re-validated here, TSD §7).
-fn valid_uri(raw: &str) -> Result<String> {
+/// Canonical library URI + its type from a pasted value (re-validated here, TSD §7).
+fn valid_uri(raw: &str) -> Result<(String, ItemType)> {
     let p = parse(raw);
-    match (p.state, p.uri) {
-        (LinkState::Ok, Some(uri)) => Ok(uri),
-        (LinkState::Unsupported, _) => Err(AppError::new(
+    match (p.state, p.uri, p.kind) {
+        (LinkState::Ok, Some(uri), Some(kind)) => Ok((uri, kind)),
+        (LinkState::Unsupported, ..) => Err(AppError::new(
             Code::UnsupportedLink,
             "Runout keeps albums, tracks and artists only.",
         )),
@@ -290,9 +290,29 @@ fn check_rating(r: Option<f64>) -> Result<()> {
     }
 }
 
+fn an(t: ItemType) -> &'static str {
+    if t == ItemType::Album || t == ItemType::Artist {
+        "n"
+    } else {
+        ""
+    }
+}
+
 pub fn create(conn: &mut Connection, input: NewItem) -> Result<ItemDetail> {
     let uri = match input.spotify_uri.as_deref().map(str::trim) {
-        Some(raw) if !raw.is_empty() => Some(valid_uri(raw)?),
+        Some(raw) if !raw.is_empty() => {
+            let (uri, kind) = valid_uri(raw)?;
+            if kind != input.r#type {
+                return Err(AppError::validation(format!(
+                    "That link is a{} {}, not a{} {}.",
+                    an(kind),
+                    kind.as_str(),
+                    an(input.r#type),
+                    input.r#type.as_str()
+                )));
+            }
+            Some(uri)
+        }
         _ => None,
     };
     if let Some(u) = &uri
@@ -338,6 +358,10 @@ pub fn create(conn: &mut Connection, input: NewItem) -> Result<ItemDetail> {
     .filter_map(|(f, on)| on.then_some(f))
     .collect();
     provenance::record(&tx, id, &present, input.provenance, &input.promoted_fields)?;
+    if uri.is_some() {
+        // TSD §4.2: a pasted/shared link's URI is always promoted, whatever the create default.
+        provenance::record(&tx, id, &["spotify_uri"], Prov::Promoted, &[])?;
+    }
     status::insert(&tx, id, None, status, None)?;
     if let Some(ms) = input.capture_ms {
         tx.execute(
@@ -391,8 +415,12 @@ fn set_col(conn: &Connection, id: i64, col: &str, v: &dyn ToSql) -> Result<()> {
 }
 
 pub fn update(conn: &mut Connection, id: i64, patch: ItemPatch) -> Result<ItemDetail> {
-    let cur: ItemType = conn
-        .query_row("SELECT type FROM item WHERE id = ?1", [id], |r| r.get(0))
+    let (cur, linked): (ItemType, bool) = conn
+        .query_row(
+            "SELECT type, spotify_uri IS NOT NULL FROM item WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
         .optional()?
         .ok_or_else(gone)?;
     let tx = conn.transaction()?;
@@ -400,6 +428,11 @@ pub fn update(conn: &mut Connection, id: i64, patch: ItemPatch) -> Result<ItemDe
     if let Some(t) = patch.r#type
         && t != cur
     {
+        if linked {
+            return Err(AppError::validation(
+                "A record with a Spotify link keeps the link's type.",
+            ));
+        }
         set_col(&tx, id, "type", &t)?;
         links::drop_misfits(&tx, id)?;
         touched.push("type");
@@ -537,6 +570,42 @@ mod tests {
         n.spotify_uri = None;
         n.display_name = Some(" \u{200B} ".into());
         assert_eq!(create(&mut c, n).unwrap_err().code, Code::Validation);
+    }
+
+    #[test]
+    fn type_must_match_the_uri() {
+        let mut c = open_in_memory().unwrap();
+        let mut n = new(ItemType::Track, "x");
+        n.spotify_uri = Some(URI.into()); // an album URI
+        assert_eq!(
+            create(&mut c, n.clone()).unwrap_err().code,
+            Code::Validation
+        );
+        n.r#type = ItemType::Album;
+        let linked = create(&mut c, n).unwrap().summary.id;
+        // a record with a Spotify URI can't change type; a manual one can
+        let to_track = || ItemPatch {
+            r#type: Some(ItemType::Track),
+            ..Default::default()
+        };
+        assert_eq!(
+            update(&mut c, linked, to_track()).unwrap_err().code,
+            Code::Validation
+        );
+        assert_eq!(get(&c, linked).unwrap().summary.r#type, ItemType::Album);
+        let same = ItemPatch {
+            r#type: Some(ItemType::Album),
+            ..Default::default()
+        };
+        assert!(
+            update(&mut c, linked, same).is_ok(),
+            "same type is no change"
+        );
+        let manual = add(&mut c, ItemType::Album, "m");
+        assert_eq!(
+            update(&mut c, manual, to_track()).unwrap().summary.r#type,
+            ItemType::Track
+        );
     }
 
     #[test]

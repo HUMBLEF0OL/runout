@@ -17,13 +17,14 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M8 Future candidates | — | — | per item | per item | as needed |
 
 ### Status (18 Oct 2026)
-- **Phase:** frontend done; backend phase (M3) is next. Branch `dev` → merge to `master`; commits only, no remote.
+- **Phase:** backend phase, M3 in progress. Branch `dev` → merge to `master`; commits only, no remote.
 - **M0** done. **M1** designs approved (U-9, 18 Oct 2026); its other acceptance lines were never ticked on the boards themselves, and M2 met them in code (states per screen, `tokens.test.ts` contrast, compliance review with no open findings).
 - **M2** done and closed: all 13 screens + design-system page on mock data, Tailwind v4, `src/api.ts` = full API.md contract behind mocks, input sanitization, T4 verified in the real window. Proof: `python scripts/check.py` (92 Vitest tests) and `node scripts/journeys.mjs` (30/30 keyboard-only steps, journeys A–H). Commits `9cd6c2e`, `df6b155`, `fc12844`.
 - **Contract additions made in M2** (backend must implement): `create_playlist_from_items`; dashboard tile fields; `Unmatched.candidates`; `CollectionInsights` stat fields; `NewItem.artist_name/notes/promoted_fields`; `ItemPatch.artist_name`; `ItemSummary.album_name/added_via/recommended_by`; `ItemDetail.track_list` (all in API.md).
-- **Known gaps:** see [Known gaps](#known-gaps) below (G-1 to G-14).
+- **Known gaps:** see [Known gaps](#known-gaps) below (G-2 to G-5 closed in M3).
 - **Your open hard stops:** U-1 (request Spotify exports) not recorded as done; U-2 needed by M4; U-6/U-7 by M5; U-3/U-4/U-5 by M6.
-- **Next:** M3 work item 1 per `docs/plans/M3-backend-mvp.md` (Rust core for API.md §3).
+- **M3** steps 1–5 committed (skeleton, links, net, library); steps 6–10 in progress.
+- **Next:** M3 steps 6–12 per `docs/plans/M3-backend-mvp.md`.
 
 ### Known gaps
 Found while building and closing M2 (18 Oct 2026). None blocks a release criterion. "Contract" = needs an API.md change first (API.md §7), then `api.ts`, the mock and Rust together. Remove a row when it's fixed; say in the commit which G-n it closes.

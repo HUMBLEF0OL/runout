@@ -273,9 +273,10 @@ function EditForm({ it, artistName, onDone }: { it: ItemDetail; artistName: stri
       {err && <ErrorBanner title="Couldn’t save your changes." error={err} />}
       <div className="tiles grid-cols-2">
         <div className="field"><label className="label" htmlFor="ed-type">Type</label>
-          <select id="ed-type" className="input" value={type} onChange={(e) => setType(e.target.value as ItemType)}>
+          <select id="ed-type" className="input" value={type} disabled={!!it.spotify_uri} aria-describedby={it.spotify_uri ? "ed-type-help" : undefined} onChange={(e) => setType(e.target.value as ItemType)}>
             {(Object.keys(TYPE) as ItemType[]).map((t) => <option key={t} value={t}>{TYPE[t]}</option>)}
-          </select></div>
+          </select>
+          {it.spotify_uri && <span id="ed-type-help" className="help">Set by its Spotify link</span>}</div>
         <div className="field"><label className="label" htmlFor="ed-name">Name</label><input id="ed-name" className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
         {type !== "artist" && <div className="field"><label className="label" htmlFor="ed-artist">Artist</label><input id="ed-artist" className="input" value={artist} onChange={(e) => setArtist(e.target.value)} /></div>}
         <div className="field"><label className="label" htmlFor="ed-rec">Recommended by</label><input id="ed-rec" className="input" value={rec} onChange={(e) => setRec(e.target.value)} /></div>

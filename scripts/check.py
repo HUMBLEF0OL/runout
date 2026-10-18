@@ -108,6 +108,7 @@ def check_source_map():
     mapped = [re.match(r"\| `([^`]+)`", r).group(1).rstrip("/") for r in rows]
     bad = [f"built but missing: {p}" for p, r in zip(mapped, rows)
            if r.rstrip(" |").endswith("built") and not (ROOT / p).exists()]
+    bad += [f"duplicate row: {p}" for p in sorted({p for p in mapped if mapped.count(p) > 1})]
     for d in (TAURI / "src", TAURI / "migrations", ROOT / "src"):
         if d.exists():
             for f in (f for f in d.rglob("*") if f.is_file()):

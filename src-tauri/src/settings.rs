@@ -35,8 +35,19 @@ impl Settings {
     }
 }
 
-/// `base` with the keys of `patch` laid over it; unknown keys or wrong types → `validation`.
+/// `update_settings`: `base` with the keys of `patch` laid over it; unknown keys, wrong types or
+/// `library_path` (only `move_library` changes it) → `validation`.
 pub fn merge(base: &Settings, patch: &Value) -> Result<Settings> {
+    if patch.get("library_path").is_some() {
+        return Err(AppError::validation(
+            "Use Move library to change where the library lives.",
+        ));
+    }
+    overlay(base, patch)
+}
+
+/// `base` with the keys of `patch` laid over it; unknown keys or wrong types → `validation`.
+fn overlay(base: &Settings, patch: &Value) -> Result<Settings> {
     let Value::Object(patch) = patch else {
         return Err(AppError::validation("Settings must be an object."));
     };
@@ -56,7 +67,7 @@ pub fn load(path: &Path, defaults: Settings) -> Settings {
     std::fs::read(path)
         .ok()
         .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-        .and_then(|v| merge(&defaults, &v).ok())
+        .and_then(|v| overlay(&defaults, &v).ok())
         .unwrap_or(defaults)
 }
 
@@ -87,12 +98,23 @@ mod tests {
         );
         assert!(merge(&d, &json!({"nope": 1})).is_err());
         assert!(merge(&d, &json!({"size_warn_mb": "big"})).is_err());
+        // only move_library may change library_path
+        let e = merge(&d, &json!({"library_path": "x.db"})).unwrap_err();
+        assert_eq!(e.code, crate::error::Code::Validation);
 
         let dir = std::env::temp_dir().join(format!("runout-settings-{}", std::process::id()));
         let path = dir.join(FILE);
         assert_eq!(load(&path, d.clone()), d);
-        save(&path, &m).unwrap();
-        assert_eq!(load(&path, d.clone()), m);
+        let moved = Settings {
+            library_path: "elsewhere.db".into(),
+            ..m.clone()
+        };
+        save(&path, &moved).unwrap();
+        assert_eq!(
+            load(&path, d.clone()),
+            moved,
+            "load keeps a moved library_path"
+        );
         std::fs::write(&path, b"{corrupt").unwrap();
         assert_eq!(load(&path, d.clone()), d);
         let _ = std::fs::remove_dir_all(dir);

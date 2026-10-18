@@ -2,6 +2,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
+use super::filters::ItemFilter;
 use crate::error::{AppError, Result};
 use crate::text::{clean_line, limit};
 
@@ -54,14 +55,50 @@ pub(crate) fn set_item_tags(conn: &Connection, item: i64, names: &[String]) -> R
     Ok(())
 }
 
-/// Rename; another tag with the same name (ignoring case) → `validation` (use merge instead).
-pub fn rename_tag(conn: &Connection, id: i64, name: &str) -> Result<Tag> {
+/// Point saved filters' `tags` at `to` instead of `from` (ignoring case, like `tag.name`), deduped.
+fn rewrite_saved_filters(conn: &Connection, from: &str, to: &str) -> Result<()> {
+    let mut st = conn.prepare("SELECT id, definition_json FROM saved_filter")?;
+    let rows = st
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (fid, def) in rows {
+        let mut f: ItemFilter = serde_json::from_str(&def)?;
+        let Some(tags) = f.tags.as_mut() else {
+            continue;
+        };
+        if !tags.iter().any(|t| t.eq_ignore_ascii_case(from)) {
+            continue;
+        }
+        let mut out: Vec<String> = vec![];
+        for t in tags.drain(..) {
+            let t = if t.eq_ignore_ascii_case(from) {
+                to.to_string()
+            } else {
+                t
+            };
+            if !out.iter().any(|o| o.eq_ignore_ascii_case(&t)) {
+                out.push(t);
+            }
+        }
+        *tags = out;
+        conn.execute(
+            "UPDATE saved_filter SET definition_json = ?2 WHERE id = ?1",
+            params![fid, serde_json::to_string(&f)?],
+        )?;
+    }
+    Ok(())
+}
+
+/// Rename (in one transaction with the saved filters that name it); another tag with the same
+/// name (ignoring case) → `validation` (use merge instead).
+pub fn rename_tag(conn: &mut Connection, id: i64, name: &str) -> Result<Tag> {
     let name = clean_line(name, limit::TAG);
     if name.is_empty() {
         return Err(AppError::validation("A tag needs a name."));
     }
-    get(conn, id)?;
-    let clash: Option<i64> = conn
+    let old = get(conn, id)?.name;
+    let tx = conn.transaction()?;
+    let clash: Option<i64> = tx
         .query_row(
             "SELECT id FROM tag WHERE name = ?1 AND id <> ?2",
             params![name, id],
@@ -73,18 +110,22 @@ pub fn rename_tag(conn: &Connection, id: i64, name: &str) -> Result<Tag> {
             "There's already a tag with that name. Merge them instead.",
         ));
     }
-    conn.execute("UPDATE tag SET name = ?2 WHERE id = ?1", params![id, name])?;
+    tx.execute("UPDATE tag SET name = ?2 WHERE id = ?1", params![id, name])?;
+    rewrite_saved_filters(&tx, &old, &name)?;
+    tx.commit()?;
     get(conn, id)
 }
 
 /// Move every item from `from` to `into` (an item with both keeps one), then drop `from`.
+/// Saved filters naming `from` now name `into`.
 pub fn merge_tags(conn: &mut Connection, from: i64, into: i64) -> Result<Tag> {
     if from == into {
         return Err(AppError::validation("Pick two different tags."));
     }
-    get(conn, from)?;
-    get(conn, into)?;
+    let from_name = get(conn, from)?.name;
+    let into_name = get(conn, into)?.name;
     let tx = conn.transaction()?;
+    rewrite_saved_filters(&tx, &from_name, &into_name)?;
     tx.execute(
         "INSERT OR IGNORE INTO item_tag(item_id, tag_id) SELECT item_id, ?2 FROM item_tag WHERE tag_id = ?1",
         params![from, into],
@@ -147,20 +188,57 @@ mod tests {
     }
 
     #[test]
+    fn saved_filters_follow_rename_and_merge() {
+        use crate::library::filters::{ItemFilter, list_items, list_saved_filters, save_filter};
+        let mut c = open_in_memory().unwrap();
+        tagged(&mut c, "a", &["chill"]);
+        tagged(&mut c, "b", &["calm"]);
+        let s = |v: &[&str]| v.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+        let by_tags = |tags: &[&str]| ItemFilter {
+            tags: Some(s(tags)),
+            ..Default::default()
+        };
+        save_filter(&c, "chill", by_tags(&["chill"])).unwrap();
+        save_filter(&c, "both", by_tags(&["CHILL", "calm"])).unwrap();
+        let hits = |c: &Connection| -> Vec<(Vec<String>, i64)> {
+            list_saved_filters(c)
+                .unwrap()
+                .into_iter()
+                .map(|f| {
+                    let n = list_items(c, &f.definition).unwrap().total;
+                    (f.definition.tags.unwrap(), n)
+                })
+                .collect()
+        };
+        let chill = id_of(&c, "chill");
+        rename_tag(&mut c, chill, "mellow").unwrap();
+        assert_eq!(
+            hits(&c),
+            vec![(s(&["mellow"]), 1), (s(&["mellow", "calm"]), 0)]
+        );
+        let (mellow, calm) = (id_of(&c, "mellow"), id_of(&c, "calm"));
+        merge_tags(&mut c, mellow, calm).unwrap();
+        assert_eq!(hits(&c), vec![(s(&["calm"]), 2), (s(&["calm"]), 2)]);
+    }
+
+    #[test]
     fn rename_is_case_insensitive_unique_and_delete_untags() {
         let mut c = open_in_memory().unwrap();
         tagged(&mut c, "x", &["jazz", "rock"]);
         let jazz = id_of(&c, "jazz");
         assert_eq!(
-            rename_tag(&c, jazz, "ROCK").unwrap_err().code,
+            rename_tag(&mut c, jazz, "ROCK").unwrap_err().code,
             Code::Validation
         );
-        assert_eq!(rename_tag(&c, jazz, "Jazz").unwrap().name, "Jazz"); // own case change is fine
+        assert_eq!(rename_tag(&mut c, jazz, "Jazz").unwrap().name, "Jazz"); // own case change is fine
         assert_eq!(
-            rename_tag(&c, jazz, "  ").unwrap_err().code,
+            rename_tag(&mut c, jazz, "  ").unwrap_err().code,
             Code::Validation
         );
-        assert_eq!(rename_tag(&c, 99, "x").unwrap_err().code, Code::NotFound);
+        assert_eq!(
+            rename_tag(&mut c, 99, "x").unwrap_err().code,
+            Code::NotFound
+        );
         delete_tag(&c, jazz).unwrap();
         let tags = list_tags(&c).unwrap();
         assert_eq!(

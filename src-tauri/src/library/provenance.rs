@@ -86,6 +86,13 @@ mod tests {
             get(&c, d.summary.id).unwrap().provenance["display_name"],
             Prov::Promoted
         );
+
+        // A pasted link's URI is promoted even when the client didn't list it (TSD §4.2).
+        let mut n = new(ItemType::Track, "Typed");
+        n.spotify_uri = Some("spotify:track:CCCCCCCCCCCCCCCCCCCCCC".into());
+        let d = create(&mut c, n).unwrap();
+        assert_eq!(d.provenance["spotify_uri"], Prov::Promoted);
+        assert_eq!(d.provenance["display_name"], Prov::User);
     }
 
     #[test]

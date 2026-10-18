@@ -225,6 +225,7 @@ const H: Record<string, Handler> = {
   create_item: ({ input }: { input: NewItem }) => {
     if (input.spotify_uri && existingFor(input.spotify_uri)) fail("duplicate", "That's already in your library.", { existing_id: existingFor(input.spotify_uri) });
     if (!input.spotify_uri && !input.display_name?.trim()) fail("validation", "Give it a name or paste a link.");
+    if (input.spotify_uri && input.spotify_uri.split(":")[1] !== input.type) fail("validation", "The type must match the Spotify link.");
     const it: MItem = {
       id: nextId(), type: input.type, display_name: input.display_name?.trim() || null, spotify_uri: input.spotify_uri, status: input.status ?? "planned",
       priority: input.priority ?? null, rating: null, favourite: false, revisit: false, in_backlog: input.in_backlog ?? true,
@@ -238,11 +239,13 @@ const H: Record<string, Handler> = {
     if (input.album_id != null && it.type === "track") link(it.id, input.album_id, "on_album");
     const set = { display_name: !!it.display_name, artist: !!it.artist, notes: !!it.notes, recommended_by: !!it.recommended_by, priority: !!it.priority };
     for (const [k, on] of Object.entries(set)) if (on) it.provenance[k] = input.promoted_fields?.includes(k) ? "promoted" : input.provenance;
+    if (it.spotify_uri) it.provenance.spotify_uri = "promoted"; // TSD 4.2: a pasted or shared link is promoted
     history.push({ item_id: it.id, from: null, to: it.status, at: TODAY, note: "Added" });
     return detail(it);
   },
   update_item: ({ id, patch }: { id: number; patch: ItemPatch }) => {
     const it = need(id);
+    if (patch.type && patch.type !== it.type && it.spotify_uri) fail("validation", "A record with a Spotify link keeps its type.");
     const { promoted_fields, artist_name, ...rest } = patch;
     Object.assign(it, rest);
     if (it.type === "artist") { it.artist = null; it.artist_id = null; }
