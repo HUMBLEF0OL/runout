@@ -222,6 +222,7 @@ Insert a `usage_event` on app open, on each page visit, and on each capture. A c
 - Accepts `POST /capture` with JSON `{ "code": "...", "link": "..." }`, body ≤ 2 KB; link must parse per 4.1 or be a spotify.link short link.
 - Rejects requests from non-private source IPs (only 10/8, 172.16/12, 192.168/16, 169.254/16).
 - Rate limit 10 requests/min; 5 wrong codes → listener disables itself and notifies.
+- On/off and the code persist in `capture.json` (app config dir), so the Shortcut keeps working after a restart. Turning it back on after a lockout issues a new code. A link already in the library answers 200 and changes nothing.
 - Captured items are stored per 4.2 (“name needed”).
 - Accepted risk (NFR-18): plain HTTP on the home network, so the pairing code is not encrypted in transit.
 - Windows Firewall will prompt on first enable (user action U-4).

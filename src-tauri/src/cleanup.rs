@@ -1,0 +1,154 @@
+//! Deleting data: `delete_library` (FR-022, SC-13f) and `runout.exe --uninstall-cleanup` (TSD §4.11, FR-024).
+use std::path::Path;
+
+use rusqlite::Connection;
+
+use crate::error::{AppError, Result};
+
+/// The phrase SC-13f asks for (`src/pages/Settings.tsx` DeleteLibraryDialog).
+pub const CONFIRM: &str = "DELETE";
+/// Credential Manager target holding the Spotify tokens (TSD §2). M5 must write exactly this target.
+pub const CREDENTIAL: &str = "Runout/spotify";
+pub const CACHE_DB: &str = "spotify_cache.db";
+pub const WEBVIEW_DIR: &str = "EBWebView";
+
+/// Empty every table in library.db (schema kept), then VACUUM so deleted text doesn't linger in
+/// free pages. Backups are untouched (they live outside the app folders, D28).
+pub fn delete_library(conn: &mut Connection, confirm: &str) -> Result<()> {
+    if confirm != CONFIRM {
+        return Err(AppError::validation("Type DELETE in capitals to confirm."));
+    }
+    let tables: Vec<String> = conn
+        .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table'
+               AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'item_fts_%'",
+        )?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let tx = conn.transaction()?;
+    for t in &tables {
+        tx.execute(&format!("DELETE FROM \"{t}\""), [])?;
+    }
+    tx.commit()?;
+    conn.execute_batch("VACUUM")?;
+    Ok(())
+}
+
+fn remove(p: &Path) -> std::io::Result<()> {
+    let r = if p.is_dir() {
+        std::fs::remove_dir_all(p)
+    } else {
+        std::fs::remove_file(p)
+    };
+    match r {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
+/// Always-run uninstall step: `spotify_cache.db` (+ WAL files), the `EBWebView` folder (both in
+/// `%LOCALAPPDATA%\app.runout.desktop`) and the `Runout/spotify` credential. Missing = fine.
+/// Every step runs; the first error is returned.
+pub fn uninstall_cleanup(local_data_dir: &Path) -> Result<()> {
+    cleanup(local_data_dir, CREDENTIAL)
+}
+
+/// Tests pass their own credential target so they never touch a real sign-in.
+fn cleanup(local_data_dir: &Path, credential: &str) -> Result<()> {
+    let mut first: Option<AppError> = None;
+    for name in [
+        CACHE_DB.to_string(),
+        format!("{CACHE_DB}-wal"),
+        format!("{CACHE_DB}-shm"),
+        WEBVIEW_DIR.to_string(),
+    ] {
+        if let Err(e) = remove(&local_data_dir.join(name)) {
+            first.get_or_insert(e.into());
+        }
+    }
+    if let Err(e) = delete_credential(credential) {
+        first.get_or_insert(e);
+    }
+    first.map_or(Ok(()), Err)
+}
+
+#[cfg(windows)]
+fn delete_credential(target: &str) -> Result<()> {
+    use windows::Win32::Foundation::ERROR_NOT_FOUND;
+    use windows::Win32::Security::Credentials::{CRED_TYPE_GENERIC, CredDeleteW};
+    use windows::core::HSTRING;
+    match unsafe { CredDeleteW(&HSTRING::from(target), CRED_TYPE_GENERIC, None) } {
+        Err(e) if e.code() != ERROR_NOT_FOUND.to_hresult() => Err(AppError::new(
+            crate::error::Code::Io,
+            "Couldn't remove the saved Spotify sign-in.",
+        )
+        .with_detail(e.to_string())),
+        _ => Ok(()),
+    }
+}
+
+#[cfg(not(windows))]
+fn delete_credential(_target: &str) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db;
+
+    #[test]
+    fn delete_library_needs_the_phrase_and_empties_everything() {
+        let mut c = db::open_in_memory().unwrap();
+        db::fixture(&c, 4);
+        for wrong in ["delete", "DELETE ", "", "Delete"] {
+            assert!(delete_library(&mut c, wrong).is_err(), "{wrong:?}");
+        }
+        delete_library(&mut c, "DELETE").unwrap();
+        for t in [
+            "item",
+            "tag",
+            "item_tag",
+            "item_link",
+            "status_history",
+            "saved_filter",
+            "usage_event",
+            "field_provenance",
+            "item_fts",
+        ] {
+            let n: i64 = c
+                .query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(n, 0, "{t}");
+        }
+        // schema intact: the library is usable straight away
+        c.execute(
+            "INSERT INTO item(type, display_name) VALUES ('album', 'Fresh')",
+            [],
+        )
+        .unwrap();
+        let v: i64 = c
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, db::SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn uninstall_cleanup_removes_cache_and_webview_and_tolerates_missing() {
+        let d = std::env::temp_dir().join(format!("runout-uninstall-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join(WEBVIEW_DIR).join("Default")).unwrap();
+        std::fs::write(d.join(CACHE_DB), b"x").unwrap();
+        std::fs::write(d.join(format!("{CACHE_DB}-wal")), b"x").unwrap();
+        std::fs::write(d.join("library.db"), b"keep").unwrap();
+        let target = "Runout/test-uninstall-cleanup";
+        cleanup(&d, target).unwrap();
+        assert!(!d.join(CACHE_DB).exists() && !d.join(WEBVIEW_DIR).exists());
+        assert!(
+            d.join("library.db").exists(),
+            "library is the NSIS checkbox's job"
+        );
+        cleanup(&d, target).unwrap(); // again: everything missing is fine (incl. the credential)
+        let _ = std::fs::remove_dir_all(d);
+    }
+}

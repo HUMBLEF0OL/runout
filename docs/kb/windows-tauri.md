@@ -22,6 +22,7 @@ Format: fact — **status**, date, source. Design decisions live in [TSD](../TSD
 
 ## Credentials
 - Tokens go to Windows Credential Manager via the `keyring` crate, target `Runout/spotify` — **Documented**, TSD §2.
+- `--uninstall-cleanup` deletes the generic credential with target name exactly `Runout/spotify` (`CredDeleteW`, `windows` crate, `cleanup.rs`). keyring's Windows backend names the target `{user}.{service}` by default, so M5 must create the entry with `Entry::new_with_target("Runout/spotify", …)` or the uninstaller won't find it — **Interpretation** (keyring docs), 2026-10-18; check in M5.
 
 ## SQLite
 - `VACUUM INTO` gives a consistent compacted snapshot for backups — **Documented**, https://www.sqlite.org/lang_vacuum.html
@@ -29,6 +30,9 @@ Format: fact — **status**, date, source. Design decisions live in [TSD](../TSD
 
 ## Gotchas found while building
 <!-- newest first: date — what bit us — fix / playbook updated -->
+- 2026-10-18 — Tauri 2.12 `Builder::build(ctx)` creates no windows (config windows are made in `setup` on `RunEvent::Ready`), so `--uninstall-cleanup` builds the app just for `app.path()` and exits: verified exit 0 in ~1.5 s, no window, `EBWebView` removed. Call `generate_context!()` once (`lib.rs` `context()`), since each call embeds the frontend assets again.
+- 2026-10-18 — Restore must close the live `rusqlite::Connection` before renaming `library.db` on Windows (open files can't be renamed): swap an in-memory connection into the `Mutex`, `close()` the old one, move any `-wal`/`-shm` along with the file, then reopen. `backup::restore_backup`.
+- 2026-10-18 — Capture listener tests can't send a LAN request over loopback: 127/8 isn't one of TSD §5.1's private ranges, so the real-socket smoke test asserts the 403 and the rest is driven through the pure `Guard::screen` / `handle` functions.
 - 2026-10-18 — reqwest 0.13 renamed its TLS feature: `rustls-tls` no longer exists, use `default-features = false, features = ["rustls"]`. Builds on MSVC with no extra tools.
 - 2026-10-18 — FTS5 + foreign-key cascades: deleting an item cascades `item_link`/`item_tag` deletes, whose triggers re-insert the FTS row from `item_fts_src`; the item row is already gone by then, so nothing stale comes back (`db::tests::deleting_items_leaves_no_fts_rows`).
 - 2026-10-18 — PowerShell `FindWindow($null, …)` passes `""`, not NULL, and finds nothing → use `[NullString]::Value`. Capture a probe window with `PrintWindow(h, dc, 2)`, never a full-screen grab (it records the user's other windows).
