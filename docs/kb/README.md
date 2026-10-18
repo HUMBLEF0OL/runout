@@ -14,6 +14,7 @@ Facts the specs rely on, and facts learned while building. The BRD says *what*, 
 |---|---|
 | [spotify.md](spotify.md) | Links, embeds/oEmbed, Web API limits, data export, local client data |
 | [windows-tauri.md](windows-tauri.md) | SMTC, Tauri 2, WebView2, NSIS, Credential Manager, SQLite |
+| [perf-integrity.md](perf-integrity.md) | Measured NFR-04 timings, NFR-05 kill tests, NFR-11 backup size |
 
 ## Open questions (single index)
 | ID | Question | Resolve in | Owner | Status |
