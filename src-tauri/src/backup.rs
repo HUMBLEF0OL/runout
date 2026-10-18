@@ -252,6 +252,17 @@ fn rotate(dir: &Path, just_made: &Path) -> Result<()> {
     for (old, _) in others.skip(KEEP - 1) {
         std::fs::remove_file(old)?;
     }
+    // Leftovers of a backup that was killed mid-way (`.zip.tmp`, `.<name>.db` snapshot; NFR-05).
+    // Callers hold the library lock, so no other backup is in flight in this process
+    // (a second app instance could lose its in-flight .tmp; single-instance is M6).
+    for e in std::fs::read_dir(dir)?.flatten() {
+        let n = e.file_name().to_string_lossy().into_owned();
+        if (n.starts_with(PREFIX) && n.ends_with(".zip.tmp"))
+            || (n.starts_with(&format!(".{PREFIX}")) && n.ends_with(".zip.db"))
+        {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
     Ok(())
 }
 
