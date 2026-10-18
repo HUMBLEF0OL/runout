@@ -3,9 +3,11 @@
 import { useCallback, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  autofill, bulkAddAlbumTracks, deleteItem, getItem, getItemListening, libraryContains, removeFromSpotifyLibrary,
-  saveToSpotifyLibrary, setStatus, updateItem, toAppError, type AppError, type ItemDetail, type ItemPatch, type Status,
+  autofill, bulkAddAlbumTracks, deleteItem, getItem, getItemListening, libraryContains, linkItems, removeFromSpotifyLibrary,
+  saveToSpotifyLibrary, search, setStatus, unlinkItems, updateItem, toAppError,
+  type AppError, type ItemDetail, type ItemPatch, type ItemSummary, type ItemType, type LinkKind, type Status,
 } from "../api";
+import { XIcon as X } from "@phosphor-icons/react";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import {
@@ -15,7 +17,7 @@ import {
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { useShortcuts, type ShortcutAction } from "../hooks/useShortcuts";
-import { ago, day, nameOf, pl, STATUS, STATUS_ORDER, statusMeta, TYPE } from "../lib/format";
+import { ago, an, day, nameOf, pl, STATUS, STATUS_ORDER, statusMeta, TYPE } from "../lib/format";
 
 export default function Item() {
   const id = Number(useParams().id);
@@ -140,7 +142,7 @@ function Detail({ it }: { it: ItemDetail }) {
       <textarea id="dt-notes" className="input" rows={2} placeholder="Context, where you heard it, what to listen for" value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => saveText("notes", notes)} /></div>
   </>;
 
-  const addTrack = () => quickAdd({ suggest: { name: "", artist: artistName, type: "track", from: "plays" } });
+  const addTrack = () => quickAdd({ suggest: { name: "", artist: artistName, type: "track", from: "plays" }, albumId: it.id });
   const tracks = it.type !== "album" ? null : (
     <section className="card flex flex-col gap-3">
       <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">Tracks you’ve added</h2></div>
@@ -239,10 +241,12 @@ function Detail({ it }: { it: ItemDetail }) {
   );
 }
 
-/** Edit mode: name, artist, recommended by (update_item). */
+/** Edit mode: type, name, artist, recommended by (update_item) and links (link_items / unlink_items). */
 function EditForm({ it, artistName, onDone }: { it: ItemDetail; artistName: string; onDone: () => void }) {
   const toast = useToast();
+  const [type, setType] = useState<ItemType>(it.type);
   const [name, setName] = useState(it.display_name ?? "");
+  const [artist0] = useState(artistName); // the field's starting value: a link made with the picker isn't undone on save
   const [artist, setArtist] = useState(artistName);
   const [rec, setRec] = useState(it.recommended_by ?? "");
   const [busy, setBusy] = useState(false);
@@ -250,28 +254,86 @@ function EditForm({ it, artistName, onDone }: { it: ItemDetail; artistName: stri
   const save = async () => {
     setBusy(true); setErr(undefined);
     try {
-      await updateItem(it.id, { display_name: name.trim() || null, recommended_by: rec.trim() || null, ...(it.type !== "artist" && artist !== artistName ? { artist_name: artist.trim() || null } : {}) });
+      await updateItem(it.id, {
+        display_name: name.trim() || null, recommended_by: rec.trim() || null, ...(type !== it.type ? { type } : {}),
+        ...(type !== "artist" && artist !== artist0 ? { artist_name: artist.trim() || null } : {}),
+      });
       onDone(); toast("Changes saved");
     } catch (e) { setErr(toAppError(e)); } finally { setBusy(false); }
   };
   const links = it.links.filter((l) => l.direction === "from");
+  const relink = async (on: boolean, kind: LinkKind, to: ItemSummary) => {
+    setErr(undefined);
+    try { await (on ? linkItems : unlinkItems)(it.id, to.id, kind); toast(`${on ? "Linked" : "Unlinked"}: ${LINK[kind]} ${nameOf(to)}`); }
+    catch (e) { setErr(toAppError(e)); }
+  };
   return (
     <form className="card flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); save(); }}>
       <h2 className="card-title">Edit record</h2>
       {err && <ErrorBanner title="Couldn’t save your changes." error={err} />}
-      <div className="tiles grid-cols-3">
+      <div className="tiles grid-cols-2">
+        <div className="field"><label className="label" htmlFor="ed-type">Type</label>
+          <select id="ed-type" className="input" value={type} onChange={(e) => setType(e.target.value as ItemType)}>
+            {(Object.keys(TYPE) as ItemType[]).map((t) => <option key={t} value={t}>{TYPE[t]}</option>)}
+          </select></div>
         <div className="field"><label className="label" htmlFor="ed-name">Name</label><input id="ed-name" className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
-        {it.type !== "artist" && <div className="field"><label className="label" htmlFor="ed-artist">Artist</label><input id="ed-artist" className="input" value={artist} onChange={(e) => setArtist(e.target.value)} /></div>}
+        {type !== "artist" && <div className="field"><label className="label" htmlFor="ed-artist">Artist</label><input id="ed-artist" className="input" value={artist} onChange={(e) => setArtist(e.target.value)} /></div>}
         <div className="field"><label className="label" htmlFor="ed-rec">Recommended by</label><input id="ed-rec" className="input" value={rec} onChange={(e) => setRec(e.target.value)} /></div>
       </div>
-      {links.length > 0 && <div className="field"><span className="label">Links to other records</span><div className="flex flex-wrap gap-2 items-center">
-        {links.map((l) => <span key={l.kind + l.item.id} className="chip">{l.kind === "by_artist" ? "By" : l.kind === "on_album" ? "On" : "Version of"} {nameOf(l.item)}</span>)}
-      </div></div>}
+      {type !== it.type && <span className="help">Saving as {an(TYPE[type].toLowerCase())} drops links that don’t fit it.</span>}
+      <div className="field"><span className="label">Links to other records</span>
+        <div className="flex flex-wrap gap-2 items-center">
+          {links.length ? links.map((l) => (
+            <button type="button" key={l.kind + l.item.id} className="chip" aria-label={`Remove link: ${LINK[l.kind]} ${nameOf(l.item)}`} onClick={() => relink(false, l.kind, l.item)}>
+              {LINK[l.kind]} {nameOf(l.item)} <X size={12} aria-hidden /></button>))
+            : <span className="text-muted text-sm">None yet.</span>}
+        </div>
+        <LinkPicker it={it} onPick={(kind, to) => relink(true, kind, to)} />
+      </div>
       <div className="flex flex-wrap gap-2 items-center">
         <button type="submit" className="btn btn-primary min-w-[120px]" disabled={busy}>{busy ? <Dots /> : "Save changes"}</button>
         <Link className="btn btn-secondary" to={`/item/${it.id}`}>Cancel</Link>
       </div>
     </form>
+  );
+}
+
+const LINK: Record<LinkKind, string> = { by_artist: "By", on_album: "On", version_of: "Version of" };
+/** Links a record of each type can make, and the type each points at (API.md link_items direction). */
+const LINKABLE: Record<ItemType, { kind: LinkKind; to?: ItemType; label: string }[]> = {
+  track: [{ kind: "on_album", to: "album", label: "On album" }, { kind: "by_artist", to: "artist", label: "By artist" }, { kind: "version_of", label: "Version of" }],
+  album: [{ kind: "by_artist", to: "artist", label: "By artist" }, { kind: "version_of", label: "Version of" }],
+  artist: [{ kind: "version_of", label: "Version of" }],
+};
+
+/** Add a link: pick the kind, search the library (search command), pick a record of the fitting type. */
+function LinkPicker({ it, onPick }: { it: ItemDetail; onPick: (kind: LinkKind, to: ItemSummary) => void }) {
+  const opts = LINKABLE[it.type];
+  const [kind, setKind] = useState<LinkKind>(opts[0].kind);
+  const [q, setQ] = useState("");
+  const want = opts.find((o) => o.kind === kind)?.to ?? it.type; // version_of: same type
+  const hits = useApi(() => (q.trim() ? search(q.trim(), 30, want) : Promise.resolve([])).then((h) => ({ q, h })), [q, want]);
+  const fresh = hits.data?.q === q; // no "nothing matches" flash while the next query runs
+  const rows = (fresh ? hits.data!.h : []).map((h) => h.item).filter((x) => x.id !== it.id).slice(0, 6);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-2 items-center">
+        <label className="sr-only" htmlFor="ed-link-kind">Link kind</label>
+        <select id="ed-link-kind" className="input h-[34px] w-auto" value={kind} onChange={(e) => setKind(e.target.value as LinkKind)}>
+          {opts.map((o) => <option key={o.kind} value={o.kind}>{o.label}</option>)}
+        </select>
+        <label className="sr-only" htmlFor="ed-link-q">Find a record to link</label>
+        <input id="ed-link-q" className="input h-[34px] flex-[1_1_220px]" placeholder={`Find ${an(TYPE[want].toLowerCase())} in your library`} value={q}
+          onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} />
+      </div>
+      {q.trim() && fresh && (rows.length
+        ? <div className="list" role="group" aria-label="Matching records">{rows.map((x) => (
+            <button type="button" key={x.id} className="row grid-cols-[minmax(0,1fr)_auto] text-left bg-transparent border-0 cursor-pointer" aria-label={`Link ${LINK[kind].toLowerCase()} ${nameOf(x)}`} onClick={() => { onPick(kind, x); setQ(""); }}>
+              <span className="flex flex-col gap-0.5 min-w-0"><span className="font-semibold truncate">{nameOf(x)}</span><span className="text-muted text-xs">{TYPE[x.type]}{x.artist_names.length ? `, ${x.artist_names.join(", ")}` : ""}</span></span>
+              <span className="text-text-2 text-sm">Link</span>
+            </button>))}</div>
+        : <span className="text-muted text-sm">No {TYPE[want].toLowerCase()} in your library matches.</span>)}
+    </div>
   );
 }
 

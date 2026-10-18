@@ -46,6 +46,7 @@ interface ItemSummary {
   album_name: string | null;                                // tracks: "Artist, from Album" row subtitle (M2)
   added_via: 'pc' | 'phone';                                // "From: Phone", "added from your iPhone" (M2)
   recommended_by: string | null;                            // "Album, from Meera" row subtitle (M2)
+  notes: string | null;                                     // in-progress artist cards show it (G-4, M3)
   added_at: string; modified_at: string;
 }
 interface ItemDetail extends ItemSummary {
@@ -63,10 +64,11 @@ interface NewItem {
   promoted_fields?: string[];                                 // fields confirmed from Spotify data → provenance 'promoted'; others get `provenance`
   capture_ms?: number;                                        // dialog open → save (FR-045)
   artist_name?: string; notes?: string;                       // artist_name: find-or-create the artist item, link by_artist
+  album_id?: number;                                          // tracks: link the new track on_album to this album (G-3, M3)
 }
 type ItemPatch = Partial<Pick<ItemDetail,
   'display_name' | 'priority' | 'rating' | 'review' | 'notes' | 'favourite' | 'revisit'
-  | 'in_backlog' | 'recommended_by'>> & { tags?: string[]; promoted_fields?: string[]; artist_name?: string | null };  // artist_name re-links by_artist (null unlinks)
+  | 'in_backlog' | 'recommended_by'>> & { type?: ItemType; tags?: string[]; promoted_fields?: string[]; artist_name?: string | null };  // artist_name re-links by_artist (null unlinks); type changes the record type (G-2)
 interface ItemFilter {
   type?: ItemType; status?: Status[]; tags?: string[]; min_rating?: number; revisit?: boolean;
   favourite?: boolean; in_backlog?: boolean; name_needed?: boolean; priority?: Priority[];
@@ -83,20 +85,20 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | Command | Args | Returns | Notes / spec |
 |---|---|---|---|
 | `get_counts` | — | `{library, albums, tracks, artists, backlog, in_progress, revisit, name_needed}` | Rail counts (DESIGN §5 nav item) |
-| `get_dashboard` | — | `{counts, in_progress: ItemSummary[], recent_activity: {item, from, to, at}[], name_needed: ItemSummary[], unresolved: Unresolved[], planned, explored_this_month, not_for_me_this_month, explored_no_review, started_at: {[item_id]: string}}` | SC-01/02, FR-015. `started_at`: when each in-progress item entered in_progress |
+| `get_dashboard` | — | `{counts, in_progress: ItemSummary[], name_needed: ItemSummary[], unresolved: Unresolved[], planned, explored_this_month, not_for_me_this_month, explored_no_review, started_at: {[item_id]: string}}` | SC-01/02, FR-015. `started_at`: when each in-progress item entered in_progress. "Recently added" comes from `list_items` (G-5: `recent_activity` dropped in M3) |
 | `list_items` | `filter: ItemFilter` | `Page<ItemSummary>` | SC-03, SC-04 |
 | `get_item` | `id` | `ItemDetail` | SC-05 |
 | `create_item` | `input: NewItem` | `ItemDetail` | `duplicate` error with `existing_id` (FR-004); `capture` usage event |
-| `update_item` | `id, patch: ItemPatch` | `ItemDetail` | `promoted_fields` sets provenance `promoted` for those fields |
+| `update_item` | `id, patch: ItemPatch` | `ItemDetail` | `promoted_fields` sets provenance `promoted` for those fields. A `type` change drops links that no longer fit (e.g. `on_album` when it is no longer a track) |
 | `set_status` | `id, status, note?` | `ItemDetail` | Writes `status_history`; sets `explored_at` (FR-005/006) |
 | `delete_item` | `id` | `void` | FR-022 |
-| `link_items` / `unlink_items` | `from_id, to_id, kind` | `void` | FR-003/004 versions |
+| `link_items` / `unlink_items` | `from_id, to_id, kind` | `void` | FR-003/004 versions. Direction: track → album (`on_album`), item → artist (`by_artist`), version → original (`version_of`) |
 | `reorder_backlog` | `ids: number[]` | `void` | Whole visible order; FR-012 |
 | `parse_link` | `raw: string` | `{state: 'ok' \| 'short' \| 'unsupported' \| 'invalid', uri?, type?, existing_id?}` | Pure; TSD §4.1. `short` = needs resolve |
 | `resolve_link` | `raw: string` | `{uri, type, existing_id?}` | Short link → URI; `offline` error queues it in `unresolved_capture` |
 | `prefill_title` | `uri` | `{title: string \| null}` | oEmbed; **response never stored** (TSD §4.3) |
 | `list_unresolved` / `retry_unresolved` / `discard_unresolved` | — / — / `id` | `Unresolved[]` / `{resolved: number}` / `void` | `Unresolved = {id, raw_link, received_at, source, state, error}` |
-| `search` | `q, limit?` | `{item: ItemSummary, snippet: string, field: string}[]` | FTS5, < 200 ms (NFR-04) |
+| `search` | `q, limit?, type?` | `{item: ItemSummary, snippet: string, field: string}[]` | FTS5, < 200 ms (NFR-04). `type` limits hits to one record type (edit-mode link picker, M3) |
 | `list_tags` / `rename_tag` / `merge_tags` / `delete_tag` | — / `id, name` / `from_id, into_id` / `id` | `Tag[]` / `Tag` / `Tag` / `void` | SC-13b |
 | `list_saved_filters` / `save_filter` / `delete_saved_filter` | — / `name, definition` / `id` | `SavedFilter[]` / `SavedFilter` / `void` | FR-013 |
 | `get_rediscover` | — | `{revisit, top_rated, stale_backlog, incomplete_reviews: ItemSummary[]}` | SC-07, FR-013 |

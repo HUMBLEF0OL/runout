@@ -4,7 +4,7 @@ import { shelfFilter } from "./Rediscover";
 
 const it0 = (p: Partial<ItemSummary>): ItemSummary => ({
   id: 1, type: "album", display_name: "X", spotify_uri: null, status: "explored", priority: null, rating: null, favourite: false, revisit: false,
-  in_backlog: false, backlog_order: null, tags: [], artist_names: [], album_name: null, added_via: "pc", recommended_by: null, added_at: "", modified_at: "", ...p,
+  in_backlog: false, backlog_order: null, tags: [], artist_names: [], album_name: null, added_via: "pc", recommended_by: null, notes: null, added_at: "", modified_at: "", ...p,
 });
 
 describe("shelfFilter", () => {

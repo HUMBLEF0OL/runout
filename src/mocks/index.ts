@@ -4,7 +4,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import raw from "../../docs/design/prototype/mock-data.json";
 import type {
-  AppError, Backup, Counts, Draft, ItemDetail, ItemFilter, ItemSummary, NewItem, Page, Play, Range, Source,
+  AppError, Backup, Counts, Draft, ItemDetail, ItemFilter, ItemSummary, LinkKind, NewItem, Page, Play, Range, Source,
   SpotifyEntry, Status, Unresolved, ItemPatch, SavedFilter, Tag, LoggerStatus, Freshness,
 } from "../api";
 import { invalidate } from "../api";
@@ -22,7 +22,7 @@ const DELAY = 150;
 interface MItem {
   id: number; type: ItemSummary["type"]; display_name: string | null; spotify_uri: string | null; status: Status;
   priority: ItemSummary["priority"]; rating: number | null; favourite: boolean; revisit: boolean; in_backlog: boolean;
-  backlog_order: number | null; tags: string[]; artist: string | null; album: string | null; artist_id: number | null;
+  backlog_order: number | null; tags: string[]; artist: string | null; album: string | null; artist_id: number | null; album_id: number | null;
   added_at: string; modified_at: string; review: string | null; notes: string | null; recommended_by: string | null;
   explored_at: string | null; reviewed_at: string | null; via_phone: boolean; tracklist: string[] | null;
   provenance: Record<string, "user" | "promoted">;
@@ -35,12 +35,14 @@ let order = 0;
 const items: MItem[] = D.items.map((i: any) => ({
   id: i.id, type: i.type, display_name: i.display_name, spotify_uri: i.spotify_uri, status: i.status, priority: i.priority,
   rating: i.rating, favourite: i.favourite, revisit: i.revisit, in_backlog: i.in_backlog,
-  backlog_order: i.in_backlog ? ++order : null, tags: [...i.tags], artist: blank(i.artist), album: blank(i.album), artist_id: i.artist_id ?? null,
+  backlog_order: i.in_backlog ? ++order : null, tags: [...i.tags], artist: blank(i.artist), album: blank(i.album), artist_id: i.artist_id ?? null, album_id: null,
   added_at: i.added_at,
   modified_at: history.filter((h) => h.item_id === i.id).reduce((m, h) => (h.at > m ? h.at : m), i.reviewed_at || i.added_at),
   review: blank(i.review), notes: blank(i.notes), recommended_by: blank(i.recommended_by), explored_at: i.explored_at,
   reviewed_at: i.reviewed_at, via_phone: !!i.via_phone, tracklist: i.tracklist ?? null, provenance: { ...i.provenance },
 }));
+for (const t of items) if (t.type === "track" && t.album) t.album_id = items.find((x) => x.type === "album" && x.display_name === t.album && x.artist === t.artist)?.id ?? null;
+const versions: { from: number; to: number }[] = []; // version_of links (by_artist and on_album live on the item)
 // Phone captures: a parsed link becomes a name-needed item (TSD §4.2); a short link waits in unresolved_capture.
 let unresolved: Unresolved[] = [];
 for (const c of D.captures) {
@@ -48,7 +50,7 @@ for (const c of D.captures) {
   if (p.state === "ok") {
     items.push({
       id: nextId(), type: p.type!, display_name: null, spotify_uri: p.uri!, status: "planned", priority: null, rating: null,
-      favourite: false, revisit: false, in_backlog: true, backlog_order: ++order, tags: [], artist: null, album: null, artist_id: null,
+      favourite: false, revisit: false, in_backlog: true, backlog_order: ++order, tags: [], artist: null, album: null, artist_id: null, album_id: null,
       added_at: c.received_at, modified_at: c.received_at, review: null, notes: null, recommended_by: null, explored_at: null,
       reviewed_at: null, via_phone: true, tracklist: null, provenance: {},
     });
@@ -78,11 +80,20 @@ function setArtist(it: MItem, name: string | null | undefined) {
   let a = items.find((x) => x.type === "artist" && x.display_name?.toLowerCase() === n.toLowerCase());
   if (!a) {
     a = { ...it, id: nextId(), type: "artist", display_name: n, spotify_uri: null, status: "planned", priority: null, rating: null, favourite: false, revisit: false,
-      in_backlog: false, backlog_order: null, tags: [], artist: null, album: null, artist_id: null, review: null, notes: null, recommended_by: null,
+      in_backlog: false, backlog_order: null, tags: [], artist: null, album: null, artist_id: null, album_id: null, review: null, notes: null, recommended_by: null,
       explored_at: null, reviewed_at: null, via_phone: false, tracklist: null, provenance: { display_name: "user" } };
     items.push(a);
   }
   it.artist = a.display_name; it.artist_id = a.id;
+}
+/** link_items direction (API.md): track → album on_album, item → artist by_artist, version → original version_of. */
+function link(fromId: number, toId: number, kind: LinkKind) {
+  const it = need(fromId), to = need(toId);
+  if (fromId === toId) fail("validation", "A record can't link to itself.");
+  if (kind === "by_artist") { if (to.type !== "artist" || it.type === "artist") fail("validation", "By artist links a record to an artist."); it.artist_id = to.id; it.artist = to.display_name; }
+  if (kind === "on_album") { if (to.type !== "album" || it.type !== "track") fail("validation", "On album links a track to an album."); it.album_id = to.id; it.album = to.display_name; }
+  if (kind === "version_of" && !versions.some((v) => v.from === fromId && v.to === toId)) versions.push({ from: fromId, to: toId });
+  it.modified_at = TODAY;
 }
 function nextId() { return Math.max(0, ...items.map((i) => i.id)) + 1; }
 const byId = (id: number) => items.find((i) => i.id === id);
@@ -96,8 +107,8 @@ function summary(i: MItem): ItemSummary {
   return {
     id: i.id, type: i.type, display_name: i.display_name, spotify_uri: i.spotify_uri, status: i.status, priority: i.priority,
     rating: i.rating, favourite: i.favourite, revisit: i.revisit, in_backlog: i.in_backlog, backlog_order: i.backlog_order,
-    tags: [...i.tags], artist_names: artist ? [artist] : [], album_name: i.type === "track" ? i.album : null,
-    recommended_by: i.recommended_by, added_via: i.via_phone ? "phone" : "pc", added_at: i.added_at, modified_at: i.modified_at,
+    tags: [...i.tags], artist_names: artist ? [artist] : [], album_name: i.type !== "track" ? null : i.album_id != null ? byId(i.album_id)?.display_name ?? null : i.album,
+    recommended_by: i.recommended_by, notes: i.notes, added_via: i.via_phone ? "phone" : "pc", added_at: i.added_at, modified_at: i.modified_at,
   };
 }
 function detail(i: MItem): ItemDetail {
@@ -105,12 +116,17 @@ function detail(i: MItem): ItemDetail {
   const artistItem = i.artist_id != null ? byId(i.artist_id) : undefined;
   if (artistItem && artistItem.id !== i.id) links.push({ kind: "by_artist", direction: "from", item: summary(artistItem) });
   if (i.type === "artist") items.filter((x) => x.artist_id === i.id && x.id !== i.id).forEach((x) => links.push({ kind: "by_artist", direction: "to", item: summary(x) }));
-  if (i.type === "track" && i.album) { const al = items.find((x) => x.type === "album" && x.display_name === i.album && x.artist === i.artist); if (al) links.push({ kind: "on_album", direction: "from", item: summary(al) }); }
-  if (i.type === "album") items.filter((x) => x.type === "track" && x.album === i.display_name && x.artist === i.artist).forEach((x) => links.push({ kind: "on_album", direction: "to", item: summary(x) }));
+  const al = i.album_id != null ? byId(i.album_id) : undefined;
+  if (al) links.push({ kind: "on_album", direction: "from", item: summary(al) });
+  items.filter((x) => x.album_id === i.id).forEach((x) => links.push({ kind: "on_album", direction: "to", item: summary(x) }));
+  for (const v of versions) {
+    const other = v.from === i.id ? byId(v.to) : v.to === i.id ? byId(v.from) : undefined;
+    if (other) links.push({ kind: "version_of", direction: v.from === i.id ? "from" : "to", item: summary(other) });
+  }
   return {
     ...summary(i), review: i.review, notes: i.notes, recommended_by: i.recommended_by, explored_at: i.explored_at,
     reviewed_at: i.reviewed_at, provenance: { ...i.provenance }, links,
-    track_list: i.tracklist ? i.tracklist.map((name, n) => ({ position: n + 1, name, item_id: items.find((x) => x.type === "track" && x.display_name === name && x.album === i.display_name)?.id ?? null })) : null,
+    track_list: i.tracklist ? i.tracklist.map((name, n) => ({ position: n + 1, name, item_id: items.find((x) => x.album_id === i.id && x.display_name === name)?.id ?? null })) : null,
     history: history.filter((h) => h.item_id === i.id).reverse().sort((a, b) => b.at.localeCompare(a.at)).map(({ from, to, at, note }) => ({ from, to, at, note })),
   };
 }
@@ -196,7 +212,6 @@ const H: Record<string, Handler> = {
   get_dashboard: () => ({
     counts: counts(),
     in_progress: items.filter((i) => i.status === "in_progress").sort((a, b) => b.modified_at.localeCompare(a.modified_at)).map(summary),
-    recent_activity: [...history].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8).map((h) => ({ item: summary(byId(h.item_id)!), from: h.from, to: h.to, at: h.at })),
     name_needed: items.filter((i) => !i.display_name).map(summary), unresolved,
     planned: items.filter((i) => i.in_backlog && i.status === "planned").length,
     explored_this_month: items.filter((i) => i.explored_at?.startsWith(TODAY.slice(0, 7))).length,
@@ -214,12 +229,13 @@ const H: Record<string, Handler> = {
       id: nextId(), type: input.type, display_name: input.display_name?.trim() || null, spotify_uri: input.spotify_uri, status: input.status ?? "planned",
       priority: input.priority ?? null, rating: null, favourite: false, revisit: false, in_backlog: input.in_backlog ?? true,
       backlog_order: (input.in_backlog ?? true) ? Math.max(0, ...items.map((i) => i.backlog_order ?? 0)) + 1 : null,
-      tags: input.tags ?? [], artist: null, album: null, artist_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: input.notes?.trim() || null,
+      tags: input.tags ?? [], artist: null, album: null, artist_id: null, album_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: input.notes?.trim() || null,
       recommended_by: input.recommended_by || null, explored_at: null, reviewed_at: null, via_phone: false, tracklist: null,
       provenance: {},
     };
     items.push(it);
     setArtist(it, input.artist_name);
+    if (input.album_id != null && it.type === "track") link(it.id, input.album_id, "on_album");
     const set = { display_name: !!it.display_name, artist: !!it.artist, notes: !!it.notes, recommended_by: !!it.recommended_by, priority: !!it.priority };
     for (const [k, on] of Object.entries(set)) if (on) it.provenance[k] = input.promoted_fields?.includes(k) ? "promoted" : input.provenance;
     history.push({ item_id: it.id, from: null, to: it.status, at: TODAY, note: "Added" });
@@ -229,6 +245,8 @@ const H: Record<string, Handler> = {
     const it = need(id);
     const { promoted_fields, artist_name, ...rest } = patch;
     Object.assign(it, rest);
+    if (it.type === "artist") { it.artist = null; it.artist_id = null; }
+    if (it.type !== "track") { it.album = null; it.album_id = null; }
     if (artist_name !== undefined) { setArtist(it, artist_name); it.provenance.artist = promoted_fields?.includes("artist") ? "promoted" : "user"; }
     if (patch.display_name !== undefined) it.display_name = patch.display_name?.trim() || null;
     if (patch.review !== undefined) it.reviewed_at = TODAY;
@@ -248,9 +266,19 @@ const H: Record<string, Handler> = {
     }
     return detail(it);
   },
-  delete_item: ({ id }) => { need(id); items.splice(items.findIndex((i) => i.id === id), 1); },
-  link_items: () => undefined,
-  unlink_items: () => undefined,
+  delete_item: ({ id }) => {
+    need(id); items.splice(items.findIndex((i) => i.id === id), 1);
+    items.forEach((x) => { if (x.artist_id === id) { x.artist_id = null; x.artist = null; } if (x.album_id === id) { x.album_id = null; x.album = null; } });
+    versions.splice(0, versions.length, ...versions.filter((v) => v.from !== id && v.to !== id));
+  },
+  link_items: ({ fromId, toId, kind }) => link(fromId, toId, kind),
+  unlink_items: ({ fromId, toId, kind }) => {
+    const it = need(fromId);
+    if (kind === "by_artist" && it.artist_id === toId) { it.artist_id = null; it.artist = null; }
+    if (kind === "on_album" && it.album_id === toId) { it.album_id = null; it.album = null; }
+    if (kind === "version_of") versions.splice(0, versions.length, ...versions.filter((v) => v.from !== fromId || v.to !== toId));
+    it.modified_at = TODAY;
+  },
   reorder_backlog: ({ ids }: { ids: number[] }) => { ids.forEach((id, n) => { const it = byId(id); if (it) it.backlog_order = n + 1; }); },
   parse_link: ({ raw }) => { const p = parseLink(raw); return p.uri && existingFor(p.uri) ? { ...p, existing_id: existingFor(p.uri) } : p; },
   resolve_link: ({ raw }) => {
@@ -261,11 +289,12 @@ const H: Record<string, Handler> = {
   list_unresolved: () => unresolved,
   retry_unresolved: () => { if (dev.view === "offline") return { resolved: 0 }; const n = unresolved.length; unresolved = []; return { resolved: n }; },
   discard_unresolved: ({ id }) => { unresolved = unresolved.filter((u) => u.id !== id); },
-  search: ({ q, limit }) => {
+  search: ({ q, limit, type }) => {
     const s = String(q).toLowerCase().trim();
     if (!s) return [];
     const hits: { item: ItemSummary; snippet: string; field: string }[] = [];
     for (const i of items) {
+      if (type && i.type !== type) continue;
       const fields: [string, string | null][] = [["name", i.display_name], ["artist", i.artist], ["album", i.album], ["tags", i.tags.join(" ")], ["review", i.review], ["notes", i.notes], ["recommended_by", i.recommended_by]];
       const f = fields.find(([, v]) => v?.toLowerCase().includes(s));
       if (f) { const v = f[1]!; const at = v.toLowerCase().indexOf(s); hits.push({ item: summary(i), field: f[0], snippet: (at > 30 ? "…" : "") + v.slice(Math.max(0, at - 30), at + s.length + 50) }); }
@@ -404,7 +433,7 @@ const H: Record<string, Handler> = {
   bulk_add_album_tracks: ({ albumId, tracks: ts }: { albumId: number; tracks: { uri: string; name: string }[] }) => {
     const al = need(albumId);
     return ts.map((t) => {
-      const it: MItem = { ...al, id: nextId(), type: "track", display_name: t.name, spotify_uri: t.uri, album: al.display_name, tags: [], rating: null, backlog_order: null, in_backlog: false, provenance: { display_name: "promoted" }, added_at: TODAY, modified_at: TODAY, tracklist: null, review: null, notes: null };
+      const it: MItem = { ...al, id: nextId(), type: "track", display_name: t.name, spotify_uri: t.uri, album: al.display_name, album_id: al.id, tags: [], rating: null, backlog_order: null, in_backlog: false, provenance: { display_name: "promoted" }, added_at: TODAY, modified_at: TODAY, tracklist: null, review: null, notes: null };
       items.push(it); history.push({ item_id: it.id, from: null, to: it.status, at: TODAY, note: "Added from album" }); return summary(it);
     });
   },
@@ -456,7 +485,7 @@ onDevChange(() => {
 /** Dev helper: simulate an iPhone share arriving (capture-received). */
 export function simulateCapture() {
   const id = nextId();
-  const it: MItem = { ...items[0], id, type: "album", display_name: null, spotify_uri: `spotify:album:${fakeId("capture" + id)}`, status: "planned", priority: null, rating: null, favourite: false, revisit: false, in_backlog: true, backlog_order: order + id, tags: [], artist: null, album: null, artist_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: null, recommended_by: null, explored_at: null, reviewed_at: null, via_phone: true, tracklist: null, provenance: {} };
+  const it: MItem = { ...items[0], id, type: "album", display_name: null, spotify_uri: `spotify:album:${fakeId("capture" + id)}`, status: "planned", priority: null, rating: null, favourite: false, revisit: false, in_backlog: true, backlog_order: order + id, tags: [], artist: null, album: null, artist_id: null, album_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: null, recommended_by: null, explored_at: null, reviewed_at: null, via_phone: true, tracklist: null, provenance: {} };
   items.push(it); history.push({ item_id: id, from: null, to: "planned", at: TODAY, note: "Shared from iPhone" });
   emit("capture-received", summary(it)); invalidate();
 }

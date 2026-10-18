@@ -31,10 +31,6 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 | # | Gap | Where | Why it's open | Fix in |
 |---|---|---|---|---|
 | G-1 | Album page "Tracks you've added" has no Played / Not played column | `src/pages/Item.tsx` | `ItemDetail.track_list` has no per-track play data (contract) | M4 (listening data) |
-| G-2 | Edit mode can't change the record type or add/remove links (version of, on album, by artist) | `src/pages/Item.tsx` | `ItemPatch` has no `type`; link editing UI not built (`link_items`/`unlink_items` exist) | M3 (contract + UI) |
-| G-3 | "Add a track" on an album opens quick add but doesn't link the new track to the album | `src/pages/Item.tsx`, `QuickAdd.tsx` | `NewItem` has no "on album" link field; needs `link_items` after create or a field (contract) | M3 |
-| G-4 | In-progress artist cards show "Artist" instead of their notes line | `src/pages/HomeMvp.tsx` | `ItemSummary` has no notes (contract) | M3 |
-| G-5 | Dashboard `recent_activity` is fetched but not shown; Home shows "Recently added" as on the board | `src/pages/HomeMvp.tsx` | Board and contract disagree; decide which, then drop the unused one | M3 (spec decision) |
 | G-6 | Rediscover "New shelf" saves a saved filter (chip) rather than a separate shelf type | `src/pages/Rediscover.tsx` | No shelf entity in the contract; saved filter covers it for now | M8 candidate |
 | G-7 | Recent plays: no "album" suffix next to an album's rating (board shows it) | `src/pages/Plays.tsx` | `Play.item` is the track; album rating not in the payload (contract) | M4 |
 | G-8 | Insights "Unfinished albums" lacks the "N other albums can't be checked" count | `src/pages/Insights.tsx` | `TakeInsights` has no count of albums without a track list (contract) | M4 |

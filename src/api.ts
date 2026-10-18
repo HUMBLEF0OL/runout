@@ -33,6 +33,7 @@ export interface ItemSummary {
   album_name: string | null; // tracks: the album it is on (row subtitle "Artist, from Album")
   added_via: "pc" | "phone"; // "From: Phone" column (SC-03)
   recommended_by: string | null; // row subtitles "Album, from Meera" (SC-02, SC-03)
+  notes: string | null; // in-progress artist cards show it (SC-02)
   added_at: string; modified_at: string;
 }
 export type LinkKind = "by_artist" | "on_album" | "version_of";
@@ -51,10 +52,11 @@ export interface NewItem {
   promoted_fields?: string[]; // these fields get provenance "promoted"; the rest get `provenance`
   capture_ms?: number;
   artist_name?: string; notes?: string; // artist_name: core finds or creates the artist item and links it by_artist
+  album_id?: number; // tracks: core links the new track on_album to this album
 }
 export type ItemPatch = Partial<Pick<ItemDetail,
   "display_name" | "priority" | "rating" | "review" | "notes" | "favourite" | "revisit"
-  | "in_backlog" | "recommended_by">> & { tags?: string[]; promoted_fields?: string[]; artist_name?: string | null };
+  | "in_backlog" | "recommended_by">> & { type?: ItemType; tags?: string[]; promoted_fields?: string[]; artist_name?: string | null };
 export interface ItemFilter {
   type?: ItemType; status?: Status[]; tags?: string[]; min_rating?: number; revisit?: boolean;
   favourite?: boolean; in_backlog?: boolean; name_needed?: boolean; priority?: Priority[];
@@ -71,7 +73,6 @@ export interface Counts { library: number; albums: number; tracks: number; artis
 export interface Unresolved { id: number; raw_link: string; received_at: string; source: "shortcut" | "paste"; state: string; error: string | null }
 export interface Dashboard {
   counts: Counts; in_progress: ItemSummary[];
-  recent_activity: { item: ItemSummary; from: Status | null; to: Status; at: string }[];
   name_needed: ItemSummary[]; unresolved: Unresolved[];
   // SC-02 stat tiles and "started 6 months ago"
   planned: number; explored_this_month: number; not_for_me_this_month: number; explored_no_review: number;
@@ -202,7 +203,7 @@ export const prefillTitle = (uri: string) => call<{ title: string | null }>("pre
 export const listUnresolved = () => call<Unresolved[]>("list_unresolved");
 export const retryUnresolved = () => call<{ resolved: number }>("retry_unresolved");
 export const discardUnresolved = (id: number) => call<void>("discard_unresolved", { id });
-export const search = (q: string, limit?: number) => call<SearchHit[]>("search", { q: cleanLine(q, LIMITS.query), limit });
+export const search = (q: string, limit?: number, type?: ItemType) => call<SearchHit[]>("search", { q: cleanLine(q, LIMITS.query), limit, type });
 export const listTags = () => call<Tag[]>("list_tags");
 export const renameTag = (id: number, name: string) => call<Tag>("rename_tag", { id, name: cleanTags([name])[0] ?? "" });
 export const mergeTags = (fromId: number, intoId: number) => call<Tag>("merge_tags", { fromId, intoId });

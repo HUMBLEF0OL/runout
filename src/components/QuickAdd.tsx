@@ -124,6 +124,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
           type: manual ? type : kind, display_name: nm || null, spotify_uri: manual ? null : uri ?? null, priority: prio || undefined,
           recommended_by: rec.trim() || undefined, provenance: "user", promoted_fields, capture_ms, artist_name: artistName,
           notes: isArtist ? notes.trim() || undefined : undefined,
+          album_id: (manual ? type : kind) === "track" ? opts.albumId : undefined,
         });
         const keep = tracks.filter((t) => t.keep);
         if (keep.length) await bulkAddAlbumTracks(it.id, keep.map(({ uri: u, name: n }) => ({ uri: u, name: n })));

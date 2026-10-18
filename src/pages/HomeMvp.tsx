@@ -68,7 +68,7 @@ export function MvpBody({ dash }: { dash: Dashboard }) {
             <div key={it.id} className="card flex flex-wrap gap-4 items-center">
               <div className="flex flex-col flex-[1_1_220px] gap-1 min-w-0">
                 <Link to={`/item/${it.id}`} className="text-[18px] font-extrabold text-text">{nameOf(it)}</Link>
-                <span className="text-text-2">{it.type === "artist" ? "Artist" : it.artist_names.join(", ")}</span>
+                <span className="text-text-2 truncate">{it.type === "artist" ? it.notes || "Artist" : it.artist_names.join(", ")}</span>
                 <span className="font-mono text-faint text-xs">{TYPE[it.type]}, started {age(dash.started_at[it.id] ?? it.modified_at)} ago{from(it)}</span>
               </div>
               <div className="flex flex-wrap gap-2 items-center">
