@@ -51,9 +51,7 @@ def check_one_item_summary():
            if "library" not in p.parts and "json_object('id'" in p.read_text(encoding="utf-8")]
     if bad:
         failures.append("one ItemSummary")
-        print("--- one ItemSummary: FAIL (build it with library::items::summary)
-" + "
-".join(bad))
+        print("--- one ItemSummary: FAIL (build it with library::items::summary)\n" + "\n".join(bad))
 
 
 def check_no_oembed_or_tokens_logged():
