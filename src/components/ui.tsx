@@ -1,5 +1,5 @@
 // Shared UI components, DESIGN.md §5. Markup and class names follow the M1 prototype (styles in src/styles/app.css).
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { XIcon as X } from "@phosphor-icons/react";
 import type { AppError, Freshness, ItemSummary, Play, Source, Status } from "../api";
@@ -90,7 +90,7 @@ export const Dots = () => <span aria-label="Working" className="tracking-[3px]">
 export const LiveDot = () => <span className="live" aria-hidden="true" />;
 export const NameNeeded = () => <span className="badge need">Name needed</span>;
 export const StatusBadge = ({ children }: { children: ReactNode }) => <span className="badge status">{children}</span>;
-export const SourceTag = ({ sources }: { sources: Source[] }) => <span className="text-faint text-xs">{sourceText(sources)}</span>;
+export const SourceTag = ({ sources }: { sources: Source[] }) => !sources.length ? null : <span className="text-faint text-xs">{sourceText(sources)}</span>;
 export const FreshnessNote = ({ freshness, loggerState }: { freshness: Freshness | undefined; loggerState?: string }) =>
   <span className="freshness">{freshnessText(freshness, loggerState)}</span>;
 export const Stars = ({ r }: { r: number | null }) => (r ? <span className="stars" aria-label={`Rated ${r} of 5`}>{stars(r)}</span> : null);
@@ -283,7 +283,10 @@ export function ItemSet({ items, art, total, meta, act }: {
 /** Native modal <dialog>: focus trap and Esc come free (DESIGN: Esc closes a dialog). */
 export function Dialog({ title, onClose, children, footer, wide }: { title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const d = ref.current; if (d && !d.open) d.showModal?.(); }, []);
+  // Open before the content mounts: showModal() moves focus to the first control (Close), so an autoFocus field
+  // (quick-add link, name) must mount inside the already-open dialog to keep focus.
+  const [open, setOpen] = useState(false);
+  useLayoutEffect(() => { const d = ref.current; if (d && !d.open) d.showModal?.(); setOpen(true); }, []);
   return (
     <dialog ref={ref} className={`overlay dialog ${wide ? "w-[min(760px,100%)]" : ""}`} aria-labelledby="dlg-t"
       onCancel={(e) => { e.preventDefault(); onClose(); }} onClick={(e) => { if (e.target === ref.current) onClose(); }}>
@@ -291,8 +294,8 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: Reac
         <h1 id="dlg-t" className="text-xl font-extrabold">{title}</h1>
         <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} aria-hidden /></button>
       </div>
-      {children}
-      {footer && <div className="flex flex-wrap gap-2 items-center justify-end">{footer}</div>}
+      {open && children}
+      {open && footer && <div className="flex flex-wrap gap-2 items-center justify-end">{footer}</div>}
     </dialog>
   );
 }

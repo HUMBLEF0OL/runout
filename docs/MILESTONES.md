@@ -8,7 +8,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 |---|---|---|---|---|---|
 | M0 Foundations | setup | — | — | U-1 | done |
 | M1 Design | design | MVP, R2, R3 | all (SC-01–13) | U-9 | ~1 week |
-| M2 UI build | UI | MVP, R2, R3 | all, on mock data | — | 3–4 weeks |
+| M2 UI build | UI | MVP, R2, R3 | all, on mock data | — | done 18 Oct 2026 |
 | M3 Backend: MVP core | backend | MVP | CAP-01–17, 35 | — | 3–4 weeks |
 | M4 Backend: listening and insights | backend | R2 | CAP-18–27 | U-2 | 3–4 weeks |
 | M5 Backend: Spotify connected | backend | R3 | CAP-28–34 | U-6, U-7, U-8 (opt.) | 3–4 weeks |
@@ -63,12 +63,12 @@ Work items
 7. Accessibility pass: keyboard-only walkthrough; WCAG 2.1 AA contrast (4.5:1).
 
 Acceptance
-- [ ] Every SC-n matches its approved board (side-by-side review).
-- [ ] Journeys A–H clickable end to end on mock data.
-- [ ] `src/` contains no `fetch`, SQLite or network code; only `api.ts` and embed iframes (TSD §1 rule).
-- [ ] T4 resolved: embeds work in incognito web view and leave no HTTP cache in `EBWebView`.
-- [ ] All text passes 4.5:1 contrast (NFR-12); every action reachable by keyboard.
-- [ ] `python scripts/check.py` exits 0.
+- [x] Every SC-n matches its approved board (side-by-side review). *Evidence: per-screen headless captures compared with `docs/design/screens/` by each build agent; Tailwind migration pixel-diffed against pre-migration captures (0 px on settings, library, search, item); approved by the user 18 Oct 2026 with U-9.*
+- [x] Journeys A–H clickable end to end on mock data. *Evidence: `node scripts/journeys.mjs` → 30/30 steps PASS, keyboard only, screenshots in `docs/design/screens/m2-journeys/` (18 Oct 2026).*
+- [x] `src/` contains no `fetch`, SQLite or network code; only `api.ts` and embed iframes (TSD §1 rule). *Evidence: `check.py` "ui purity" check (no fetch/XHR/WebSocket/sqlite/plugin imports; only `src/api.ts` imports `@tauri-apps/api`) passes.*
+- [x] T4 resolved: embeds work in incognito web view and leave no HTTP cache in `EBWebView`. *Evidence: wry probe + real `runout.exe` window (real album embed rendered, logged-out "Preview"); after exit `Cache_Data` empty, no written file names a Spotify host; `docs/kb/windows-tauri.md` T4.*
+- [x] All text passes 4.5:1 contrast (NFR-12); every action reachable by keyboard. *Evidence: `src/styles/tokens.test.ts` (34 token pairs ≥ 4.5:1); `journeys.mjs` M1–M3: reduced motion honoured, every rendered button has an accessible name, focus ring at all 65 keyboard stops; two focus bugs fixed (dialog autofocus, input outline).*
+- [x] `python scripts/check.py` exits 0. *Evidence: ALL CHECKS PASS at close, 18 Oct 2026 (92 Vitest tests).*
 
 ## M3 — Backend: MVP core
 

@@ -67,6 +67,8 @@ def check_ui_purity():
         for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
             if pat.search(line) and not line.lstrip().startswith("//"):
                 bad.append(f"{rel}:{i}: {line.strip()[:80]}")
+            if re.search(r"\?\? \[\s*\"[USE]\"", line):  # FR-032: source tags come from the response, never a literal fallback
+                bad.append(f"{rel}:{i}: hard-coded source tag fallback; use `?? []`")
             if "]${" in line:  # Tailwind can't see an arbitrary-value class glued to ${...}; the rule is never generated
                 bad.append(f"{rel}:{i}: put a space between ']' and '${{' in class strings")
             if "@tauri-apps/api" in line and rel != "src/api.ts":

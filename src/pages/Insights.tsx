@@ -79,7 +79,7 @@ function Listening({ range }: { range: Range }) {
           <div className="r"><span />{Array.from({ length: 24 }, (_, h) => <span key={h} className="font-mono text-faint text-[10px]">{h % 6 === 0 ? String(h).padStart(2, "0") : ""}</span>)}</div>
         </div>
       </Card>
-      <Card title="Unfinished albums" src={take.data?.sources ?? ["U"]} side>
+      <Card title="Unfinished albums" src={take.data?.sources ?? []} side>
         <span className="text-muted text-xs leading-[1.45]">Only albums whose tracks you've added.</span>
         {take.data?.data.unfinished_albums.length ? take.data.data.unfinished_albums.map((u) => (
           <Link key={u.item.id} to={`/item/${u.item.id}`} className="flex justify-between items-baseline gap-3 text-text py-[3px]">

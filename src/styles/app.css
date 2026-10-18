@@ -67,7 +67,7 @@ h1, h2 { text-wrap: balance; }
 .input::placeholder, textarea::placeholder { color: var(--color-faint); opacity: 1; }
 textarea.input { height: auto; padding: 12px; line-height: 1.55; resize: vertical; width: 100%; }
 .input:hover { border-color: var(--color-line-hover); }
-.input:focus { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 3px rgba(245,181,68,0.18); }
+.input:focus { border-color: var(--color-accent); box-shadow: 0 0 0 3px rgba(245,181,68,0.18); }
 .input.error { border-color: var(--color-danger); }
 .input.mono { font-family: var(--font-mono); font-size: 13px; }
 .field { display: flex; flex-direction: column; gap: 6px; }

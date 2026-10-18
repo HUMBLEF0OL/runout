@@ -36,7 +36,7 @@ export default function HomeFull() {
   if (ins.error) return <><Topbar>{seg}</Topbar><ErrorBanner title="Couldn’t load your listening." error={ins.error} onRetry={ins.reload} /></>;
 
   const t = ins.data?.data.totals;
-  const src = ins.data?.sources ?? ["S", "E"];
+  const src = ins.data?.sources ?? []; // no tag until the response says which sources it used (FR-032)
   return (
     <>
       <Topbar>{seg}</Topbar>
