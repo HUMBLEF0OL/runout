@@ -63,9 +63,10 @@ pub fn build(conn: &Connection) -> Result<Value> {
 pub fn export_library(conn: &Connection, path: &Path) -> Result<usize> {
     let doc = build(conn)?;
     let n = doc["items"].as_array().map_or(0, Vec::len);
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(&doc)?)?;
-    std::fs::rename(&tmp, path)?;
+    let bytes = serde_json::to_vec_pretty(&doc)?;
+    crate::backup::write_then_rename(&path.with_extension("json.tmp"), path, |tmp| {
+        Ok(std::fs::write(tmp, &bytes)?)
+    })?;
     Ok(n)
 }
 
@@ -106,6 +107,17 @@ mod tests {
             assert_eq!(keys(&doc[k][0]), keys(&real[k][0]), "{k}[] keys");
         }
         assert_eq!(real["format_version"], FORMAT_VERSION);
+    }
+
+    #[test]
+    fn failed_export_leaves_no_tmp() {
+        let c = db::open_in_memory().unwrap();
+        let dir = std::env::temp_dir().join(format!("runout-export-fail-{}", std::process::id()));
+        let path = dir.join("out");
+        std::fs::create_dir_all(&path).unwrap(); // target is a directory: the rename fails
+        assert!(export_library(&c, &path).is_err());
+        assert!(!path.with_extension("json.tmp").exists());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
