@@ -12,14 +12,22 @@ Where every capability lives in code, which spec governs it, and how it's tested
 | Path | Responsibility | Capabilities / FRs | Spec | Tests | Milestone | Status |
 |---|---|---|---|---|---|---|
 | `src-tauri/src/main.rs` | Binary entry; calls `runout_lib::run()`; later `--uninstall-cleanup` flag | CAP-16 | TSD §2, §4.11 | manual | M0 | built |
-| `src-tauri/src/lib.rs` | Tauri builder: plugins, commands, tray, close-to-tray | CAP-17 | TSD §2 | manual (tray) | M0 | built |
+| `src-tauri/src/lib.rs` | Module tree; Tauri builder: dialog plugin, `AppState`, `online-changed` (30 s re-probe) → `retry_unresolved`; later commands, tray, close-to-tray | CAP-17 | TSD §2 | manual (tray) | M0 | built |
 | `src-tauri/src/commands.rs` | Tauri command surface; the only UI→core entry point | all | TSD §1 rule | via module tests | M3–M5 | planned |
-| `src-tauri/src/db/` | rusqlite connection, WAL, migration runner (`PRAGMA user_version`), FTS5 | CAP-10 | TSD §1, §3 | `db` unit tests | M3 | planned |
-| `src-tauri/migrations/` | Numbered SQL: `0001_init` (MVP), `0002_listening` (R2), `0003_spotify` (R3) | — | TSD §3 | migration test (fresh + upgrade) | M3/M4/M5 | planned |
-| `src-tauri/src/links.rs` | Spotify link parser + short-link resolve | CAP-01, FR-002 | TSD §4.1 | ≥15 table cases | M3 | planned |
-| `src-tauri/src/net.rs` | Allow-listed HTTP client; `online()` check | FR-019 | TSD §4.3, §7 | host allow-list test | M3 | planned |
-| `src-tauri/src/library/` | Items, links, tags, status history, journal, backlog, provenance, promotion rule | CAP-01–12 | TSD §3, §4.2 | promotion + CRUD tests | M3 | planned |
+| `src-tauri/src/db/` | `open(path)` (WAL, foreign_keys, busy_timeout), `open_in_memory()` for tests, `migrate()` over embedded `migrations/*.sql` (`PRAGMA user_version`) | CAP-10 | TSD §1, §3 | `db` unit tests: migrate fresh + rerun, CHECKs, FTS sync (tag/artist rename, delete) | M3 | built |
+| `src-tauri/src/error.rs` | `AppError {code, message, existing_id?, retry_after_s?, detail?}` + `From` sqlite/io/json/reqwest/tauri | all | API.md §1, TSD §6 | serialization + sqlite mapping | M3 | built |
+| `src-tauri/src/state.rs` | `AppState {db: Mutex<Connection>, paths, settings}` managed by Tauri | all | TSD §2 | manual (app start) | M3 | built |
+| `src-tauri/src/settings.rs` | `Settings` in `settings.json` (app config dir; not in library.db since `library_path` moves), merge/load/save | CAP-15 | API.md §3, D15 | merge/load/save test | M3 | built |
+| `src-tauri/src/text.rs` | Free-text cleaning at the command boundary, mirrors `src/lib/sanitize.ts` | all | TSD §7 | `text` unit test | M3 | built |
+| `src-tauri/migrations/` | Numbered SQL: `0001_init` (MVP core + `item_fts` + sync triggers + `usage_event`), `0002_listening` (R2), `0003_spotify` (R3) | — | TSD §3 | migration test (fresh + upgrade) | M3/M4/M5 | built |
+| `src-tauri/src/error.rs` | `AppError` with API.md §1 codes; serializes to the UI error shape | all | API.md §1 | `error` unit tests | M3 | planned |
+| `src-tauri/src/text.rs` | Free-text validation and length caps at the command boundary (mirrors `src/lib/sanitize.ts`) | FR-005, FR-006 | TSD §7 | `text` unit tests | M3 | planned |
+| `src-tauri/src/links.rs` | `parse` (TSD §4.1), `resolve_short` (via net), `prefill_title` (oEmbed, never stored), `unresolved_capture` queue: `resolve_or_queue`, `list/discard/retry_unresolved` | CAP-01, FR-002, FR-017 | TSD §4.1, §4.3 | 35-case table (incl. `src/lib/link.test.ts` rows), queue lifecycle | M3 | built |
+| `src-tauri/src/net.rs` | One shared `reqwest` client; `check`/`send`/`get` with host allow-list (also every redirect hop, max 5); `online()` cached 30 s + `on_online_change` | FR-019 | TSD §4.3, §7 | allow-list, no-network refusal, change hook | M3 | built |
+| `src-tauri/src/library/` | `ItemType`; items (`id_by_uri`, `insert_name_needed` built), links, tags, status history, backlog, filters, search, provenance, rediscover, dashboard (stubs until step 4/5) | CAP-01–12 | TSD §3, §4.2 | promotion + CRUD tests | M3 | planned |
 | `src-tauri/src/capture.rs` | `tiny_http` LAN listener, pairing code, lockout | CAP-13, FR-018 | TSD §5.1 | wrong-code ×5, non-LAN reject | M3 | planned |
+| `src-tauri/src/export.rs` | `export_library` JSON with provenance (stub) | CAP-15, FR-020 | TSD §4.10 | export of 10k fixture | M3 | planned |
+| `src-tauri/src/usage.rs` | Local usage counters, success metrics (stub) | FR-045 | TSD §4.12 | metrics query test | M3 | planned |
 | `src-tauri/src/backup.rs` | `VACUUM INTO`, zip + manifest, rotation 3, restore verify | CAP-15, FR-021 | TSD §4.10 | rotation ×4, restore integrity | M3 | planned |
 | `src-tauri/src/logger/` | SMTC watcher, accumulation, pause, 5 s poll | CAP-18, FR-026 | TSD §4.5 | accumulation unit tests | M4 | planned |
 | `src-tauri/src/importer/` | Export parse (allow-listed fields), minimization, dedupe, reconcile, matching, playlists | CAP-19–22 | TSD §4.6–4.8 | fixtures; idempotent re-import; overlap | M4 | planned |

@@ -25,8 +25,10 @@ Format: fact — **status**, date, source. Design decisions live in [TSD](../TSD
 
 ## SQLite
 - `VACUUM INTO` gives a consistent compacted snapshot for backups — **Documented**, https://www.sqlite.org/lang_vacuum.html
-- FTS5 ships in `rusqlite` `bundled` builds — **Documented**; confirm feature flag in M3.
+- FTS5 ships in `rusqlite` `bundled` builds — **Verified** (tested), 2026-10-18: rusqlite 0.40.2 `features = ["bundled"]`, no extra flag; `db` tests create and query `item_fts`.
 
 ## Gotchas found while building
 <!-- newest first: date — what bit us — fix / playbook updated -->
+- 2026-10-18 — reqwest 0.13 renamed its TLS feature: `rustls-tls` no longer exists, use `default-features = false, features = ["rustls"]`. Builds on MSVC with no extra tools.
+- 2026-10-18 — FTS5 + foreign-key cascades: deleting an item cascades `item_link`/`item_tag` deletes, whose triggers re-insert the FTS row from `item_fts_src`; the item row is already gone by then, so nothing stale comes back (`db::tests::deleting_items_leaves_no_fts_rows`).
 - 2026-10-18 — PowerShell `FindWindow($null, …)` passes `""`, not NULL, and finds nothing → use `[NullString]::Value`. Capture a probe window with `PrintWindow(h, dc, 2)`, never a full-screen grab (it records the user's other windows).

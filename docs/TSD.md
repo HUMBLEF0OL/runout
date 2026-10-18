@@ -85,6 +85,7 @@ item(id INTEGER PK, type TEXT CHECK(type IN('album','track','artist')),
      rating REAL CHECK(rating BETWEEN 0.5 AND 5 AND rating*2 = CAST(rating*2 AS INT)),
      review TEXT, notes TEXT, favourite INT DEFAULT 0, revisit INT DEFAULT 0,
      in_backlog INT DEFAULT 1, recommended_by TEXT, backlog_order INT,
+     added_via TEXT NOT NULL DEFAULT 'pc' CHECK(added_via IN('pc','phone')),   -- phone = capture listener (M3)
      added_at TEXT, explored_at TEXT, reviewed_at TEXT, created_at TEXT, modified_at TEXT)
 field_provenance(item_id, field, source CHECK(source IN('user','promoted')), PRIMARY KEY(item_id, field))
 item_link(from_id, to_id, kind CHECK(kind IN('by_artist','on_album','version_of')), PK(from_id,to_id,kind))

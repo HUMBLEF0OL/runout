@@ -5,6 +5,7 @@ Constraints table with sources: [BRD §11](../../BRD.md) (S1–S17). This file h
 ## Links and IDs
 - IDs are 22 base-62 chars; `open.spotify.com` URLs may carry an `intl-xx/` locale segment and `?si=` query — **Documented + tested**, 2026-10-18, TSD §4.1.
 - `spotify.link/{code}` short links need an HTTP redirect follow to reach an `open.spotify.com` URL — **Verified**, 2026-10-18, BRD research.
+- An unknown `spotify.link` code answers `200 text/html` (~7 KB, openresty), not 404 — **Verified** (curl, synthetic code), 2026-10-18. So `links::resolve_short` follows allow-listed redirects, then falls back to the first `open.spotify.com` item link in the page body; a hop to a non-listed host (e.g. a branch.io domain) is refused. Real-code redirect chain **Unverified**: check with a real short link in M6.
 - `spotify:` URIs open the desktop app through the OS shell handler — **Documented**, 2026-10-18, BRD FR-016.
 
 ## Embeds and oEmbed
