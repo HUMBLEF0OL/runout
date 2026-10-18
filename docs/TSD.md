@@ -23,7 +23,7 @@ Items marked **⚑ verify** are assumptions to confirm in the named milestone. E
 | Migrations | Numbered SQL files run at startup, `PRAGMA user_version` | No migration framework needed |
 | Windows media session | `windows` crate → `Windows.Media.Control` (SMTC) | Official OS API; proven on this PC (Spotify 1.305, 18 Oct 2026) |
 | HTTP client | `reqwest` (Rust side only) | oEmbed, short-link resolution, Web API |
-| Capture listener | `tiny_http` on a background thread | Smallest adequate server |
+| Capture listener | `std::net::TcpListener` on a background thread (non-blocking accept, thread per request ≤ 4) | Needs per-socket read/write timeouts and a refuse-before-read on Content-Length (> 2 KB → 413, chunked → 411); tiny_http 0.12 had neither and drained huge declared bodies on drop (G-17, fixed 18 Oct 2026) |
 | Secrets | `keyring` crate → Windows Credential Manager | NFR-08 |
 | Autostart / tray | Tauri tray API + `tauri-plugin-autostart` | Native |
 | Web view mode | Main window created with `incognito(true)` (WebView2 InPrivate); verified 18 Oct 2026, [KB](kb/windows-tauri.md#webview2) | Spotify embed content is never kept in a disk cache (BRD 5.3, Embeds Terms IV.2.c) |
@@ -46,7 +46,7 @@ Items marked **⚑ verify** are assumptions to confirm in the named milestone. E
 │  ──────────▼──────────────────────── Rust core ────────────────────────────  │
 │   commands ─┬─ library     ─┬─ db (rusqlite, FTS5, migrations)               │
 │             ├─ links        │                                                │
-│             ├─ capture ◄────┼── tiny_http listener (off by default)          │
+│             ├─ capture ◄────┼── TcpListener (off by default)                 │
 │             ├─ logger  ◄────┼── SMTC watcher thread                          │
 │             ├─ importer     │                                                │
 │             ├─ insights     │                                                │

@@ -7,8 +7,8 @@
 //! nothing (no usage event, no `capture-received`). On/off and the code persist in `capture.json`
 //! so an iPhone Shortcut keeps working across restarts.
 use std::collections::VecDeque;
-use std::io::Read;
-use std::net::{IpAddr, Ipv4Addr, UdpSocket};
+use std::io::{ErrorKind, Read, Write};
+use std::net::{IpAddr, Shutdown, TcpListener, TcpStream, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -299,67 +299,173 @@ fn pre_read(
     }
 }
 
-/// One request, on its own thread: a stalled client (or tiny_http draining an unread body on drop)
-/// only ever blocks this thread, never the accept loop or `set_enabled`.
-// ponytail: thread per request, capped by `gate` (10/min, MAX_IN_FLIGHT). Pool it if that changes.
-fn serve_one(mut req: tiny_http::Request, sh: &Shared, arrived: Instant) {
-    let ip = ip_of(&req);
-    let method = req.method().as_str().to_owned();
-    let url = req.url().to_owned();
-    let (status, text) = match pre_read(ip, &method, &url, req.body_length()) {
-        Some((status, text)) => (status, text.to_owned()),
-        None => {
-            let mut body = Vec::new();
-            let _ = req
-                .as_reader()
-                .take(MAX_BODY as u64 + 1)
-                .read_to_end(&mut body);
-            handle(sh, ip, &method, &url, &body, arrived)
-        }
-    };
-    let _ = req.respond(tiny_http::Response::from_string(text).with_status_code(status));
+/// Per-socket read/write timeout: a stalled client frees its slot after this.
+const IO_TIMEOUT: Duration = Duration::from_secs(5);
+/// Whole-request deadline, so a client dripping one byte per timeout can't hold a slot for long.
+const DEADLINE: Duration = Duration::from_secs(10);
+/// Request line + headers cap; the body is never read past [`MAX_BODY`].
+const MAX_HEAD: usize = 8192;
+
+/// Parsed request head: method, path, declared length (`None` if missing, bad or chunked),
+/// and the body bytes that arrived with the head.
+struct Head {
+    method: String,
+    path: String,
+    len: Option<usize>,
+    rest: Vec<u8>,
 }
 
-fn ip_of(req: &tiny_http::Request) -> IpAddr {
-    req.remote_addr()
-        .map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |a| a.ip())
+/// Read up to the blank line (≤ [`MAX_HEAD`] bytes). `Err(status)` for a too-big, slow or broken head.
+fn read_head(s: &mut TcpStream, arrived: Instant) -> std::result::Result<Head, u16> {
+    let mut buf = Vec::with_capacity(1024);
+    let mut chunk = [0u8; 1024];
+    let end = loop {
+        if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            break i;
+        }
+        if buf.len() >= MAX_HEAD {
+            return Err(431);
+        }
+        if arrived.elapsed() > DEADLINE {
+            return Err(408);
+        }
+        match s.read(&mut chunk) {
+            Ok(0) | Err(_) => return Err(408),
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+        }
+    };
+    let text = std::str::from_utf8(&buf[..end]).map_err(|_| 400u16)?;
+    let mut lines = text.split("\r\n");
+    let mut first = lines.next().unwrap_or("").split(' ');
+    let (method, path) = (first.next().unwrap_or(""), first.next().unwrap_or(""));
+    let (mut len, mut chunked) = (None, false);
+    for line in lines {
+        let Some((k, v)) = line.split_once(':') else {
+            continue;
+        };
+        let v = v.trim();
+        if k.eq_ignore_ascii_case("content-length") {
+            // All digits but past usize → too big (413); anything else → missing (411).
+            len = v.parse().ok().or_else(|| {
+                (!v.is_empty() && v.bytes().all(|b| b.is_ascii_digit())).then_some(usize::MAX)
+            });
+        } else if k.eq_ignore_ascii_case("transfer-encoding") {
+            chunked = true;
+        }
+    }
+    Ok(Head {
+        method: method.to_owned(),
+        path: path.to_owned(),
+        len: if chunked { None } else { len },
+        rest: buf[end + 4..].to_vec(),
+    })
+}
+
+fn reason(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        201 => "Created",
+        202 => "Accepted",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        408 => "Request Timeout",
+        411 => "Length Required",
+        413 => "Payload Too Large",
+        429 => "Too Many Requests",
+        431 => "Request Header Fields Too Large",
+        503 => "Service Unavailable",
+        _ => "Internal Server Error",
+    }
+}
+
+/// Minimal HTTP/1.1 reply, then close. The text is what the Shortcut's "Show result" shows.
+fn respond(mut s: TcpStream, status: u16, text: &str) {
+    let _ = s.set_write_timeout(Some(IO_TIMEOUT));
+    let _ = write!(
+        s,
+        "HTTP/1.1 {status} {}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+        reason(status),
+        text.len()
+    );
+    let _ = s.flush();
+    let _ = s.shutdown(Shutdown::Write);
+}
+
+/// One connection, on its own thread: head (≤ 8 KB), [`pre_read`] on the declared length, then
+/// exactly that many body bytes (≤ 2 KB). Every read has a timeout and the request a deadline, so
+/// a stalled or lying client only holds this slot briefly and never makes us allocate what it
+/// declared (G-17).
+// ponytail: thread per request, capped by `gate` (10/min, MAX_IN_FLIGHT). Pool it if that changes.
+fn serve_one(mut s: TcpStream, ip: IpAddr, sh: &Shared, arrived: Instant) {
+    let _ = s.set_read_timeout(Some(IO_TIMEOUT));
+    let (status, text) = match read_head(&mut s, arrived) {
+        Err(status) => (status, "Send POST /capture with a JSON body.".to_owned()),
+        Ok(h) => match pre_read(ip, &h.method, &h.path, h.len) {
+            Some((status, text)) => (status, text.to_owned()),
+            None => {
+                let want = h.len.unwrap_or(0);
+                let mut body = h.rest;
+                body.truncate(want);
+                let mut chunk = [0u8; 512];
+                while body.len() < want && arrived.elapsed() <= DEADLINE {
+                    match s.read(&mut chunk[..(want - body.len()).min(512)]) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => body.extend_from_slice(&chunk[..n]),
+                    }
+                }
+                if body.len() < want {
+                    (408, "The share didn't arrive in time.".to_owned())
+                } else {
+                    handle(sh, ip, &h.method, &h.path, &body, arrived)
+                }
+            }
+        },
+    };
+    respond(s, status, &text);
 }
 
 /// How often the accept loop looks at `stop` / a lockout.
-const POLL: Duration = Duration::from_millis(200);
+const POLL: Duration = Duration::from_millis(100);
 
-/// Accept loop: [`gate`]s each request, hands it to [`serve_one`] and stops when `stop` is set or
-/// capture turns off (lockout, or a socket error → `capture-disabled {reason: 'error'}`). When it
-/// stops by itself it closes its own server, so the port stops accepting at once.
+/// Accept loop (non-blocking, polled): [`gate`]s each connection by peer IP and rate, hands it to
+/// [`serve_one`] and stops when `stop` is set or capture turns off (lockout, or a socket error →
+/// `capture-disabled {reason: 'error'}`). Returning drops the socket, so the port closes at once.
 fn serve(
-    server: Arc<tiny_http::Server>,
+    server: TcpListener,
     stop: Arc<AtomicBool>,
     sh: Arc<Shared>,
     running: Arc<Mutex<Option<Running>>>,
 ) {
-    // Gate rejects are answered on one thread: dropping a request drains its body, which a stalled
-    // client can block. ponytail: one stalled reject delays later rejects (queued, no new threads).
-    let (reject_tx, reject_rx) = std::sync::mpsc::channel::<(tiny_http::Request, u16, &str)>();
-    std::thread::spawn(move || {
-        for (req, status, text) in reject_rx {
-            let _ = req.respond(tiny_http::Response::from_string(text).with_status_code(status));
-        }
-    });
     while !stop.load(Ordering::SeqCst) && sh.on.load(Ordering::SeqCst) {
-        match server.recv_timeout(POLL) {
-            Ok(Some(req)) => {
+        match server.accept() {
+            Ok((s, peer)) => {
                 let arrived = Instant::now();
-                if let Some((status, text)) = gate(&sh, ip_of(&req), arrived) {
-                    let _ = reject_tx.send((req, status, text));
+                let ip = peer.ip();
+                // Rejects are written here: nothing is read, and a small reply fits the send buffer.
+                if let Some((status, text)) = gate(&sh, ip, arrived) {
+                    respond(s, status, text);
+                    continue;
+                }
+                if s.set_nonblocking(false).is_err() {
+                    sh.in_flight.fetch_sub(1, Ordering::SeqCst);
                     continue;
                 }
                 let sh = sh.clone();
                 std::thread::spawn(move || {
-                    serve_one(req, &sh, arrived);
+                    serve_one(s, ip, &sh, arrived);
                     sh.in_flight.fetch_sub(1, Ordering::SeqCst);
                 });
             }
-            Ok(None) => {}
+            Err(e) if e.kind() == ErrorKind::WouldBlock => std::thread::sleep(POLL),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    ErrorKind::ConnectionReset
+                        | ErrorKind::ConnectionAborted
+                        | ErrorKind::Interrupted
+                ) => {}
             Err(_) => {
                 if !stop.load(Ordering::SeqCst) {
                     sh.turn_off("error");
@@ -378,25 +484,17 @@ fn serve(
 }
 
 struct Running {
-    server: Arc<tiny_http::Server>,
     stop: Arc<AtomicBool>,
     thread: JoinHandle<()>,
     port: u16,
 }
 
-/// Stop the accept loop, wait for it (bounded: it polls every [`POLL`]), and close the port.
+/// Stop the accept loop and wait for it (bounded: it polls every [`POLL`]); it drops the socket.
 fn close(r: Running) {
     r.stop.store(true, Ordering::SeqCst);
     if r.thread.thread().id() != std::thread::current().id() {
         let _ = r.thread.join();
     }
-    drop(r.server);
-    // tiny_http's accept thread only notices the close on its next connection, and its own wake-up
-    // connects to 0.0.0.0, which Windows refuses: poke it on loopback so the socket closes now.
-    let _ = std::net::TcpStream::connect_timeout(
-        &(Ipv4Addr::LOCALHOST, r.port).into(),
-        Duration::from_millis(200),
-    );
 }
 
 /// API.md `get_capture` shape.
@@ -468,7 +566,9 @@ impl Listener {
             close(r);
         }
         if on {
-            let server = match tiny_http::Server::http(("0.0.0.0", self.port)) {
+            let bound = TcpListener::bind(("0.0.0.0", self.port))
+                .and_then(|l| l.set_nonblocking(true).map(|()| l));
+            let server = match bound {
                 Ok(s) => s,
                 Err(e) => {
                     self.shared.on.store(false, Ordering::SeqCst);
@@ -480,23 +580,12 @@ impl Listener {
                     .with_detail(e.to_string()));
                 }
             };
-            let port = server.server_addr().to_ip().map_or(self.port, |a| a.port());
-            let server = Arc::new(server);
+            let port = server.local_addr().map_or(self.port, |a| a.port());
             let stop = Arc::new(AtomicBool::new(false));
             self.shared.on.store(true, Ordering::SeqCst);
-            let (s, st, sh, run) = (
-                server.clone(),
-                stop.clone(),
-                self.shared.clone(),
-                self.running.clone(),
-            );
-            let thread = std::thread::spawn(move || serve(s, st, sh, run));
-            *running = Some(Running {
-                server,
-                stop,
-                thread,
-                port,
-            });
+            let (st, sh, run) = (stop.clone(), self.shared.clone(), self.running.clone());
+            let thread = std::thread::spawn(move || serve(server, st, sh, run));
+            *running = Some(Running { stop, thread, port });
         } else {
             self.shared.on.store(false, Ordering::SeqCst);
         }
@@ -532,7 +621,7 @@ pub fn lan_ip() -> Option<IpAddr> {
 mod tests {
     use super::*;
     use crate::db;
-    use std::io::Write;
+    use std::net::Ipv4Addr;
 
     const A: &str = "4kQ2vNnB8XcRtYp0LmZs1a"; // synthetic 22-char id
     const LAN: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20));
@@ -878,6 +967,91 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         assert!(connect(port).is_err(), "port still accepting after lockout");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Drive `serve_one` over a real loopback socket as if the peer were on the LAN (loopback
+    /// itself is rejected by the accept-loop gate). `send` runs on the client; returns the reply.
+    fn exchange(name: &str, send: impl FnOnce(&mut TcpStream, &str)) -> (String, Duration) {
+        let dir = tmp(name);
+        let (l, _) = listener(&dir, 0);
+        let code = l.info().code;
+        let sh = l.shared.clone();
+        let srv = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let mut c = connect(srv.local_addr().unwrap().port()).unwrap();
+        let (s, _) = srv.accept().unwrap();
+        let t = Instant::now();
+        let th = std::thread::spawn(move || serve_one(s, LAN, &sh, Instant::now()));
+        send(&mut c, &code);
+        let mut resp = String::new();
+        let _ = c.read_to_string(&mut resp);
+        th.join().unwrap();
+        let took = t.elapsed();
+        drop(l);
+        let _ = std::fs::remove_dir_all(dir);
+        (resp, took)
+    }
+
+    /// G-17: a declared 10^12-byte body is refused from the header alone — nothing is read or
+    /// allocated for it, and the reply comes at once.
+    #[test]
+    fn huge_content_length_413_without_reading() {
+        let (resp, took) = exchange("huge", |c, _| {
+            c.write_all(
+                b"POST /capture HTTP/1.1\r\nHost: x\r\nContent-Length: 1000000000000\r\n\r\n",
+            )
+            .unwrap();
+        });
+        assert!(resp.starts_with("HTTP/1.1 413"), "{resp}");
+        assert!(took < Duration::from_secs(1), "took {took:?}");
+        let (resp, _) = exchange("huger", |c, _| {
+            c.write_all(
+                b"POST /capture HTTP/1.1\r\nContent-Length: 99999999999999999999999\r\n\r\n",
+            )
+            .unwrap();
+        });
+        assert!(resp.starts_with("HTTP/1.1 413"), "{resp}");
+    }
+
+    #[test]
+    fn chunked_body_411() {
+        let (resp, _) = exchange("chunked", |c, _| {
+            c.write_all(b"POST /capture HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\n{}\r\n")
+                .unwrap();
+        });
+        assert!(resp.starts_with("HTTP/1.1 411"), "{resp}");
+    }
+
+    #[test]
+    fn oversized_head_431() {
+        let (resp, _) = exchange("bighead", |c, _| {
+            let pad = "a".repeat(MAX_HEAD);
+            let _ = write!(c, "POST /capture HTTP/1.1\r\nX: {pad}\r\n\r\n");
+        });
+        assert!(resp.starts_with("HTTP/1.1 431"), "{resp}");
+    }
+
+    /// G-17: a body that stops arriving times the connection out (IO_TIMEOUT), freeing the slot.
+    #[test]
+    fn stalled_body_times_out() {
+        let (resp, took) = exchange("stallbody", |c, _| {
+            c.write_all(b"POST /capture HTTP/1.1\r\nContent-Length: 2000\r\n\r\n{")
+                .unwrap();
+        });
+        assert!(resp.starts_with("HTTP/1.1 408"), "{resp}");
+        assert!(took < IO_TIMEOUT + Duration::from_secs(2), "took {took:?}");
+    }
+
+    /// A real POST end to end: head + body over the socket, through `handle`, reply parsed back.
+    #[test]
+    fn real_post_end_to_end() {
+        let (resp, _) = exchange("e2e", |c, code| {
+            let b = body(code, &album());
+            write!(c, "POST /capture HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", b.len()).unwrap();
+            c.write_all(&b).unwrap();
+        });
+        assert!(resp.starts_with("HTTP/1.1 200 OK\r\n"), "{resp}");
+        assert!(resp.contains("Connection: close\r\n"), "{resp}");
+        assert!(resp.ends_with("\r\n\r\nAlready in your library."), "{resp}");
     }
 
     #[test]

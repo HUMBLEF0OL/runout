@@ -43,7 +43,6 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 | G-14 | Tray menu and uninstall dialog have no React screens | native (Rust tray, NSIS) | They aren't WebView UI (DESIGN §6 reference only) | M6 |
 | G-15 | Spotify credential must be created with target exactly `Runout/spotify` (`keyring` `Entry::new_with_target`) or `--uninstall-cleanup` won't find it | `src-tauri/src/spotify/`, `cleanup.rs` | Credential is written in M5; cleanup (M3) deletes by that target ([KB](kb/windows-tauri.md)) | M5 |
 | G-16 | Success metric "moved after 14 days" can't see items that left the backlog while planned | `src-tauri/src/usage.rs` | Nothing records when an item entered or left the backlog; exact needs a backlog-history migration | M8 candidate |
-| G-17 | A LAN client declaring a huge Content-Length makes tiny_http allocate that much when the rejected request is dropped (`EqualReader` drains with `vec![0; remaining]`), and a stalled body blocks the reject thread | `src-tauri/src/capture.rs` | tiny_http 0.12 exposes no read timeout or body detach; fix needs a socket timeout (fork/replace tiny_http, or a raw `TcpListener`) | M6 |
 
 ---
 
