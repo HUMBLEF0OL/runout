@@ -7,7 +7,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | Milestone | Phase | Releases | Capabilities | Your hard stops | Effort |
 |---|---|---|---|---|---|
 | M0 Foundations | setup | — | — | U-1 | done |
-| M1 Design | design | MVP, R2, R3 | all (SC-01–13) | U-9 | ~1 week |
+| M1 Design | design | MVP, R2, R3 | all (SC-01–13) | U-9 | approved 18 Oct 2026 |
 | M2 UI build | UI | MVP, R2, R3 | all, on mock data | — | done 18 Oct 2026 |
 | M3 Backend: MVP core | backend | MVP | CAP-01–17, 35 | — | 3–4 weeks |
 | M4 Backend: listening and insights | backend | R2 | CAP-18–27 | U-2 | 3–4 weeks |
@@ -15,6 +15,15 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M6 Integration: MVP release | integration | MVP | CAP-01–17, 35 | U-3, U-4, U-5 | 1–2 weeks + 2 weeks daily use |
 | M7 Integration: R2 and R3 | integration | R2, R3 | CAP-18–34 | — | ~2 weeks |
 | M8 Future candidates | — | — | per item | per item | as needed |
+
+### Status (18 Oct 2026)
+- **Phase:** frontend done; backend phase (M3) is next. Branch `dev` → merge to `master`; commits only, no remote.
+- **M0** done. **M1** designs approved (U-9, 18 Oct 2026); its other acceptance lines were never ticked on the boards themselves, and M2 met them in code (states per screen, `tokens.test.ts` contrast, compliance review with no open findings).
+- **M2** done and closed: all 13 screens + design-system page on mock data, Tailwind v4, `src/api.ts` = full API.md contract behind mocks, input sanitization, T4 verified in the real window. Proof: `python scripts/check.py` (92 Vitest tests) and `node scripts/journeys.mjs` (30/30 keyboard-only steps, journeys A–H). Commits `9cd6c2e`, `df6b155`, `fc12844`.
+- **Contract additions made in M2** (backend must implement): `create_playlist_from_items`; dashboard tile fields; `Unmatched.candidates`; `CollectionInsights` stat fields; `NewItem.artist_name/notes/promoted_fields`; `ItemPatch.artist_name`; `ItemSummary.album_name/added_via/recommended_by`; `ItemDetail.track_list` (all in API.md).
+- **Known gaps (small, deferred):** per-track "played" column on album pages; edit mode can't change record type or links; "Add a track" doesn't link the new track to its album; artist cards show "Artist" instead of a notes line.
+- **Your open hard stops:** U-1 (request Spotify exports) not recorded as done; U-2 needed by M4; U-6/U-7 by M5; U-3/U-4/U-5 by M6.
+- **Next:** M3 work item 1 per `docs/plans/M3-backend-mvp.md` (Rust core for API.md §3).
 
 ---
 
