@@ -12,6 +12,7 @@
 - Usage counters (`usage_event`): they stay on this PC (TSD §4.12).
 - Anything Spotify provides (`spotify_cache.db`): it lives only in the cache and is never exported.
 - Listening history and import batches (Release 2): not part of format 1.
+- Pending phone shares (`unresolved_capture`): short links still waiting to resolve; they become records once resolved.
 
 ## Top level
 | Key | Type | What |
@@ -44,7 +45,7 @@ Every column of the `item` table (TSD §3), plus two keys:
 | `provenance` | object | Field name → `user` (you typed it) or `promoted` (you confirmed it from a Spotify link, TSD §4.2). Fields not listed have no recorded source |
 
 ## Example
-An actual export of a synthetic two-record library (ids are random, not real Spotify ids):
+Abridged from an actual export of a synthetic two-record library (some free-text values filled in for illustration) (ids are random, not real Spotify ids):
 
 ```json
 {
