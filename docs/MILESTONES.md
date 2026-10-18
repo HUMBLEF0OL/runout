@@ -21,9 +21,29 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 - **M0** done. **M1** designs approved (U-9, 18 Oct 2026); its other acceptance lines were never ticked on the boards themselves, and M2 met them in code (states per screen, `tokens.test.ts` contrast, compliance review with no open findings).
 - **M2** done and closed: all 13 screens + design-system page on mock data, Tailwind v4, `src/api.ts` = full API.md contract behind mocks, input sanitization, T4 verified in the real window. Proof: `python scripts/check.py` (92 Vitest tests) and `node scripts/journeys.mjs` (30/30 keyboard-only steps, journeys A–H). Commits `9cd6c2e`, `df6b155`, `fc12844`.
 - **Contract additions made in M2** (backend must implement): `create_playlist_from_items`; dashboard tile fields; `Unmatched.candidates`; `CollectionInsights` stat fields; `NewItem.artist_name/notes/promoted_fields`; `ItemPatch.artist_name`; `ItemSummary.album_name/added_via/recommended_by`; `ItemDetail.track_list` (all in API.md).
-- **Known gaps (small, deferred):** per-track "played" column on album pages; edit mode can't change record type or links; "Add a track" doesn't link the new track to its album; artist cards show "Artist" instead of a notes line.
+- **Known gaps:** see [Known gaps](#known-gaps) below (G-1 to G-14).
 - **Your open hard stops:** U-1 (request Spotify exports) not recorded as done; U-2 needed by M4; U-6/U-7 by M5; U-3/U-4/U-5 by M6.
 - **Next:** M3 work item 1 per `docs/plans/M3-backend-mvp.md` (Rust core for API.md §3).
+
+### Known gaps
+Found while building and closing M2 (18 Oct 2026). None blocks a release criterion. "Contract" = needs an API.md change first (API.md §7), then `api.ts`, the mock and Rust together. Remove a row when it's fixed; say in the commit which G-n it closes.
+
+| # | Gap | Where | Why it's open | Fix in |
+|---|---|---|---|---|
+| G-1 | Album page "Tracks you've added" has no Played / Not played column | `src/pages/Item.tsx` | `ItemDetail.track_list` has no per-track play data (contract) | M4 (listening data) |
+| G-2 | Edit mode can't change the record type or add/remove links (version of, on album, by artist) | `src/pages/Item.tsx` | `ItemPatch` has no `type`; link editing UI not built (`link_items`/`unlink_items` exist) | M3 (contract + UI) |
+| G-3 | "Add a track" on an album opens quick add but doesn't link the new track to the album | `src/pages/Item.tsx`, `QuickAdd.tsx` | `NewItem` has no "on album" link field; needs `link_items` after create or a field (contract) | M3 |
+| G-4 | In-progress artist cards show "Artist" instead of their notes line | `src/pages/HomeMvp.tsx` | `ItemSummary` has no notes (contract) | M3 |
+| G-5 | Dashboard `recent_activity` is fetched but not shown; Home shows "Recently added" as on the board | `src/pages/HomeMvp.tsx` | Board and contract disagree; decide which, then drop the unused one | M3 (spec decision) |
+| G-6 | Rediscover "New shelf" saves a saved filter (chip) rather than a separate shelf type | `src/pages/Rediscover.tsx` | No shelf entity in the contract; saved filter covers it for now | M8 candidate |
+| G-7 | Recent plays: no "album" suffix next to an album's rating (board shows it) | `src/pages/Plays.tsx` | `Play.item` is the track; album rating not in the payload (contract) | M4 |
+| G-8 | Insights "Unfinished albums" lacks the "N other albums can't be checked" count | `src/pages/Insights.tsx` | `TakeInsights` has no count of albums without a track list (contract) | M4 |
+| G-9 | Playlist Studio `conflict` error ("playlist changed on Spotify, reload draft") never seen on screen | `src/pages/Playlists.tsx` | The mock never returns `conflict`; add a dev-switcher trigger or test it against the real API | M5 |
+| G-10 | Quick add prefills a title only for the sample links | `src/mocks/index.ts` | Mock oEmbed is a fixed table; real `prefill_title` comes with the backend | M3 |
+| G-11 | Embeds in mock data show Spotify's "page not found" | mock data | Mock Spotify IDs are random by rule (no real IDs committed); a real pasted link renders fine | won't fix (by design) |
+| G-12 | Embeds play 30-second previews, not full tracks | WebView2 InPrivate | Incognito keeps no Spotify login (T4, `docs/kb/windows-tauri.md`); accepted trade-off for no disk cache | accepted |
+| G-13 | Digits 1–5 don't set status while focus is on the rating slider | `src/hooks/useShortcuts.ts` | Arrow keys own the slider; digits there would be ambiguous | by design |
+| G-14 | Tray menu and uninstall dialog have no React screens | native (Rust tray, NSIS) | They aren't WebView UI (DESIGN §6 reference only) | M6 |
 
 ---
 
