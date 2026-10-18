@@ -133,8 +133,10 @@ impl AppState {
         }
         // TSD §4.10 keeps pre-restore until the next successful start: it travels with the library.
         let pre = backup::pre_restore(&from);
-        if pre.exists() {
-            let _ = backup::move_db(&pre, &backup::pre_restore(&to));
+        if pre.exists() && backup::move_db(&pre, &backup::pre_restore(&to)).is_err() {
+            // rename fails across drives: copy it over, then never leave a library copy behind at the old place
+            let _ = std::fs::copy(&pre, backup::pre_restore(&to));
+            let _ = backup::remove_pre_restore(&from);
         }
         Ok(to.to_string_lossy().into_owned())
     }
