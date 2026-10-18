@@ -23,8 +23,8 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 - **Contract additions made in M2** (backend must implement): `create_playlist_from_items`; dashboard tile fields; `Unmatched.candidates`; `CollectionInsights` stat fields; `NewItem.artist_name/notes/promoted_fields`; `ItemPatch.artist_name`; `ItemSummary.album_name/added_via/recommended_by`; `ItemDetail.track_list` (all in API.md).
 - **Known gaps:** see [Known gaps](#known-gaps) below (G-2 to G-5 closed in M3).
 - **Your open hard stops:** U-1 (request Spotify exports) not recorded as done; U-2 needed by M4; U-6/U-7 by M5; U-3/U-4/U-5 by M6.
-- **M3** steps 1–5 committed (skeleton, links, net, library); steps 6–10 in progress.
-- **Next:** M3 steps 6–12 per `docs/plans/M3-backend-mvp.md`.
+- **M3** steps 1–12 built and through three external spec reviews (all findings fixed); 43 §3 commands registered and checked by `check.py`.
+- **Next:** G-17 fix (std listener), then step 13 (record) and `close-milestone M3`.
 
 ### Known gaps
 Found while building and closing M2 (18 Oct 2026). None blocks a release criterion. "Contract" = needs an API.md change first (API.md §7), then `api.ts`, the mock and Rust together. Remove a row when it's fixed; say in the commit which G-n it closes.
