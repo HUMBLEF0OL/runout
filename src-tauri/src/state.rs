@@ -131,7 +131,11 @@ impl AppState {
         for side in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{side}", from.display()));
         }
-        let _ = backup::remove_pre_restore(&from); // it belonged to the old location
+        // TSD §4.10 keeps pre-restore until the next successful start: it travels with the library.
+        let pre = backup::pre_restore(&from);
+        if pre.exists() {
+            let _ = backup::move_db(&pre, &backup::pre_restore(&to));
+        }
         Ok(to.to_string_lossy().into_owned())
     }
 }
@@ -229,12 +233,14 @@ mod tests {
         assert_eq!(e.code, crate::error::Code::Conflict);
         assert!(old.exists() && !d.join("b").exists());
         std::fs::remove_file(&marker).unwrap();
-        // a leftover pre-restore of the old location goes with the old file
+        // a leftover pre-restore moves with the library (kept until next successful start, TSD §4.10)
         std::fs::write(backup::pre_restore(&old), b"old").unwrap();
         let new = st.move_library(&d.join("b")).unwrap();
-        assert!(
-            !backup::pre_restore(&old).exists(),
-            "old pre-restore removed"
+        assert!(!backup::pre_restore(&old).exists(), "not left behind");
+        assert_eq!(
+            std::fs::read(backup::pre_restore(std::path::Path::new(&new))).unwrap(),
+            b"old",
+            "pre-restore moved beside the new library"
         );
         assert_eq!(PathBuf::from(&new), d.join("b").join(LIBRARY_FILE));
         assert_eq!(n(&st), before, "live connection is the moved file");

@@ -14,10 +14,17 @@ pub const WEBVIEW_DIR: &str = "EBWebView";
 
 /// Empty every table in library.db (schema kept), then VACUUM and truncate the WAL so deleted
 /// text doesn't linger in free pages or the WAL, and remove `library.db.pre-restore` (+ marker).
-/// Backups are untouched (they live outside the app folders, D28).
+/// Backups are untouched (they live outside the app folders, D28). Refused while a failed restore's
+/// marker exists: pre-restore may then be the real library, and start-up recovery puts it back first.
 pub fn delete_library(conn: &mut Connection, library_path: &Path, confirm: &str) -> Result<()> {
     if confirm != CONFIRM {
         return Err(AppError::validation("Type DELETE in capitals to confirm."));
+    }
+    if crate::backup::marker(library_path).exists() {
+        return Err(AppError::new(
+            crate::error::Code::Conflict,
+            "A restore didn't finish. Restart Runout first.",
+        ));
     }
     let tables: Vec<String> = conn
         .prepare(
@@ -116,6 +123,11 @@ mod tests {
         for p in &leftovers {
             std::fs::write(p, b"old notes").unwrap();
         }
+        // a failed restore's marker → refused, nothing deleted (restart recovers first, TSD §4.10)
+        let e = delete_library(&mut c, &lib, "DELETE").unwrap_err();
+        assert_eq!(e.code, crate::error::Code::Conflict);
+        assert!(pre.exists());
+        std::fs::remove_file(&leftovers[2]).unwrap();
         for wrong in ["delete", "DELETE ", "", "Delete"] {
             assert!(delete_library(&mut c, &lib, wrong).is_err(), "{wrong:?}");
         }

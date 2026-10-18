@@ -87,6 +87,22 @@ def check_settings_paths():
         print("--- settings paths: FAIL (settings::merge must refuse) " + ", ".join(missing))
 
 
+def check_restore_marker_guards():
+    # Review M3 close: while a failed restore's marker exists, pre-restore may be the real library
+    # (TSD §4.10); each of these must check it (delete_library didn't, and wiped it).
+    bad = []
+    for f, fn in (("backup.rs", "restore_locked"), ("state.rs", "move_library"), ("cleanup.rs", "delete_library")):
+        p = TAURI / "src" / f
+        if not p.exists():
+            continue
+        m = re.search(rf"fn {fn}\(.*?(?=\n\s*(?:pub(?:\(crate\))? )?fn |\Z)", p.read_text(encoding="utf-8"), re.S)
+        if not m or "marker(" not in m.group(0):
+            bad.append(f"{f}: {fn} must refuse while backup::marker(..) exists")
+    if bad:
+        failures.append("restore marker guards")
+        print("--- restore marker guards: FAIL\n" + "\n".join(bad))
+
+
 def check_no_oembed_or_tokens_logged():
     # TSD §7: tokens never logged.
     pat = re.compile(r"(println!|log::\w+!|tracing::\w+!|console\.log)\(.*(token|secret|refresh)", re.I)
@@ -260,6 +276,7 @@ check_no_oembed_or_tokens_logged()
 check_one_item_summary()
 check_events()
 check_settings_paths()
+check_restore_marker_guards()
 check_ui_purity()
 check_contract_and_attribution()
 check_commands()

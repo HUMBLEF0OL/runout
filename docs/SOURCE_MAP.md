@@ -34,7 +34,7 @@ Where every capability lives in code, which spec governs it, and how it's tested
 | `src-tauri/src/spotify/` | PKCE auth, keyring, cache DB, Playlist Studio, autofill, top/recent | CAP-28–34 | TSD §5.2 | test playlist round-trip | M5 | planned |
 | `src-tauri/examples/` | Spikes: `smtc_spike.rs` (M4), `spotify_gate.rs` (M5 O1 gate); not shipped | CAP-18, 28 | M4/M5 plans | manual | M4/M5 | planned |
 | `src-tauri/windows/` | NSIS hooks (`hooks.nsh`): pre-uninstall cleanup, checkbox relabel | CAP-16, FR-024 | TSD §4.11 | uninstall cases on fresh profile | M6 | planned |
-| `src-tauri/tests/` | Integration tests: `common/` (synthetic 10k library generator, temp dirs), `perf.rs` (NFR-04 search/list/start + NFR-11 backup size, `#[ignore]`), `integrity.rs` (NFR-05 kill mid-write/mid-backup via self-spawned `stress_child`) | CAP-10, CAP-15 | TSD §8; numbers in `docs/kb/perf-integrity.md` | `cargo test --release -- --ignored` | M3 | built |
+| `src-tauri/tests/` | Integration tests: `common/` (synthetic 10k library generator, temp dirs), `perf.rs` (NFR-04 search/list/start + NFR-11 backup size, `#[ignore]`), `integrity.rs` (NFR-05 kill mid-write/mid-backup via self-spawned `stress_child`), `persistence.rs` (M3 "all data persists across restart": write everything, reopen, compare) | CAP-10, CAP-15 | TSD §8; numbers in `docs/kb/perf-integrity.md` | `cargo test --release -- --ignored` | M3 | built |
 | `src-tauri/tests/fixtures/` | Synthetic exports, link tables — never real values | — | TSD §8 | — | M3+ | planned |
 
 ## UI (`src/`)
