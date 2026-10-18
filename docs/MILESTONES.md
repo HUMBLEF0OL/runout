@@ -24,7 +24,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 - **Known gaps:** see [Known gaps](#known-gaps) below (G-2 to G-5 closed in M3).
 - **Your open hard stops:** U-1 (request Spotify exports) not recorded as done; U-2 needed by M4; U-6/U-7 by M5; U-3/U-4/U-5 by M6.
 - **M3** steps 1–12 built and through three external spec reviews (all findings fixed); 43 §3 commands registered and checked by `check.py`.
-- **Next:** G-17 fix (std listener), then step 13 (record) and `close-milestone M3`.
+- **Next:** step 13 (record) and `close-milestone M3`.
 
 ### Known gaps
 Found while building and closing M2 (18 Oct 2026). None blocks a release criterion. "Contract" = needs an API.md change first (API.md §7), then `api.ts`, the mock and Rust together. Remove a row when it's fixed; say in the commit which G-n it closes.
@@ -36,7 +36,7 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 | G-7 | Recent plays: no "album" suffix next to an album's rating (board shows it) | `src/pages/Plays.tsx` | `Play.item` is the track; album rating not in the payload (contract) | M4 |
 | G-8 | Insights "Unfinished albums" lacks the "N other albums can't be checked" count | `src/pages/Insights.tsx` | `TakeInsights` has no count of albums without a track list (contract) | M4 |
 | G-9 | Playlist Studio `conflict` error ("playlist changed on Spotify, reload draft") never seen on screen | `src/pages/Playlists.tsx` | The mock never returns `conflict`; add a dev-switcher trigger or test it against the real API | M5 |
-| G-10 | Quick add prefills a title only for the sample links | `src/mocks/index.ts` | Mock oEmbed is a fixed table; real `prefill_title` comes with the backend | M3 |
+| G-10 | Quick add prefills a title only for the sample links | `src/mocks/index.ts` | Mock oEmbed is a fixed table; Rust `prefill_title` (oEmbed, M3) is built, check it with a real link when Quick add switches to it | M6 |
 | G-11 | Embeds in mock data show Spotify's "page not found" | mock data | Mock Spotify IDs are random by rule (no real IDs committed); a real pasted link renders fine | won't fix (by design) |
 | G-12 | Embeds play 30-second previews, not full tracks | WebView2 InPrivate | Incognito keeps no Spotify login (T4, `docs/kb/windows-tauri.md`); accepted trade-off for no disk cache | accepted |
 | G-13 | Digits 1–5 don't set status while focus is on the rating slider | `src/hooks/useShortcuts.ts` | Arrow keys own the slider; digits there would be ambiguous | by design |

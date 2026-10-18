@@ -340,7 +340,7 @@ const H: Record<string, Handler> = {
   check_backup: () => ({ ok: true, schema_version: 1, counts: counts() }),
   restore_backup: () => ({ ok: true, schema_version: 1, counts: counts() }),
   choose_backup_dir: () => (settings.backup_dir = "D:\\Backups\\Runout"),
-  move_library: () => "D:\\Music\\Runout\\library.db",
+  move_library: () => (settings.library_path = "D:\\Music\\Runout\\library.db"),
   delete_library: ({ confirm }) => { if (confirm !== "DELETE") fail("validation", "Type DELETE in capitals to confirm."); items.splice(0); },
   record_page_visit: () => undefined,
   get_success_metrics: () => ({ ...D.usage, moved_after_14d_pct: 62, explored_rated_pct: 81 }),
