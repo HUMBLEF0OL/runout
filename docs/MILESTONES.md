@@ -47,7 +47,7 @@ Acceptance
 - [ ] Every screen shows empty, offline and error states.
 - [ ] Contrast of every text token pair ≥ 4.5:1.
 - [ ] Compliance pass has no open findings.
-- [ ] **U-9** designs approved.
+- [x] **U-9** designs approved (18 Oct 2026).
 
 ## M2 — UI build (mock data)
 

@@ -1,0 +1,39 @@
+/* Design tokens, DESIGN.md §3 (direction D · Pulse). Dark only in v1.
+   Tailwind v4 theme: Tailwind's default palette, radii and type scale are removed, so the only utilities that
+   exist are these tokens (bg-surface, text-muted, border-line-strong, rounded-control, text-sm, font-mono, ...). */
+@theme {
+  --color-*: initial;
+  --color-bg: #101113; --color-rail: #0B0C0E; --color-surface: #17191C; --color-surface-2: #1F2226; --color-surface-3: #23262B;
+  --color-line: #23262B; --color-line-2: #2E3238; --color-line-strong: #3A3F46; --color-line-hover: #4A5059;
+  --color-text: #ECEDEF; --color-text-2: #C3C7CE; --color-muted: #A9AEB7; --color-faint: #9A9FA8;
+  --color-accent: #F5B544; --color-accent-ink: #101113; --color-link: #F5C46B; --color-link-hover: #FFDCA0;
+  --color-bar: #4A5059; --color-star-off: #686E78; --color-danger: #FF7A6B; --color-danger-line: #5A3530;
+  --color-transparent: transparent;
+
+  /* Spacing 4 · 8 · 12 · 16 · 20 · 24 · 32 in px: html is 14px, so Tailwind's rem default would shrink it 12.5%. */
+  --spacing: 4px;
+
+  --font-*: initial;
+  --font-sans: "Schibsted Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Type scale 12 / 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (detail title) */
+  --text-*: initial;
+  --text-xs: 12px; --text-sm: 13px; --text-base: 14px; --text-md: 15px; --text-lg: 17px; --text-xl: 20px; --text-2xl: 26px; --text-3xl: 32px;
+
+  /* Shape: 3 bars, 6 thumbnails, 10 controls and rows, 16 cards. Pills are not used. */
+  --radius-*: initial;
+  --radius-bar: 3px; --radius-thumb: 6px; --radius-control: 10px; --radius-card: 16px;
+
+  --shadow-elev-1: inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 24px rgba(0,0,0,0.28);
+  --shadow-elev-1-hover: inset 0 1px 0 rgba(255,255,255,0.05), 0 12px 28px rgba(0,0,0,0.34);
+  --shadow-elev-2: 0 24px 64px rgba(0,0,0,0.5);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Non-utility recipes used by the component layer. */
+:root {
+  --elev-1-bg: linear-gradient(180deg, #1A1C20, #16181B);
+  --hair: 1px solid rgba(255,255,255,0.06);
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

@@ -14,7 +14,7 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 |---|---|---|---|---|
 | U-1 | Request your two Spotify data exports | **Now (M0)** | 2 min | M4 import |
 | U-2 | Download the exports and tell me where they are | When Spotify's emails arrive | 5 min | M4 import |
-| U-9 | Approve the screen designs | End of M1 | ~30 min | UI build (M2) |
+| U-9 | Approve the screen designs | End of M1 | ~30 min | UI build (M2) · **done 18 Oct 2026** |
 | U-3 | Create the iPhone Shortcut | M6 | 5 min | Phone capture |
 | U-4 | Allow the app through Windows Firewall | M6 | 10 s | Phone capture |
 | U-5 | Use the app daily for 2 weeks, then say go/no-go | End of M6 | 2 weeks | M7 integration |
@@ -101,6 +101,8 @@ Use the app normally for 2 weeks. Then I'll show you the success metrics from yo
 I'll walk you through every screen in the design prototype (`docs/design/`), journey by journey. You answer **Approve**, or list what to change. Changes after approval go through a spec change.
 
 **Send back:** "U-9 approved", or your changes.
+
+**Done:** approved 18 Oct 2026, together with the M2 side-by-side review of the built screens.
 
 ## U-6 — Create the Spotify developer app (start of M5)
 

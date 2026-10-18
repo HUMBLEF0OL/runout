@@ -55,6 +55,48 @@ def check_no_oembed_or_tokens_logged():
         print("--- no secrets in logs: FAIL\n" + "\n".join(bad))
 
 
+def check_ui_purity():
+    # TSD §1 rule, M2 plan: src/ has no network or data code; only api.ts talks to Tauri.
+    src = ROOT / "src"
+    if not src.exists():
+        return
+    pat = re.compile(r"\bfetch\(|XMLHttpRequest|new WebSocket|@tauri-apps/plugin-|sqlite", re.I)
+    bad = []
+    for p in (p for p in src.rglob("*") if p.suffix in {".ts", ".tsx"}):
+        rel = p.relative_to(ROOT).as_posix()
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if pat.search(line) and not line.lstrip().startswith("//"):
+                bad.append(f"{rel}:{i}: {line.strip()[:80]}")
+            if "]${" in line:  # Tailwind can't see an arbitrary-value class glued to ${...}; the rule is never generated
+                bad.append(f"{rel}:{i}: put a space between ']' and '${{' in class strings")
+            if "@tauri-apps/api" in line and rel != "src/api.ts":
+                bad.append(f"{rel}:{i}: only src/api.ts may import @tauri-apps/api")
+    if bad:
+        failures.append("ui purity")
+        print("--- ui purity: FAIL\n" + "\n".join(bad))
+
+
+def check_contract_and_attribution():
+    # API.md §7: the contract comes first, so every field in an api.ts interface is named in API.md.
+    # DESIGN §7 / FR-044: the Spotify logo never appears without "Open Spotify" in the same file.
+    api, doc = ROOT / "src/api.ts", ROOT / "docs/API.md"
+    if not api.exists():
+        return
+    text, spec = api.read_text(encoding="utf-8"), doc.read_text(encoding="utf-8")
+    bad = []
+    for body in re.findall(r"export interface \w+[^{]*\{(.*?)\n?\}", text, re.S):
+        for field in re.findall(r"(?:^|[;{\s])(\w+)\??:", body):
+            if not re.search(rf"\b{field}\b", spec):
+                bad.append(f"src/api.ts field '{field}' missing from docs/API.md")
+    for p in (ROOT / "src").rglob("*.tsx"):
+        s = p.read_text(encoding="utf-8")
+        if "<SpotifyLogo" in s and "<OpenSpotify" not in s and "<Attribution" not in s and p.name != "ui.tsx":
+            bad.append(f"{p.relative_to(ROOT).as_posix()}: <SpotifyLogo> without <OpenSpotify> (use <Attribution>)")
+    if bad:
+        failures.append("contract + attribution")
+        print("--- contract + attribution: FAIL\n" + "\n".join(sorted(set(bad))))
+
+
 def check_source_map():
     # docs/SOURCE_MAP.md: every source file is mapped; every `built` row exists.
     rows = [line for line in (ROOT / "docs/SOURCE_MAP.md").read_text(encoding="utf-8").splitlines()
@@ -138,6 +180,8 @@ if (ROOT / "package.json").exists():
     run("vitest", "npx vitest run --passWithNoTests", ROOT)
 check_hosts()
 check_no_oembed_or_tokens_logged()
+check_ui_purity()
+check_contract_and_attribution()
 check_source_map()
 check_design()
 

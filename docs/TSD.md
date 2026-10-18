@@ -17,6 +17,7 @@ Items marked **⚑ verify** are assumptions to confirm in the named milestone. E
 |---|---|---|
 | App shell | **Tauri 2** (Rust core + system WebView2) | Already installed toolchain (Rust 1.98 + MSVC, Node 26, WebView2) → zero new installs; small binary; native tray; web UI hosts Spotify embeds naturally |
 | UI | **React + TypeScript + Vite** | Most common, boring choice; good list/table/chart ecosystem |
+| Styling | **Tailwind CSS v4** (`@tailwindcss/vite`) | User decision 18 Oct 2026. Design tokens live in `@theme` with Tailwind's default palette removed, so only DESIGN §3 tokens exist as utilities; multi-state recipes (buttons, cards, segmented, rating, skeleton) stay in `@layer components` |
 | Charts (R2) | Recharts | Free, React-native, enough for bar/line/heatmap |
 | Database | **SQLite** via `rusqlite` (bundled), **FTS5** for search, WAL mode | Serverless, transactional (NFR-05), fast (NFR-04) |
 | Migrations | Numbered SQL files run at startup, `PRAGMA user_version` | No migration framework needed |
@@ -25,7 +26,7 @@ Items marked **⚑ verify** are assumptions to confirm in the named milestone. E
 | Capture listener | `tiny_http` on a background thread | Smallest adequate server |
 | Secrets | `keyring` crate → Windows Credential Manager | NFR-08 |
 | Autostart / tray | Tauri tray API + `tauri-plugin-autostart` | Native |
-| Web view mode | Main window created with `incognito(true)` (WebView2 InPrivate) **⚑ verify in M2** | Spotify embed content is never kept in a disk cache (BRD 5.3, Embeds Terms IV.2.c) |
+| Web view mode | Main window created with `incognito(true)` (WebView2 InPrivate); verified 18 Oct 2026, [KB](kb/windows-tauri.md#webview2) | Spotify embed content is never kept in a disk cache (BRD 5.3, Embeds Terms IV.2.c) |
 | Bundle identifier | `app.runout.desktop` | Determines all app data folders and what the uninstaller deletes |
 | Installer | Tauri NSIS bundle (per-user, unsigned) | Free; uninstaller hooks for FR-024 |
 | Tests | Rust `cargo test` for core logic; Vitest for UI logic; fixture files | No e2e framework until needed |
@@ -279,7 +280,7 @@ spotify-companion/
   docs/            TSD.md DESIGN.md API.md CAPABILITIES.md MILESTONES.md USER_ACTIONS.md SOURCE_MAP.md kb/
                    plans/ (one plan per milestone, written before it starts)
                    EXPORT_FORMAT.md (written in M3, FR-020)
-  src/             React UI (pages/, components/, styles/tokens.css, api.ts = typed invoke wrappers, mocks/ until M6/M7)
+  src/             React UI (pages/, components/, styles/ (index.css → Tailwind + tokens.css @theme + app.css recipes), api.ts = typed invoke wrappers, mocks/ until M6/M7)
   src-tauri/
     src/           main.rs, commands.rs, db/, links.rs, library/, capture.rs,
                    logger/, importer/, insights/, backup.rs, spotify/ (R3), net.rs
@@ -293,4 +294,4 @@ spotify-companion/
 | T1 | Export file and field names (4.8) | M4 |
 | T2 | NSIS checkbox relabel and update-mode detection in the pre-uninstall hook (4.11) | M6 |
 | T3 | Re-check redirect-URI rules just before registering the app (5.2); confirmed 18 Oct 2026 | M5 |
-| T4 | Incognito (InPrivate) WebView2 works with Spotify embeds and keeps no disk cache (§1) | M2 |
+| T4 | ~~Incognito (InPrivate) WebView2 works with Spotify embeds and keeps no disk cache (§1)~~ Resolved 18 Oct 2026: yes ([KB](kb/windows-tauri.md#webview2)); re-check in the real app window in M2 | M2 |

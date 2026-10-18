@@ -10,6 +10,7 @@
 The **only** bridge between the UI and the Rust core. Each command and type below exists twice, with the same names and fields: in TypeScript (`src/api.ts`) and in Rust (`commands.rs` + `serde` structs). A change here comes first, then both sides follow in the same change.
 
 ## 1. Conventions
+- **Arg keys.** Tauri maps Rust `snake_case` parameters to `camelCase` invoke keys, so multi-word args are sent as `fromId`, `playlistUri` etc. (`src/api.ts` does this).
 - **Names.** Rust commands are `snake_case` (`get_item`); `api.ts` exports the same name in `camelCase` (`getItem`). Fields are `snake_case` on both sides (matches TSD §3 and the mock data); no `serde(rename_all)`.
 - **Ids** are `number` (SQLite `INTEGER`). **Times** are ISO-8601 UTC strings; `*_local` fields are local time without offset.
 - **Results.** Every command returns `Result<T, AppError>`; `invoke` rejects with the `AppError` object. Pages never catch raw strings.
@@ -42,11 +43,15 @@ interface ItemSummary {
   spotify_uri: string | null; status: Status; priority: Priority | null;
   rating: number | null; favourite: boolean; revisit: boolean; in_backlog: boolean;
   backlog_order: number | null; tags: string[]; artist_names: string[];
+  album_name: string | null;                                // tracks: "Artist, from Album" row subtitle (M2)
+  added_via: 'pc' | 'phone';                                // "From: Phone", "added from your iPhone" (M2)
+  recommended_by: string | null;                            // "Album, from Meera" row subtitle (M2)
   added_at: string; modified_at: string;
 }
 interface ItemDetail extends ItemSummary {
   review: string | null; notes: string | null; recommended_by: string | null;
   explored_at: string | null; reviewed_at: string | null;
+  track_list: { position: number; name: string; item_id: number | null }[] | null;  // albums with a known track list (TSD §4.9)
   provenance: Record<string, 'user' | 'promoted'>;
   links: { kind: 'by_artist' | 'on_album' | 'version_of'; direction: 'from' | 'to'; item: ItemSummary }[];
   history: { from: Status | null; to: Status; at: string; note: string | null }[];
@@ -55,11 +60,13 @@ interface NewItem {
   type: ItemType; display_name: string | null; spotify_uri: string | null;
   status?: Status; priority?: Priority; in_backlog?: boolean; tags?: string[];
   recommended_by?: string; provenance: 'user' | 'promoted';   // promoted = confirmed from Spotify data (TSD §4.2)
+  promoted_fields?: string[];                                 // fields confirmed from Spotify data → provenance 'promoted'; others get `provenance`
   capture_ms?: number;                                        // dialog open → save (FR-045)
+  artist_name?: string; notes?: string;                       // artist_name: find-or-create the artist item, link by_artist
 }
 type ItemPatch = Partial<Pick<ItemDetail,
   'display_name' | 'priority' | 'rating' | 'review' | 'notes' | 'favourite' | 'revisit'
-  | 'in_backlog' | 'recommended_by'>> & { tags?: string[]; promoted_fields?: string[] };
+  | 'in_backlog' | 'recommended_by'>> & { tags?: string[]; promoted_fields?: string[]; artist_name?: string | null };  // artist_name re-links by_artist (null unlinks)
 interface ItemFilter {
   type?: ItemType; status?: Status[]; tags?: string[]; min_rating?: number; revisit?: boolean;
   favourite?: boolean; in_backlog?: boolean; name_needed?: boolean; priority?: Priority[];
@@ -76,7 +83,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | Command | Args | Returns | Notes / spec |
 |---|---|---|---|
 | `get_counts` | — | `{library, albums, tracks, artists, backlog, in_progress, revisit, name_needed}` | Rail counts (DESIGN §5 nav item) |
-| `get_dashboard` | — | `{counts, in_progress: ItemSummary[], recent_activity: {item, from, to, at}[], name_needed: ItemSummary[], unresolved: Unresolved[]}` | SC-01/02, FR-015 |
+| `get_dashboard` | — | `{counts, in_progress: ItemSummary[], recent_activity: {item, from, to, at}[], name_needed: ItemSummary[], unresolved: Unresolved[], planned, explored_this_month, not_for_me_this_month, explored_no_review, started_at: {[item_id]: string}}` | SC-01/02, FR-015. `started_at`: when each in-progress item entered in_progress |
 | `list_items` | `filter: ItemFilter` | `Page<ItemSummary>` | SC-03, SC-04 |
 | `get_item` | `id` | `ItemDetail` | SC-05 |
 | `create_item` | `input: NewItem` | `ItemDetail` | `duplicate` error with `existing_id` (FR-004); `capture` usage event |
@@ -107,11 +114,11 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 ## 4. R2 commands (backend M4 · switched in M7)
 | Command | Args | Returns | Notes / spec |
 |---|---|---|---|
-| `get_logger_status` | — | `{state: 'listening' \| 'idle' \| 'paused' \| 'off' \| 'error', now_playing: NowPlaying \| null, last_event_at, paused_until}` | Tray + SC-08 |
+| `get_logger_status` | — | `{state: 'listening' \| 'idle' \| 'paused' \| 'off' \| 'error', now_playing: NowPlaying \| null, last_event_at, paused_until, autostart, include_private}` | Tray + SC-08; `NowPlaying = {track_name, artist_name, album_name, spotify_uri, ms_played, duration_ms, item}` |
 | `set_logger` | `patch: {on?, autostart?, include_private?}` | same as above | FR-026 |
 | `pause_logger` / `resume_logger` | `minutes: number \| null` / — | same | null = until resumed |
-| `list_plays` | `{tab: 'all' \| 'unrated' \| 'missing', range, offset, limit}` | `Page<Play>` | `Play = {id, ended_at_local, ms_played, counts_as_play, skipped, track_name, artist_name, album_name, source, item: ItemSummary \| null}` |
-| `list_unmatched` / `link_play` | — / `event_id, item_id` | `Unmatched[]` / `void` | Grouped by `norm_key` with play count (FR-030) |
+| `list_plays` | `q: {tab: 'all' \| 'unrated' \| 'missing', range, offset, limit}` | `Page<Play>` | `Play = {id, ended_at_local, ms_played, counts_as_play, skipped, track_name, artist_name, album_name, source: 'logger' \| 'export', spotify_uri, item: ItemSummary \| null}` |
+| `list_unmatched` / `link_play` | — / `event_id, item_id` | `Unmatched[]` / `void` | Grouped by `norm_key` with play count (FR-030); `Unmatched = {norm_key, track_name, artist_name, plays, detail, suggestion, event_id, candidates: ItemSummary[]}`; `candidates[0]` is the suggested record, the rest are the other records it could be (for "Choose another") |
 | `get_item_listening` | `id` | `Sourced<{plays, ms_total, last_played_local, by_month}>` | SC-05 listening panel |
 | `pick_import_source` | — | `string \| null` | Folder or .zip |
 | `preview_import` | `path` | `{music, podcasts_skipped, overlap, playlists, private, from, until, files: string[]}` | No writes (SC-10 step 2) |
@@ -123,6 +130,35 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `get_take_insights` | — | `Sourced<{rated_vs_played, never_played_backlog, loved_but_forgotten, unfinished_albums}>` | Unfinished: only albums with a track list (TSD §4.9) |
 | `get_year_review` | `year` | `Sourced<{plays, hours, top_artist, top_album, explored, reviews, busiest_month}>` | FR-034 |
 | `list_exported_playlists` / `get_playlist_checkup` | — / `id` | `{id, name, tracks, dupes, low}[]` / `{tracks: {position, name, artist, dupe, rating, never_played}[]}` | Read-only (FR-033) |
+
+R2 payload shapes (insights, check-up):
+```ts
+interface RankRow { name: string; by: string; plays: number; hours: number; item_id: number | null; rating: number | null; status: Status | null }
+interface PeriodStats { plays: number; plays_prev: number; ms: number; ms_prev: number; new_artists: number; rated_this_period: number; unrated_plays: number }
+interface ListeningInsights {
+  top_artists: RankRow[]; top_albums: RankRow[]; top_tracks: RankRow[];
+  monthly: { month: string; hours: number }[]; heatmap: number[][];
+  skip_rate: number; phone_share: number; totals: PeriodStats & { private_excluded: number; artists_total: number };
+}
+interface CollectionInsights {
+  backlog_growth: { month: string; added: number; finished: number }[];
+  completion: { status: Status; count: number }[];
+  rating_spread: { rating: number; count: number }[];
+  tag_trends: { tag: string; count: number }[];
+  avg_days_to_explored: number | null; reviews: number; explored_without_review: number;
+}
+interface Take { item: ItemSummary; line: string }
+interface TakeInsights {
+  rated_vs_played: Take[]; never_played_backlog: Take[]; loved_but_forgotten: Take[];
+  unfinished_albums: { item: ItemSummary; played: number; total: number }[];
+}
+interface YearReview {
+  year: number; plays: number; hours: number; explored: number; reviews: number; busiest_month: string;
+  top_artist: RankRow; top_album: RankRow;
+}
+interface ExportedPlaylist { id: number; name: string; tracks: number; dupes: number; low: number }
+interface PlaylistCheckup { tracks: { position: number; name: string; artist: string; dupe: boolean; rating: number | null; never_played: boolean; tags: string[] }[] }
+```
 
 ## 5. R3 commands (backend M5 · switched in M7)
 | Command | Args | Returns | Notes / spec |
@@ -136,6 +172,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `apply_studio_draft` | `draft, keep: string[]` | `{undo_id, expires_at}` | `conflict` if `snapshot_id` changed |
 | `get_last_apply` / `undo_last_apply` | `playlist_uri` | `{undo_id, applied_at, expires_at} \| null` / `void` | 30-day snapshot (O4) |
 | `create_playlist_from_filter` | `filter_id, name, public` | `{playlist_uri, added, skipped_no_uri}` | FR-039 |
+| `create_playlist_from_items` | `item_ids, name, public` | same | FR-039 for Rediscover shelves (rule-built, not saved filters); albums add all their tracks |
 | `autofill` | `uri` | `{fields: {artist?, album?, year?, display_name?}, track_list?: {uri, name, position}[]}` | From cache; nothing written until confirm (TSD §4.2) |
 | `bulk_add_album_tracks` | `album_id, tracks: {uri, name}[]` | `ItemSummary[]` | Promoted + linked `on_album` |
 | `get_top_items` | `kind: 'tracks' \| 'artists', range: '4w' \| '6m' \| '1y'` | `SpotifyEntry[]` | Display only; `{uri, name, artist, in_library_id}` |

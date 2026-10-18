@@ -1,6 +1,6 @@
 # Runout — agent guide
 
-Local-first Windows music notebook for Spotify. Tauri 2 (Rust core) + React/TS/Vite UI + SQLite (rusqlite, FTS5). Releases: MVP · R2 listening log + insights · R3 Spotify Web API. Delivery order (BRD D30): M1 design → M2 UI on mock data → M3–M5 backend → M6–M7 integration. Each milestone starts from current specs and a plan in `docs/plans/`.
+Local-first Windows music notebook for Spotify. Tauri 2 (Rust core) + React/TS/Vite + Tailwind v4 UI + SQLite (rusqlite, FTS5). Releases: MVP · R2 listening log + insights · R3 Spotify Web API. Delivery order (BRD D30): M1 design → M2 UI on mock data → M3–M5 backend → M6–M7 integration. Each milestone starts from current specs and a plan in `docs/plans/`.
 
 ## Source of truth
 - [BRD.md](BRD.md) — what and why. Generated from `BRD.docx`; never edit the .md (`change-spec` skill).

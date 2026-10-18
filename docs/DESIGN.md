@@ -29,7 +29,7 @@ What “not flat” means here, and nothing more:
 5. **Typographic contrast:** big mono numbers against small muted labels; 800-weight section titles with tight tracking.
 
 ## 3. Tokens
-CSS variables in `src/styles/tokens.css` (M2). Dark is the only theme in v1 (BRD D29); light theme is a future candidate.
+Tailwind v4 `@theme` in `src/styles/tokens.css` (M2): colors are `--color-<token>` (utilities `bg-surface`, `text-muted`, `border-line-strong`), type scale `text-xs`…`text-3xl` = 12…32, radii `rounded-bar/thumb/control/card` = 3/6/10/16, spacing `--spacing: 4px` (html is 14 px). Tailwind's default palette is removed, so off-token colors cannot be used. Dark is the only theme in v1 (BRD D29); light theme is a future candidate.
 
 | Token | Value | Use |
 |---|---|---|

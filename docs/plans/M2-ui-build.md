@@ -29,6 +29,7 @@ Agent: `react-ui` for everything; `spotify-researcher` for T4 before step 6.
    - Proof: T4 recorded in `docs/kb/windows-tauri.md`; `EBWebView` holds no HTTP cache after browsing 10 embeds.
 7. **Keyboard (WI 6).** `Ctrl+N` add, `Ctrl+K` search, `1–5` status on focused item, `Esc` closes dialog, arrows on rating. One `useShortcuts` hook; Vitest for key → action mapping.
 8. **Accessibility (WI 7).** Keyboard-only walkthrough of journeys A–H; every icon-only button has `aria-label`; focus ring never removed; `prefers-reduced-motion` honoured.
+8b. **Tailwind migration** (user decision, 18 Oct 2026). After the screens land: add Tailwind v4 (`@tailwindcss/vite`), map DESIGN §3 tokens into `@theme` in `src/styles/tokens.css`, move component styles to utilities (keep `@layer components` only for multi-state recipes: elevation, buttons, segmented, rating, skeleton, Now-playing tint). No visual change: re-screenshot every screen against its board. Update TSD §1/§9 and DESIGN §3 (tokens live in `@theme`).
 9. **Review.** Side-by-side of every SC-n vs approved board; `spec-reviewer` compliance pass (attribution, ≤ 20 embeds, no source A in insights, no Spotify look-alike); fix findings.
 10. **Record.** SOURCE_MAP rows for `src/api.ts`, `src/mocks/`, `src/styles/`, `src/pages/`, `src/components/`, `src/hooks/`, `src/assets/` → `built`. Then `close-milestone M2`.
 

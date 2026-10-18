@@ -16,7 +16,9 @@ Format: fact — **status**, date, source. Design decisions live in [TSD](../TSD
 
 ## WebView2
 - Cross-origin iframes don't report load failure reliably → Rust `net::online()` decides whether to mount embeds — **Interpretation**, TSD §4.3.
-- Whether embeds keep a Spotify login inside WebView2 — **Unverified (T4)**, check in M2.
+- **T4 — InPrivate renders embeds and keeps no Spotify data on disk** — **Verified** (tested), 2026-10-18. Probe: `wry 0.57.0` + `tao 0.37.1` (the versions in `src-tauri/Cargo.lock`; Tauri's `incognito` maps to wry `with_incognito`), WebView2 runtime on this PC, page CSP = ours (`frame-src https://open.spotify.com`), track + album + artist iframes. Results: all three fired `load` and rendered (window-only capture); no `securitypolicyviolation` in the host page. After exit, the InPrivate UDF had an empty `Default/Cache/Cache_Data`, no `Network/Cookies` entry and no file containing a Spotify host; the same probe **without** incognito left Spotify JS in `Default/Code Cache/js` (21 files) and Spotify cookies. The `EBWebView` folder itself is still created (~7 MB of browser scaffolding) — the uninstall cleanup in TSD §4.11 still applies. Remaining: one look in the real app window during M2 (no code change expected).
+- Embeds in InPrivate are logged out: each shows a "Preview" badge (30 s previews; "Save on Spotify" prompts login) and any login inside an embed is dropped when the app closes — **Verified**, 2026-10-18, same probe. Fits BRD FR-016/FR-017 (embed for artwork/preview, "Open Spotify" for the app) — **Interpretation**.
+- Docs behind it: Tauri `incognito` ("Enable or disable incognito mode for the WebView", Android unsupported) https://docs.rs/tauri/latest/tauri/webview/struct.WebviewWindowBuilder.html#method.incognito ; WebView2 `IsInPrivateModeEnabled` https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2controlleroptions ; UDF contents (DiskCache, Cookies, …) https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder — MS docs do not spell out InPrivate's disk behaviour, hence the test.
 
 ## Credentials
 - Tokens go to Windows Credential Manager via the `keyring` crate, target `Runout/spotify` — **Documented**, TSD §2.
@@ -27,3 +29,4 @@ Format: fact — **status**, date, source. Design decisions live in [TSD](../TSD
 
 ## Gotchas found while building
 <!-- newest first: date — what bit us — fix / playbook updated -->
+- 2026-10-18 — PowerShell `FindWindow($null, …)` passes `""`, not NULL, and finds nothing → use `[NullString]::Value`. Capture a probe window with `PrintWindow(h, dc, 2)`, never a full-screen grab (it records the user's other windows).

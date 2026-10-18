@@ -10,7 +10,15 @@ Constraints table with sources: [BRD §11](../../BRD.md) (S1–S17). This file h
 ## Embeds and oEmbed
 - Embed URL can be derived without any call: `https://open.spotify.com/embed/{type}/{id}` — **Verified**, 2026-10-18, BRD S16.
 - oEmbed `https://open.spotify.com/oembed?url=…` needs no auth; returns `title`, `thumbnail_url`, `html` — **Verified** (tested), 2026-10-18, BRD S16.
+- Embed CSP: `frame-src https://open.spotify.com` in the host page is sufficient for `/embed/{track|album|artist}/{id}`; the embed's own sub-resources (image CDN, scripts, nested frames) fall under Spotify's document policy, not ours — **Verified** (tested, no CSP violation, all three render), 2026-10-18; see [windows-tauri.md T4](windows-tauri.md#webview2). Embed HTML is served `cache-control: private, no-cache, no-store` — **Verified** (curl), 2026-10-18.
+- Recommended iframe attributes (Spotify embed code): `allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"`, `frameborder="0"`; heights 152 (compact) / 352 — **Documented**, https://developer.spotify.com/documentation/embeds , 2026-10-18.
 - Content must not be cached locally or altered; ≤20 items per set ending with a Spotify link — **Documented**, BRD S8, S10. Docs: https://developer.spotify.com/documentation/embeds , https://developer.spotify.com/documentation/design
+
+## Brand assets (logo)
+- Official downloads, no login: full logo https://developer.spotify.com/images/guidelines/design/2024-spotify-full-logo.zip , icon https://developer.spotify.com/images/guidelines/design/2024-spotify-logo-icon.zip (linked from https://developer.spotify.com/documentation/design ) — **Verified** (curl 200, zip), 2026-10-18. Files dated 2024-08-19.
+- Saved unaltered (renamed only): `src/assets/spotify/spotify-logo-white.svg` = `Full_Logo_White_RGB.svg` (sha256 `31cdfcdd…684f053c`), `src/assets/spotify/spotify-icon-white.svg` = `Primary_Logo_White_RGB.svg` (sha256 `8929d148…2ef2daa1`) — 2026-10-18.
+- Rules: logo ≥ 70 px, icon ≥ 21 px (digital); green logo only on black or white, otherwise monochrome — **white on dark backgrounds** (our graphite UI); clear space = ½ icon height; never modify, rotate, recolour, stretch or use in a sentence; wordmark never without the icon — **Documented**, https://developer.spotify.com/documentation/design , 2026-10-18.
+- Gotcha: the SVGs use a generic `.cls-1` class in an inline `<style>` — use them via `<img src>` (not inlined into the DOM) so the class can't collide.
 
 ## Web API (Release 3)
 - Development Mode: owner needs active Premium; max 5 users; Student plan eligibility unknown — **Documented / Unverified (O1)**, BRD S1–S2.

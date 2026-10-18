@@ -33,13 +33,14 @@ Where every capability lives in code, which spec governs it, and how it's tested
 
 | Path | Responsibility | Capabilities | Spec | Tests | Milestone | Status |
 |---|---|---|---|---|---|---|
-| `src/api.ts` | Typed `invoke()` wrappers — the only bridge to Rust; mock-backed until M6/M7 | all | TSD §1 rule | tsc | M2 | planned |
-| `src/mocks/` | Typed mock data behind `api.ts` (M2); removed per release in M6/M7 | all | TSD §1, DESIGN | tsc | M2 | planned |
-| `src/styles/` | `tokens.css`, self-hosted fonts | — | DESIGN §3 | contrast check | M2 | planned |
-| `src/pages/` | Dashboard, Library, Backlog, Rediscovery, Insights, Playlists, Settings, Data | CAP-01–35 | DESIGN §6, BRD §8 journeys | Vitest for logic; manual journeys | M2 | planned |
-| `src/components/` | Shared UI: quick-add, embed (lazy, offline placeholder), pickers | CAP-01, 04 | DESIGN §5, TSD §4.3 | Vitest | M2 | planned |
-| `src/hooks/` | Shared hooks: keyboard shortcuts, online state, events | CAP-17 | DESIGN §5, API.md §6 | Vitest (key → action) | M2 | planned |
-| `src/assets/` | Self-hosted fonts, official Spotify logo file | CAP-04, FR-044 | DESIGN §3, §7 | — | M2 | planned |
+| `src/api.ts` | Typed `invoke()` wrappers — the only bridge to Rust; mock-backed until M6/M7 | all | TSD §1 rule | tsc | M2 | built |
+| `src/mocks/` | Typed mock data behind `api.ts` (M2); removed per release in M6/M7 | all | TSD §1, DESIGN | tsc | M2 | built |
+| `src/styles/` | Tailwind v4 entry (`index.css`), `tokens.css` (`@theme`), `app.css` recipes, self-hosted fonts | — | DESIGN §3 | contrast check | M2 | built |
+| `src/pages/` | Dashboard, Library, Backlog, Rediscovery, Insights, Playlists, Settings, Data | CAP-01–35 | DESIGN §6, BRD §8 journeys | Vitest for logic; manual journeys | M2 | built |
+| `src/components/` | Shared UI: quick-add, embed (lazy, offline placeholder), pickers | CAP-01, 04 | DESIGN §5, TSD §4.3 | Vitest | M2 | built |
+| `src/hooks/` | Shared hooks: keyboard shortcuts, online state, events | CAP-17 | DESIGN §5, API.md §6 | Vitest (key → action) | M2 | built |
+| `src/assets/` | Self-hosted fonts, official Spotify logo file | CAP-04, FR-044 | DESIGN §3, §7 | — | M2 | built |
+| `src/lib/` | Display formatting (dates, plurals, labels) shared by pages; Studio cut suggestions (`studio.ts`: duplicate or rated ≤ 2, your data only); backlog reorder + quick-add step (`backlog.ts`) | all, CAP-29, CAP-01, 13 | DESIGN §5, D27 | Vitest via components; `studio.test.ts`, `backlog.test.ts` | M2 | built |
 | `src/main.tsx` | React entry | — | — | — | M0 | built |
 | `src/App.tsx` | App shell: layout, navigation, routing between pages | all | design spec | manual | M0 | built |
 | `src/vite-env.d.ts` | Vite type declarations | — | — | tsc | M0 | built |
