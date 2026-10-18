@@ -6,6 +6,7 @@ import type { AppError, Freshness, ItemSummary, Play, Source, Status } from "../
 import { ago, mmss, time, nameOf, num, openUrl, STATUS, STATUS_ORDER, stars, statusMeta, sub } from "../lib/format";
 import { freshnessText, ratingClick, ratingKey, sourceText } from "./logic";
 import { useOnline } from "../hooks/useApi";
+import { safeUri } from "../lib/sanitize";
 import spotifyLogo from "../assets/spotify/spotify-logo-white.svg";
 
 /* ------------------------------------------------------------------ layout bits */
@@ -212,7 +213,8 @@ export const Attribution = ({ uri, name, children }: { uri?: string | null; name
   <span className="flex flex-wrap gap-2 items-center"><SpotifyLogo />{children}<OpenSpotify uri={uri} name={name} /></span>;
 
 /** Embed URL derived from the stored URI (TSD §4.3). */
-export const embedUrl = (uri: string) => { const [, type, id] = uri.split(":"); return `https://open.spotify.com/embed/${type}/${id}`; };
+/** Embed URL derived from the stored URI (TSD §4.3); null for a malformed URI, so nothing is mounted. */
+export const embedUrl = (uri: string) => { const u = safeUri(uri); return u ? `https://open.spotify.com/embed/${u.type}/${u.id}` : null; };
 
 /** Spotify embed slot: iframe only when online and scrolled into view; neutral placeholder offline. Never cropped or overlaid. */
 export function EmbedSlot({ uri, height = 152, compact }: { uri: string | null; height?: number; compact?: boolean }) {
@@ -229,11 +231,12 @@ export function EmbedSlot({ uri, height = 152, compact }: { uri: string | null; 
   }, [seen]);
   // Spotify embed heights are 152 or 352 (kb/spotify.md); never clip the widget (DESIGN §5).
   const style = { height: compact ? 152 : Math.max(152, height) };
-  if (!uri) return <div ref={ref} className="embed off" style={style} role="img" aria-label="No Spotify link"><b className="text-text-2">No link</b>Paste a Spotify link to see it here</div>;
+  const src = uri ? embedUrl(uri) : null;
+  if (!src) return <div ref={ref} className="embed off" style={style} role="img" aria-label="No Spotify link"><b className="text-text-2">No link</b>Paste a Spotify link to see it here</div>;
   if (!online) return <div ref={ref} className="embed off" style={style} role="img" aria-label="Artwork unavailable offline"><b className="text-text-2">Offline</b>Artwork returns when you reconnect</div>;
   return (
     <div ref={ref} style={style}>
-      {seen && <iframe title="Spotify embed" src={embedUrl(uri)} width="100%" height={style.height} className="border-0 block rounded-[12px]"
+      {seen && <iframe title="Spotify embed" src={src} width="100%" height={style.height} className="border-0 block rounded-[12px]"
         allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" />}
     </div>
   );
@@ -282,7 +285,7 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: Reac
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => { const d = ref.current; if (d && !d.open) d.showModal?.(); }, []);
   return (
-    <dialog ref={ref} className="overlay dialog" aria-labelledby="dlg-t" style={wide ? { width: "min(760px, 100%)" } : undefined}
+    <dialog ref={ref} className={`overlay dialog ${wide ? "w-[min(760px,100%)]" : ""}`} aria-labelledby="dlg-t"
       onCancel={(e) => { e.preventDefault(); onClose(); }} onClick={(e) => { if (e.target === ref.current) onClose(); }}>
       <div className="flex justify-between items-center gap-3">
         <h1 id="dlg-t" className="text-xl font-extrabold">{title}</h1>

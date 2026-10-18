@@ -3,7 +3,8 @@
 // src/mocks/; M6/M7 switch to `invoke` by turning it off. Pages never import anything else to reach data.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import * as mocks from "./mocks"; // ponytail: static so mock "today" is set before first render; M6 drops it from the build
+import * as mocks from "./mocks";
+import { cleanLine, cleanTags, cleanText, LIMITS, lineOrNull, textOrNull } from "./lib/sanitize"; // ponytail: static so mock "today" is set before first render; M6 drops it from the build
 
 /* ------------------------------------------------------------------ §1 conventions */
 export type AppErrorCode =
@@ -168,26 +169,42 @@ export const getCounts = () => call<Counts>("get_counts");
 export const getDashboard = () => call<Dashboard>("get_dashboard");
 export const listItems = (filter: ItemFilter) => call<Page<ItemSummary>>("list_items", { filter });
 export const getItem = (id: number) => call<ItemDetail>("get_item", { id });
-export const createItem = (input: NewItem) => call<ItemDetail>("create_item", { input });
-export const updateItem = (id: number, patch: ItemPatch) => call<ItemDetail>("update_item", { id, patch });
-export const setStatus = (id: number, status: Status, note?: string) => call<ItemDetail>("set_status", { id, status, note });
+/** Free text is sanitized here, once, for every caller (src/lib/sanitize.ts). */
+const cleanNew = (i: NewItem): NewItem => ({
+  ...i, display_name: lineOrNull(i.display_name, LIMITS.name), tags: i.tags && cleanTags(i.tags),
+  recommended_by: i.recommended_by == null ? undefined : cleanLine(i.recommended_by, LIMITS.person) || undefined,
+  artist_name: i.artist_name == null ? undefined : cleanLine(i.artist_name, LIMITS.name) || undefined,
+  notes: i.notes == null ? undefined : cleanText(i.notes) || undefined,
+});
+const cleanPatch = (p: ItemPatch): ItemPatch => ({
+  ...p,
+  ...("display_name" in p && { display_name: lineOrNull(p.display_name, LIMITS.name) }),
+  ...("review" in p && { review: textOrNull(p.review) }),
+  ...("notes" in p && { notes: textOrNull(p.notes) }),
+  ...("recommended_by" in p && { recommended_by: lineOrNull(p.recommended_by, LIMITS.person) }),
+  ...("artist_name" in p && { artist_name: lineOrNull(p.artist_name, LIMITS.name) }),
+  ...(p.tags && { tags: cleanTags(p.tags) }),
+});
+export const createItem = (input: NewItem) => call<ItemDetail>("create_item", { input: cleanNew(input) });
+export const updateItem = (id: number, patch: ItemPatch) => call<ItemDetail>("update_item", { id, patch: cleanPatch(patch) });
+export const setStatus = (id: number, status: Status, note?: string) => call<ItemDetail>("set_status", { id, status, note: note == null ? undefined : cleanLine(note, LIMITS.note) || undefined });
 export const deleteItem = (id: number) => call<void>("delete_item", { id });
 export const linkItems = (fromId: number, toId: number, kind: LinkKind) => call<void>("link_items", { fromId, toId, kind });
 export const unlinkItems = (fromId: number, toId: number, kind: LinkKind) => call<void>("unlink_items", { fromId, toId, kind });
 export const reorderBacklog = (ids: number[]) => call<void>("reorder_backlog", { ids });
-export const parseLink = (raw: string) => call<ParsedLink>("parse_link", { raw });
-export const resolveLink = (raw: string) => call<{ uri: string; type: ItemType; existing_id?: number }>("resolve_link", { raw });
+export const parseLink = (raw: string) => call<ParsedLink>("parse_link", { raw: cleanLine(raw, LIMITS.link) });
+export const resolveLink = (raw: string) => call<{ uri: string; type: ItemType; existing_id?: number }>("resolve_link", { raw: cleanLine(raw, LIMITS.link) });
 export const prefillTitle = (uri: string) => call<{ title: string | null }>("prefill_title", { uri });
 export const listUnresolved = () => call<Unresolved[]>("list_unresolved");
 export const retryUnresolved = () => call<{ resolved: number }>("retry_unresolved");
 export const discardUnresolved = (id: number) => call<void>("discard_unresolved", { id });
-export const search = (q: string, limit?: number) => call<SearchHit[]>("search", { q, limit });
+export const search = (q: string, limit?: number) => call<SearchHit[]>("search", { q: cleanLine(q, LIMITS.query), limit });
 export const listTags = () => call<Tag[]>("list_tags");
-export const renameTag = (id: number, name: string) => call<Tag>("rename_tag", { id, name });
+export const renameTag = (id: number, name: string) => call<Tag>("rename_tag", { id, name: cleanTags([name])[0] ?? "" });
 export const mergeTags = (fromId: number, intoId: number) => call<Tag>("merge_tags", { fromId, intoId });
 export const deleteTag = (id: number) => call<void>("delete_tag", { id });
 export const listSavedFilters = () => call<SavedFilter[]>("list_saved_filters");
-export const saveFilter = (name: string, definition: ItemFilter) => call<SavedFilter>("save_filter", { name, definition });
+export const saveFilter = (name: string, definition: ItemFilter) => call<SavedFilter>("save_filter", { name: cleanLine(name, LIMITS.filter), definition });
 export const deleteSavedFilter = (id: number) => call<void>("delete_saved_filter", { id });
 export const getRediscover = () => call<Rediscover>("get_rediscover");
 export const getOnline = () => call<boolean>("get_online");
@@ -240,10 +257,10 @@ export const applyStudioDraft = (draft: Draft, keep: string[]) => call<{ undo_id
 export const getLastApply = (playlistUri: string) => call<ApplyRecord | null>("get_last_apply", { playlistUri });
 export const undoLastApply = (playlistUri: string) => call<void>("undo_last_apply", { playlistUri });
 export const createPlaylistFromFilter = (filterId: number, name: string, isPublic: boolean) =>
-  call<{ playlist_uri: string; added: number; skipped_no_uri: number }>("create_playlist_from_filter", { filterId, name, public: isPublic });
+  call<{ playlist_uri: string; added: number; skipped_no_uri: number }>("create_playlist_from_filter", { filterId, name: cleanLine(name, LIMITS.playlist), public: isPublic });
 /** Rediscover shelves are rule-built, not saved filters: the playlist gets exactly the listed records (SC-07b). */
 export const createPlaylistFromItems = (itemIds: number[], name: string, isPublic: boolean) =>
-  call<{ playlist_uri: string; added: number; skipped_no_uri: number }>("create_playlist_from_items", { itemIds, name, public: isPublic });
+  call<{ playlist_uri: string; added: number; skipped_no_uri: number }>("create_playlist_from_items", { itemIds, name: cleanLine(name, LIMITS.playlist), public: isPublic });
 export const autofill = (uri: string) => call<Autofill>("autofill", { uri });
 export const bulkAddAlbumTracks = (albumId: number, tracks: { uri: string; name: string }[]) => call<ItemSummary[]>("bulk_add_album_tracks", { albumId, tracks });
 export const getTopItems = (kind: "tracks" | "artists", range: "4w" | "6m" | "1y") => call<SpotifyEntry[]>("get_top_items", { kind, range });

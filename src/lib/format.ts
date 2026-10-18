@@ -1,5 +1,6 @@
 // Display formatting shared by every screen (ported from the prototype's R.* helpers in app.js).
 import type { ItemSummary, Priority, Status, ItemType } from "../api";
+import { safeUri } from "./sanitize";
 
 let TODAY: () => Date = () => new Date();
 /** Mocks pin "now" to the dataset's day so relative times match the designs. */
@@ -47,7 +48,8 @@ export const PRIO: Record<Priority, string> = { high: "High priority", medium: "
 
 export const uriId = (uri: string | null) => (uri ?? "").split(":")[2] ?? "";
 export const uriLink = (it: Pick<ItemSummary, "type" | "spotify_uri">) => `open.spotify.com/${it.type}/${uriId(it.spotify_uri)}`;
-export const openUrl = (uri: string) => { const [, type, id] = uri.split(":"); return `https://open.spotify.com/${type}/${id}`; };
+/** Spotify web link for a stored URI; a malformed URI falls back to Spotify's home page. */
+export const openUrl = (uri: string) => { const u = safeUri(uri); return u ? `https://open.spotify.com/${u.type}/${u.id}` : "https://open.spotify.com"; };
 /** Name, or the link while the name is still needed (phone captures). */
 export const nameOf = (it: Pick<ItemSummary, "display_name" | "type" | "spotify_uri">) => it.display_name || uriLink(it);
 /** Row subtitle: "Artist" / "Artist, from Album" / "Artist". */

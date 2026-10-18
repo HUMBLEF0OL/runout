@@ -259,6 +259,7 @@ Insert a `usage_event` on app open, on each page visit, and on each capture. A c
 - Embed iframes are loaded by WebView2 and reach whatever Spotify hosts the embed itself uses (for example its image CDN). That traffic is Spotify’s widget, contains no user data from the library, and is outside the Rust allow-list.
 - Tauri capabilities: UI gets only the app’s own commands; no shell, no fs plugin.
 - Tokens never logged; logs contain no personal notes.
+- Input sanitization: `src/api.ts` cleans all free text before any command (NFC, no control or bidi/zero-width characters, trimmed, length caps in `src/lib/sanitize.ts`), and Spotify URLs are built only from URIs matching TSD §4.1. Rust validates again at its boundary (M3); the UI is never the only check.
 
 ## 8. Testing
 | Level | What |
