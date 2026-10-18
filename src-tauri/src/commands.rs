@@ -403,7 +403,12 @@ pub fn move_library<R: Runtime>(app: AppHandle<R>, st: St<'_>) -> Result<Option<
 
 #[tauri::command(async)]
 pub fn delete_library(st: St<'_>, confirm: String) -> Result<()> {
-    cleanup::delete_library(&mut st.db.lock().unwrap(), &confirm)
+    let lib = settings_now(&st).library_path;
+    cleanup::delete_library(
+        &mut st.db.lock().unwrap(),
+        std::path::Path::new(&lib),
+        &confirm,
+    )
 }
 
 /* ------------------------------------------------------------------ usage */

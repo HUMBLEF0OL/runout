@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -89,20 +89,89 @@ fn sibling(path: &Path, ext: &str) -> PathBuf {
     PathBuf::from(format!("{}.{ext}", path.display()))
 }
 
+/// Marker beside the library: a restore failed half-way and `library.db.pre-restore` may hold the
+/// only good copy, so it must not be cleaned up.
+fn marker(library_path: &Path) -> PathBuf {
+    sibling(library_path, "restore-failed")
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests: renames *from* these paths fail, to exercise restore's recovery paths.
+    static FAIL_RENAME_FROM: std::cell::RefCell<Vec<PathBuf>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn rename(from: &Path, to: &Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if FAIL_RENAME_FROM.with(|f| f.borrow().iter().any(|p| p == from)) {
+        return Err(std::io::Error::other("injected rename failure"));
+    }
+    std::fs::rename(from, to)
+}
+
+/// Write `tmp` with `write`, then rename it to `path`. `tmp` is removed on every error path.
+pub(crate) fn write_then_rename(
+    tmp: &Path,
+    path: &Path,
+    write: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    let r = write(tmp).and_then(|_| Ok(rename(tmp, path)?));
+    if r.is_err() {
+        let _ = std::fs::remove_file(tmp);
+    }
+    r
+}
+
+/// UTC stamp and same-second sequence of a backup file name: `runout-backup-YYYYMMDD-HHMMSS.zip`,
+/// or `…-HHMMSS-N.zip` (N ≥ 2) for the N-th backup in one second. Anything else is not a backup.
+fn parse_name(name: &str) -> Option<(DateTime<Utc>, u32)> {
+    let rest = name.strip_prefix(PREFIX)?.strip_suffix(".zip")?;
+    let stamp = rest.get(..15)?;
+    let seq = match &rest[15..] {
+        "" => 1,
+        s => s
+            .strip_prefix('-')
+            .filter(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()))?
+            .parse::<u32>()
+            .ok()
+            .filter(|n| *n >= 2)?,
+    };
+    let shape = stamp.bytes().enumerate().all(|(i, c)| {
+        if i == 8 {
+            c == b'-'
+        } else {
+            c.is_ascii_digit()
+        }
+    });
+    if !shape {
+        return None;
+    }
+    let t = NaiveDateTime::parse_from_str(stamp, "%Y%m%d-%H%M%S").ok()?;
+    Some((t.and_utc(), seq))
+}
+
 /// `backup_now`: snapshot `conn` into `dir`, rotate, flag size (> `size_warn_mb`).
 pub fn backup_now(conn: &Connection, dir: &Path, size_warn_mb: u32) -> Result<Backup> {
-    backup_at(conn, dir, size_warn_mb, Local::now())
+    backup_at(conn, dir, size_warn_mb, Utc::now())
 }
 
 fn backup_at(
     conn: &Connection,
     dir: &Path,
     size_warn_mb: u32,
-    now: DateTime<Local>,
+    now: DateTime<Utc>,
 ) -> Result<Backup> {
     std::fs::create_dir_all(dir)?;
-    let name = format!("{PREFIX}{}.zip", now.format("%Y%m%d-%H%M%S"));
-    let path = dir.join(&name);
+    // Names are UTC so a DST or time-zone change can't reorder them.
+    let stamp = now.format("%Y%m%d-%H%M%S");
+    let path = (1..)
+        .map(|n| match n {
+            1 => dir.join(format!("{PREFIX}{stamp}.zip")),
+            n => dir.join(format!("{PREFIX}{stamp}-{n}.zip")),
+        })
+        .find(|p| !p.exists())
+        .expect("a free name");
+    let name = path.file_name().unwrap().to_string_lossy().into_owned();
     let snap = dir.join(format!(".{name}.db"));
     let _ = std::fs::remove_file(&snap);
     conn.execute("VACUUM INTO ?1", [snap.to_string_lossy()])?;
@@ -119,26 +188,24 @@ fn backup_at(
             schema_version,
             sha256: sha256_hex(&bytes),
             counts,
-            created_at: now
-                .with_timezone(&Utc)
-                .format("%Y-%m-%dT%H:%M:%SZ")
-                .to_string(),
+            created_at: now.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         };
-        let tmp = sibling(&path, "tmp");
-        let mut z = zip::ZipWriter::new(File::create(&tmp)?);
-        let opt = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-        z.start_file(DB_ENTRY, opt).map_err(zip_err)?;
-        z.write_all(&bytes)?;
-        z.start_file(MANIFEST, opt).map_err(zip_err)?;
-        z.write_all(&serde_json::to_vec_pretty(&manifest)?)?;
-        z.finish().map_err(zip_err)?.sync_all()?;
-        std::fs::rename(&tmp, &path)?;
+        write_then_rename(&sibling(&path, "tmp"), &path, |tmp| {
+            let mut z = zip::ZipWriter::new(File::create(tmp)?);
+            let opt = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            z.start_file(DB_ENTRY, opt).map_err(zip_err)?;
+            z.write_all(&bytes)?;
+            z.start_file(MANIFEST, opt).map_err(zip_err)?;
+            z.write_all(&serde_json::to_vec_pretty(&manifest)?)?;
+            z.finish().map_err(zip_err)?.sync_all()?;
+            Ok(())
+        })?;
         Ok::<_, AppError>(manifest)
     })();
     let _ = std::fs::remove_file(&snap);
     let manifest = result?;
-    rotate(dir)?;
+    rotate(dir, &path)?;
     let size_bytes = std::fs::metadata(&path)?.len();
     Ok(Backup {
         path: path.to_string_lossy().into_owned(),
@@ -149,25 +216,27 @@ fn backup_at(
     })
 }
 
-/// Backup zips in `dir`, newest first (the timestamped names sort by time).
-fn zips(dir: &Path) -> Vec<PathBuf> {
+/// Runout backup files in `dir` with their UTC stamp, newest first (by parsed stamp, then
+/// same-second sequence). Other files, even `runout-backup-old.zip`, are never listed or rotated.
+fn zips(dir: &Path) -> Vec<(PathBuf, DateTime<Utc>)> {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
-    let mut v: Vec<PathBuf> = rd
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with(PREFIX) && n.ends_with(".zip"))
+    let mut v: Vec<(PathBuf, (DateTime<Utc>, u32))> = rd
+        .filter_map(|e| {
+            let e = e.ok()?;
+            let key = parse_name(e.file_name().to_str()?)?;
+            e.file_type().ok()?.is_file().then(|| (e.path(), key))
         })
         .collect();
-    v.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
-    v
+    v.sort_by_key(|a| std::cmp::Reverse(a.1));
+    v.into_iter().map(|(p, (t, _))| (p, t)).collect()
 }
 
-fn rotate(dir: &Path) -> Result<()> {
-    for old in zips(dir).iter().skip(KEEP) {
+/// Keep `just_made` (even if the clock went back) plus the newest `KEEP - 1` others.
+fn rotate(dir: &Path, just_made: &Path) -> Result<()> {
+    let others = zips(dir).into_iter().filter(|(p, _)| p != just_made);
+    for (old, _) in others.skip(KEEP - 1) {
         std::fs::remove_file(old)?;
     }
     Ok(())
@@ -189,7 +258,7 @@ fn read_manifest(path: &Path) -> Result<Manifest> {
 pub fn list_backups(dir: &Path, size_warn_mb: u32) -> Vec<Backup> {
     zips(dir)
         .into_iter()
-        .filter_map(|p| {
+        .filter_map(|(p, _)| {
             let m = read_manifest(&p).ok()?;
             let size_bytes = std::fs::metadata(&p).ok()?.len();
             Some(Backup {
@@ -261,10 +330,54 @@ fn move_db(from: &Path, to: &Path) -> std::io::Result<()> {
         );
         let _ = std::fs::remove_file(&t);
         if f.exists() {
-            std::fs::rename(f, t)?;
+            rename(&f, &t)?;
         }
     }
-    std::fs::rename(from, to)
+    rename(from, to)
+}
+
+fn remove_db_files(path: &Path) {
+    for side in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{side}", path.display()));
+    }
+}
+
+/// After a failed swap, put the old library back into `conn`. Never opens a missing path (that
+/// would create an empty library). If the old file can't be moved back it is opened in place as
+/// `pre-restore`, and the marker stops `cleanup_pre_restore` from deleting it.
+fn reopen_old(conn: &mut Connection, library_path: &Path, pre: &Path) -> Result<()> {
+    let keep_pre = || std::fs::write(marker(library_path), b"");
+    let target = if pre.exists() {
+        if !library_path.exists() && move_db(pre, library_path).is_ok() {
+            library_path
+        } else {
+            // Couldn't move back, or library.db is the restored file we couldn't remove.
+            let _ = keep_pre();
+            pre
+        }
+    } else if library_path.exists() {
+        library_path // nothing was moved
+    } else {
+        return Err(reopen_failed("no library file left"));
+    };
+    match crate::db::open(target) {
+        Ok(c) => {
+            *conn = c;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = keep_pre();
+            Err(reopen_failed(e.message))
+        }
+    }
+}
+
+fn reopen_failed(detail: impl Into<String>) -> AppError {
+    AppError::new(
+        Code::Io,
+        "Restore failed and the library couldn't be reopened. Restart Runout; nothing was deleted.",
+    )
+    .with_detail(detail)
 }
 
 /// `restore_backup`: verify, then swap files under the AppState lock. The live connection is closed,
@@ -284,6 +397,13 @@ pub fn restore_backup(
         }
     };
     let pre = sibling(library_path, "pre-restore");
+    if marker(library_path).exists() {
+        let _ = std::fs::remove_file(&staged);
+        return Err(AppError::new(
+            Code::Conflict,
+            "A previous restore didn't finish. Restart Runout before restoring again.",
+        ));
+    }
     let mut conn = db.lock().unwrap();
     let old = std::mem::replace(&mut *conn, Connection::open_in_memory()?);
     if let Err((old, e)) = old.close() {
@@ -291,45 +411,53 @@ pub fn restore_backup(
         let _ = std::fs::remove_file(&staged);
         return Err(e.into());
     }
-    let reopen_old = |conn: &mut Connection| {
-        if !library_path.exists() {
-            let _ = move_db(&pre, library_path);
-        }
-        if let Ok(c) = crate::db::open(library_path) {
-            *conn = c;
-        }
-    };
-    let _ = std::fs::remove_file(&pre);
-    if let Err(e) = move_db(library_path, &pre).and_then(|_| std::fs::rename(&staged, library_path))
-    {
-        reopen_old(&mut conn);
+    remove_db_files(&pre);
+    if let Err(e) = move_db(library_path, &pre).and_then(|_| rename(&staged, library_path)) {
+        let _ = std::fs::remove_file(&staged);
+        reopen_old(&mut conn, library_path, &pre)?;
         return Err(e.into());
     }
     match crate::db::open(library_path) {
         Ok(c) => *conn = c,
         Err(e) => {
             let _ = std::fs::remove_file(library_path);
-            reopen_old(&mut conn);
+            reopen_old(&mut conn, library_path, &pre)?;
             return Err(e);
         }
     }
     Ok(check)
 }
 
-/// At a successful start: the pre-restore copy is no longer needed (TSD §4.10).
+/// At a successful start the pre-restore copy is no longer needed (TSD §4.10) — but it is only
+/// deleted when library.db opens and passes `integrity_check` and no failed restore left a marker.
 pub fn cleanup_pre_restore(library_path: &Path) {
     let pre = sibling(library_path, "pre-restore");
-    for side in ["", "-wal", "-shm"] {
-        let _ = std::fs::remove_file(format!("{}{side}", pre.display()));
+    if !pre.exists() || marker(library_path).exists() {
+        return;
+    }
+    let healthy =
+        Connection::open_with_flags(library_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .and_then(|c| c.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0)))
+            .is_ok_and(|ok| ok == "ok");
+    if healthy {
+        remove_db_files(&pre);
     }
 }
 
-/// Weekly backup is due: no backup in `dir`, or the newest is ≥ 7 days old.
+/// `delete_library` (cleanup.rs): the pre-restore copy and its marker go too.
+pub(crate) fn remove_pre_restore(library_path: &Path) -> std::io::Result<()> {
+    remove_db_files(&sibling(library_path, "pre-restore"));
+    match std::fs::remove_file(marker(library_path)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
+/// Weekly backup is due: no backup in `dir`, or the newest (by its UTC name stamp) is ≥ 7 days old.
 pub fn due(dir: &Path, now: SystemTime) -> bool {
     zips(dir)
         .first()
-        .and_then(|p| std::fs::metadata(p).ok()?.modified().ok())
-        .is_none_or(|t| now.duration_since(t).unwrap_or_default() >= WEEK)
+        .is_none_or(|(_, t)| now.duration_since(SystemTime::from(*t)).unwrap_or_default() >= WEEK)
 }
 
 /// Weekly scheduler thread (lib.rs spawns it): checks at start, then daily; emits `backup-finished`.
@@ -363,8 +491,182 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         d
     }
-    fn at(day: u32) -> DateTime<Local> {
-        Local.with_ymd_and_hms(2026, 10, day, 9, 30, 0).unwrap()
+    fn at(day: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 10, day, 9, 30, 0).unwrap()
+    }
+    fn name(p: &str) -> String {
+        Path::new(p)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    fn names_are_strict_utc_stamps() {
+        let t = at(4);
+        assert_eq!(
+            parse_name("runout-backup-20261004-093000.zip"),
+            Some((t, 1))
+        );
+        assert_eq!(
+            parse_name("runout-backup-20261004-093000-3.zip"),
+            Some((t, 3))
+        );
+        for bad in [
+            "runout-backup-old.zip",
+            "runout-backup-bad.zip",
+            "runout-backup-2026100-093000.zip",
+            "runout-backup-20261004-093000-.zip",
+            "runout-backup-20261004-093000-1.zip",
+            "runout-backup-20261004-093000-x.zip",
+            "runout-backup-20261004-093000.zip.tmp",
+            "runout-backup-20261304-093000.zip",
+            "runout-backup-20261004+093000.zip",
+        ] {
+            assert_eq!(parse_name(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn same_second_backups_get_a_suffix_and_sort_newest_first() {
+        let d = tmp("same-second");
+        let c = db::open_in_memory().unwrap();
+        // a foreign file that sorts after every stamp by name must be ignored, not kept as "newest"
+        std::fs::write(d.join("runout-backup-old.zip"), b"x").unwrap();
+        for _ in 0..3 {
+            backup_at(&c, &d, 100, at(4)).unwrap();
+        }
+        let names = || -> Vec<String> {
+            list_backups(&d, 100)
+                .iter()
+                .map(|b| name(&b.path))
+                .collect()
+        };
+        assert_eq!(
+            names(),
+            [
+                "runout-backup-20261004-093000-3.zip",
+                "runout-backup-20261004-093000-2.zip",
+                "runout-backup-20261004-093000.zip",
+            ]
+        );
+        // clock set back: the new (older-stamped) backup is kept, the oldest other one goes
+        backup_at(&c, &d, 100, at(3)).unwrap();
+        assert_eq!(
+            names(),
+            [
+                "runout-backup-20261004-093000-3.zip",
+                "runout-backup-20261004-093000-2.zip",
+                "runout-backup-20261003-093000.zip",
+            ]
+        );
+        assert!(
+            d.join("runout-backup-old.zip").exists(),
+            "foreign file untouched"
+        );
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn failed_write_leaves_no_tmp() {
+        let d = tmp("tmp-cleanup");
+        let tmp_file = d.join("x.tmp");
+        // write fails after creating the temp file
+        let r = write_then_rename(&tmp_file, &d.join("x"), |t| {
+            std::fs::write(t, b"half")?;
+            Err(AppError::internal("boom"))
+        });
+        assert!(r.is_err() && !tmp_file.exists());
+        // rename fails: the target is a directory
+        std::fs::create_dir(d.join("dir")).unwrap();
+        let r = write_then_rename(&tmp_file, &d.join("dir"), |t| Ok(std::fs::write(t, b"x")?));
+        assert!(r.is_err() && !tmp_file.exists());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    fn fail_renames_from(paths: &[&Path]) {
+        FAIL_RENAME_FROM
+            .with(|f| *f.borrow_mut() = paths.iter().map(|p| p.to_path_buf()).collect());
+    }
+
+    /// Swap fails after library.db was moved aside; moving it back works → library as before.
+    #[test]
+    fn failed_swap_moves_the_old_library_back() {
+        let d = tmp("swap-back");
+        let lib = d.join("library.db");
+        let db = Mutex::new(db::open(&lib).unwrap());
+        db::fixture(&db.lock().unwrap(), 2);
+        let b = backup_at(&db.lock().unwrap(), &d.join("B"), 100, at(1)).unwrap();
+        db.lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO item(type, display_name) VALUES ('album', 'New')",
+                [],
+            )
+            .unwrap();
+        fail_renames_from(&[&sibling(&lib, "restore")]);
+        assert!(restore_backup(&db, &lib, Path::new(&b.path)).is_err());
+        fail_renames_from(&[]);
+        assert_eq!(n_items(&db.lock().unwrap()), 4, "old library live again");
+        assert!(!marker(&lib).exists() && !sibling(&lib, "restore").exists());
+        drop(db);
+        assert_eq!(n_items(&db::open(&lib).unwrap()), 4, "and on disk");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Swap fails and moving back fails too: the old library is opened in place as pre-restore,
+    /// a marker is left, and the next start keeps pre-restore. No empty library.db is created.
+    #[test]
+    fn failed_swap_and_move_back_keeps_pre_restore() {
+        let d = tmp("swap-stuck");
+        let lib = d.join("library.db");
+        let pre = sibling(&lib, "pre-restore");
+        let db = Mutex::new(db::open(&lib).unwrap());
+        db::fixture(&db.lock().unwrap(), 2);
+        let b = backup_at(&db.lock().unwrap(), &d.join("B"), 100, at(1)).unwrap();
+        fail_renames_from(&[&sibling(&lib, "restore"), &pre]);
+        assert!(restore_backup(&db, &lib, Path::new(&b.path)).is_err());
+        fail_renames_from(&[]);
+        assert_eq!(
+            n_items(&db.lock().unwrap()),
+            3,
+            "library data still reachable"
+        );
+        assert!(!lib.exists(), "no empty library.db was created");
+        assert!(marker(&lib).exists());
+        // a second restore is refused until the stuck one is sorted out
+        assert_eq!(
+            restore_backup(&db, &lib, Path::new(&b.path))
+                .unwrap_err()
+                .code,
+            Code::Conflict
+        );
+        assert_eq!(n_items(&db.lock().unwrap()), 3);
+        drop(db);
+        db::open(&lib).unwrap(); // next start: AppState opens (and creates) library.db
+        cleanup_pre_restore(&lib);
+        assert!(pre.exists(), "marker keeps pre-restore");
+        assert_eq!(n_items(&Connection::open(&pre).unwrap()), 3);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn cleanup_keeps_pre_restore_unless_library_is_healthy() {
+        let d = tmp("cleanup");
+        let lib = d.join("library.db");
+        let pre = sibling(&lib, "pre-restore");
+        std::fs::write(&pre, b"old").unwrap();
+        cleanup_pre_restore(&lib); // library.db missing
+        assert!(pre.exists());
+        std::fs::write(&lib, vec![0x42; 8192]).unwrap(); // not a database
+        cleanup_pre_restore(&lib);
+        assert!(pre.exists());
+        std::fs::remove_file(&lib).unwrap();
+        drop(db::open(&lib).unwrap());
+        cleanup_pre_restore(&lib);
+        assert!(!pre.exists(), "healthy library, no marker → deleted");
+        let _ = std::fs::remove_dir_all(d);
     }
     fn n_items(c: &Connection) -> i64 {
         c.query_row("SELECT count(*) FROM item", [], |r| r.get(0))
@@ -405,9 +707,10 @@ mod tests {
             "no temp files left"
         );
         assert!(backup_at(&c, &d.join("b"), 0, at(5)).unwrap().size_warning);
-        assert!(!due(&d.join("b"), SystemTime::now()));
-        assert!(due(&d.join("nothing"), SystemTime::now()));
-        assert!(due(&d.join("b"), SystemTime::now() + WEEK));
+        let t5 = SystemTime::from(at(5));
+        assert!(!due(&d.join("b"), t5 + WEEK - Duration::from_secs(1)));
+        assert!(due(&d.join("nothing"), t5));
+        assert!(due(&d.join("b"), t5 + WEEK));
         let _ = std::fs::remove_dir_all(d);
     }
 

@@ -33,3 +33,6 @@ my_spotify_data*/
 
 # Tool output (Playwright MCP logs and page snapshots)
 .playwright-mcp/
+
+# Agent worktrees
+.claude/worktrees/

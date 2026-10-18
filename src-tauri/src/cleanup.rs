@@ -12,9 +12,10 @@ pub const CREDENTIAL: &str = "Runout/spotify";
 pub const CACHE_DB: &str = "spotify_cache.db";
 pub const WEBVIEW_DIR: &str = "EBWebView";
 
-/// Empty every table in library.db (schema kept), then VACUUM so deleted text doesn't linger in
-/// free pages. Backups are untouched (they live outside the app folders, D28).
-pub fn delete_library(conn: &mut Connection, confirm: &str) -> Result<()> {
+/// Empty every table in library.db (schema kept), then VACUUM and truncate the WAL so deleted
+/// text doesn't linger in free pages or the WAL, and remove `library.db.pre-restore` (+ marker).
+/// Backups are untouched (they live outside the app folders, D28).
+pub fn delete_library(conn: &mut Connection, library_path: &Path, confirm: &str) -> Result<()> {
     if confirm != CONFIRM {
         return Err(AppError::validation("Type DELETE in capitals to confirm."));
     }
@@ -31,6 +32,8 @@ pub fn delete_library(conn: &mut Connection, confirm: &str) -> Result<()> {
     }
     tx.commit()?;
     conn.execute_batch("VACUUM")?;
+    conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+    crate::backup::remove_pre_restore(library_path)?;
     Ok(())
 }
 
@@ -99,12 +102,30 @@ mod tests {
 
     #[test]
     fn delete_library_needs_the_phrase_and_empties_everything() {
-        let mut c = db::open_in_memory().unwrap();
+        let d = std::env::temp_dir().join(format!("runout-delete-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let lib = d.join("library.db");
+        let mut c = db::open(&lib).unwrap();
         db::fixture(&c, 4);
-        for wrong in ["delete", "DELETE ", "", "Delete"] {
-            assert!(delete_library(&mut c, wrong).is_err(), "{wrong:?}");
+        let pre = d.join("library.db.pre-restore");
+        let leftovers = [
+            pre.clone(),
+            d.join("library.db.pre-restore-wal"),
+            d.join("library.db.restore-failed"),
+        ];
+        for p in &leftovers {
+            std::fs::write(p, b"old notes").unwrap();
         }
-        delete_library(&mut c, "DELETE").unwrap();
+        for wrong in ["delete", "DELETE ", "", "Delete"] {
+            assert!(delete_library(&mut c, &lib, wrong).is_err(), "{wrong:?}");
+        }
+        assert!(pre.exists(), "wrong phrase deletes nothing");
+        delete_library(&mut c, &lib, "DELETE").unwrap();
+        for p in &leftovers {
+            assert!(!p.exists(), "{p:?}");
+        }
+        let wal = std::fs::metadata(d.join("library.db-wal")).map_or(0, |m| m.len());
+        assert_eq!(wal, 0, "WAL truncated: no deleted text left in it");
         for t in [
             "item",
             "tag",
@@ -131,6 +152,8 @@ mod tests {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
         assert_eq!(v, db::SCHEMA_VERSION);
+        drop(c);
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]

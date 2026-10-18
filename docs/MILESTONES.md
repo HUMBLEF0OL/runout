@@ -42,6 +42,7 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 | G-13 | Digits 1–5 don't set status while focus is on the rating slider | `src/hooks/useShortcuts.ts` | Arrow keys own the slider; digits there would be ambiguous | by design |
 | G-14 | Tray menu and uninstall dialog have no React screens | native (Rust tray, NSIS) | They aren't WebView UI (DESIGN §6 reference only) | M6 |
 | G-15 | Spotify credential must be created with target exactly `Runout/spotify` (`keyring` `Entry::new_with_target`) or `--uninstall-cleanup` won't find it | `src-tauri/src/spotify/`, `cleanup.rs` | Credential is written in M5; cleanup (M3) deletes by that target ([KB](kb/windows-tauri.md)) | M5 |
+| G-16 | Success metric "moved after 14 days" can't see items that left the backlog while planned | `src-tauri/src/usage.rs` | Nothing records when an item entered or left the backlog; exact needs a backlog-history migration | M8 candidate |
 
 ---
 

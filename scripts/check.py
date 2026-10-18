@@ -45,6 +45,17 @@ def check_hosts():
         print("--- allowed hosts: FAIL\n" + "\n".join(bad))
 
 
+def check_one_item_summary():
+    # Review M3 6-10: event payloads use library::items::summary; a hand-built ItemSummary drifts from API.md.
+    bad = [str(p.relative_to(ROOT)) for p in (TAURI / "src").rglob("*.rs")
+           if "library" not in p.parts and "json_object('id'" in p.read_text(encoding="utf-8")]
+    if bad:
+        failures.append("one ItemSummary")
+        print("--- one ItemSummary: FAIL (build it with library::items::summary)
+" + "
+".join(bad))
+
+
 def check_no_oembed_or_tokens_logged():
     # TSD §7: tokens never logged.
     pat = re.compile(r"(println!|log::\w+!|tracing::\w+!|console\.log)\(.*(token|secret|refresh)", re.I)
@@ -215,6 +226,7 @@ if (ROOT / "package.json").exists():
     run("vitest", "npx vitest run --passWithNoTests", ROOT)
 check_hosts()
 check_no_oembed_or_tokens_logged()
+check_one_item_summary()
 check_ui_purity()
 check_contract_and_attribution()
 check_commands()

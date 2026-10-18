@@ -63,9 +63,11 @@ pub fn get_success_metrics(conn: &Connection) -> Result<SuccessMetrics> {
     metrics_at(conn, &crate::db::now())
 }
 
-/// "This week" = the 7 days up to `now` (rolling). Capture median over the last 30 days.
-/// Moved after 14 d = items added ≥ 14 days ago whose status 14 days after adding (from
-/// `status_history`) wasn't `planned`. Explored rated = explored items with a rating or review.
+/// "This week" = the 7 days up to `now` (rolling); days opened = distinct local dates in the
+/// last 7 local calendar days including today (so at most 7). Capture median over 30 days.
+/// Moved after 14 d (BRD §15) = backlog items added ≥ 14 days ago whose status 14 days after
+/// adding (from `status_history`) wasn't `planned`. Explored rated = explored items with a
+/// rating or review.
 fn metrics_at(conn: &Connection, now: &str) -> Result<SuccessMetrics> {
     const ISO: &str = "'%Y-%m-%dT%H:%M:%SZ'";
     let mut st = conn.prepare(&format!(
@@ -83,14 +85,21 @@ fn metrics_at(conn: &Connection, now: &str) -> Result<SuccessMetrics> {
     let sql = format!(
         "WITH wk AS (SELECT * FROM usage_event WHERE at > strftime({ISO}, ?1, '-7 days') AND at <= ?1)
          SELECT
-           (SELECT count(DISTINCT date(at, 'localtime')) FROM wk WHERE kind = 'app_open'),
+           (SELECT count(DISTINCT date(at, 'localtime')) FROM usage_event WHERE kind = 'app_open'
+              AND date(at, 'localtime') > date(?1, 'localtime', '-7 days') AND at <= ?1),
            (SELECT count(*) FROM wk WHERE kind = 'page_visit' AND detail = 'search'),
            (SELECT count(*) FROM wk WHERE kind = 'page_visit' AND detail = 'rediscover'),
            (SELECT CAST(round(100.0 * total(moved) / max(count(*), 1)) AS INT) FROM (
               SELECT COALESCE((SELECT h.to_status FROM status_history h WHERE h.item_id = i.id
                                  AND h.at <= strftime({ISO}, i.added_at, '+14 days')
                                ORDER BY h.at DESC, h.id DESC LIMIT 1), 'planned') <> 'planned' AS moved
-              FROM item i WHERE i.added_at <= strftime({ISO}, ?1, '-14 days'))),
+              FROM item i WHERE i.added_at <= strftime({ISO}, ?1, '-14 days')
+                -- backlog items: first status planned, and in the backlog or moved on from planned
+                -- ponytail: no backlog-entry record, so a planned item taken out of the backlog
+                -- reads as never-in-backlog; exact needs a migration recording backlog entry.
+                AND (SELECT h.to_status FROM status_history h WHERE h.item_id = i.id
+                      ORDER BY h.at, h.id LIMIT 1) = 'planned'
+                AND (i.in_backlog = 1 OR i.status <> 'planned'))),
            (SELECT CAST(round(100.0 * total(rating IS NOT NULL OR trim(COALESCE(review, '')) <> '')
                               / max(count(*), 1)) AS INT)
               FROM item WHERE status = 'explored')"
@@ -121,6 +130,45 @@ mod tests {
             params![kind, at, detail, ms],
         )
         .unwrap();
+    }
+
+    /// "This week" = the last 7 local calendar days including today: hourly opens over the
+    /// past 8 days span 8 local dates in a rolling 168 h window, but only 7 count.
+    #[test]
+    fn days_opened_is_at_most_7_local_dates() {
+        let c = db::open_in_memory().unwrap();
+        for h in 0..=200 {
+            c.execute(
+                "INSERT INTO usage_event(kind, at) VALUES ('app_open', strftime('%Y-%m-%dT%H:%M:%SZ', ?1, ?2))",
+                params![NOW, format!("-{h} hours")],
+            )
+            .unwrap();
+        }
+        assert_eq!(metrics_at(&c, NOW).unwrap().days_opened_this_week, 7);
+    }
+
+    /// BRD §15 counts backlog items only: items added straight as explored, or never in the
+    /// backlog (auto-created artists still planned), are left out. Exploring takes an item out of
+    /// the backlog (status.rs), so a moved item still counts.
+    #[test]
+    fn moved_after_14d_counts_backlog_items_only() {
+        let c = db::open_in_memory().unwrap();
+        c.execute_batch(
+            "INSERT INTO item(id, type, added_at, status, in_backlog) VALUES
+                 (1,'album','2026-09-18T00:00:00Z','in_progress',1),
+                 (2,'album','2026-09-18T00:00:00Z','planned',1),
+                 (3,'album','2026-09-18T00:00:00Z','explored',0),
+                 (4,'artist','2026-09-18T00:00:00Z','planned',0),
+                 (5,'album','2026-09-18T00:00:00Z','explored',0);
+             INSERT INTO status_history(item_id, from_status, to_status, at) VALUES
+                 (1,NULL,'planned','2026-09-18T00:00:00Z'),(1,'planned','in_progress','2026-09-20T00:00:00Z'),
+                 (2,NULL,'planned','2026-09-18T00:00:00Z'),
+                 (3,NULL,'explored','2026-09-18T00:00:00Z'),
+                 (4,NULL,'planned','2026-09-18T00:00:00Z'),
+                 (5,NULL,'planned','2026-09-18T00:00:00Z'),(5,'planned','explored','2026-09-21T00:00:00Z');",
+        )
+        .unwrap();
+        assert_eq!(metrics_at(&c, NOW).unwrap().moved_after_14d_pct, 67); // 1 and 5 of 1, 2, 5
     }
 
     #[test]
@@ -207,7 +255,7 @@ mod tests {
                 days_opened_this_week: 3,
                 searches_this_week: 2,
                 rediscover_visits_this_week: 1,
-                moved_after_14d_pct: 50, // items 1 and 4 of 1–4; item 5 is too new
+                moved_after_14d_pct: 33, // item 1 of backlog items 1–3; 4 added as explored, 5 too new
                 explored_rated_pct: 50,  // 4 rated; 2 has a blank review
             }
         );
