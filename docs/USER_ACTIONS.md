@@ -37,7 +37,7 @@ Steps:
 
 **Send back:** "U-1 done" and the date you requested.
 
-**Note:** Spotify doesn't publish how long the exports take. Your request is how we find out (BRD O2).
+**Note:** Spotify doesn't publish how long the exports take. Your request is how we find out (BRD O2). Measured so far: the Extended streaming history took about 1 day; the Account data export and allowed request frequency are still open.
 
 ## U-2 — Download the exports
 

@@ -19,7 +19,7 @@ Facts the specs rely on, and facts learned while building. The BRD says *what*, 
 ## Open questions (single index)
 | ID | Question | Resolve in | Owner | Status |
 |---|---|---|---|---|
-| T1 / O2 | Real export file + field names; delivery time | M4 | U-1, U-2 then agent | **resolved** 2026-10-19 ([spotify.md](spotify.md#extended-streaming-history-format-t1--verified-2026-10-19)); Account data part (`Playlist*.json`) not received, still unverified |
+| T1 / O2 | Real export file + field names; delivery time and request frequency | M4 | U-1, U-2 then agent | T1 **resolved** 2026-10-19 ([spotify.md](spotify.md#extended-streaming-history-format-t1--verified-2026-10-19)); O2 **partly resolved**: Extended streaming history took ~1 day (BRD S14); Account data part (`Playlist*.json`) not received and allowed request frequency unknown, still open |
 | T2 | NSIS update-mode detection for cleanup hook | M6 | agent | open |
 | T3 | Redirect-URI rules, `/me/library` scope | M5 | agent | open |
 | T4 | Incognito WebView2 works with embeds and keeps no cache | M2 | agent | **resolved** 2026-10-18 (wry probe; [windows-tauri.md](windows-tauri.md#webview2)); in-app re-check in M2 |

@@ -24,6 +24,7 @@
 | Ref | Change |
 |---|---|
 | P1 | Milestone efforts re-estimated for agentic development (D31): Claude Code agents build and review in parallel. M3 took about 3 hours against a 3–4 week estimate. Section 14 now gives build hours plus the real-world waits (user actions, daily use, soak runs) that agents cannot shorten. |
+| P2 | O2 partly resolved (S14, section 16 assumption): the Extended streaming history export arrived about 1 day after the request for one account (19 Oct 2026). Account data export delivery and allowed request frequency remain open. |
 
 ### 0.2 Changes in Version 0.6 (design-first delivery)
 
@@ -566,7 +567,7 @@ Basis: Documented = stated in official Spotify documentation; Interpretation = o
 | S11 | Client internals | User Guidelines prohibit reverse-engineering and circumventing Spotify technology. | Documented | No reading of client files or code. |
 | S12 | Windows media session | Spotify publishes it to Windows; any app may read it; no Spotify term addresses it. | Interpretation | Desktop logger permitted. |
 | S13 | Data export contents | Lifetime, all devices, JSON; includes IP and user agent; no track duration. | Documented | Minimized import; canonical play rule. |
-| S14 | Export delivery time and frequency | Not stated in Spotify documentation (third-party guides cite up to 30 days). | Unverified | Measure in M0 (O2). |
+| S14 | Export delivery time and frequency | Not stated in Spotify documentation. Measured for one account: the Extended streaming history export arrived about 1 day after the request (requested 18 Oct, received 19 Oct 2026). Account data export not yet received; allowed request frequency unknown. | Partly verified | Delivery time measured in M4; frequency open (O2). |
 | S15 | Licence | Developer licence covers private personal use. | Documented | Fits the product. |
 | S16 | oEmbed / embeds | No authentication needed (tested); embed unaltered; no local caching; no excessive calls. | Documented + tested | FR-017. |
 | S17 | Definition of Spotify Content | Includes data “made available … by Spotify”, which may include the user’s data export. | Documented; application to exports is Interpretation | Accepted risk 11.1. |
@@ -667,7 +668,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 - Albums, tracks and artists are separate first-class entities.
 - Local persistence is mandatory; no new project expenditure is acceptable.
 - The user is willing to enter some metadata manually when automatic retrieval is unavailable.
-- The user can request Spotify data exports periodically; delivery time is unknown (O2).
+- The user can request Spotify data exports periodically; the Extended streaming history took about 1 day for one account; request frequency is unknown (O2).
 - The Spotify desktop app continues to publish now-playing information to Windows.
 - Core workflows must not break when Spotify API access is unavailable.
 - The first implementation targets Windows.
@@ -713,7 +714,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | # | Item | Owner | Resolve by |
 |---|---|---|---|
 | O1 | Does a Premium Student plan qualify for Development Mode? (S1) | User — create app and test one call | Start of M5 |
-| O2 | Export delivery time and allowed request frequency (S14) | User — request both exports in M0 | M4 |
+| O2 | Export delivery time and allowed request frequency (S14). Partly resolved: Extended streaming history took about 1 day (one account, 19 Oct 2026); Account data export delivery and allowed frequency still open. | User — request both exports in M0 | M4 |
 | O3 | Technology stack and detailed technical design | Resolved: Tauri 2 + React + SQLite (docs/TSD.md) | Done |
 | O4 | Playlist snapshot retention — proposed 30 days | Technical design to confirm | M5 |
 | O5 | Spotify cache expiry — proposed 7 days | Technical design to confirm | M5 |
