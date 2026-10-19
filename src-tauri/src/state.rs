@@ -42,7 +42,8 @@ impl AppState {
             data_dir: p.app_data_dir()?,
             local_data_dir: p.app_local_data_dir()?,
         };
-        let docs = p.document_dir().unwrap_or_else(|_| paths.data_dir.clone());
+        // Backups never default under app data: the uninstaller's "delete my library" removes it (TSD §4.11).
+        let docs = p.document_dir().or_else(|_| p.home_dir())?;
         let settings = settings::load(
             &paths.settings_file(),
             Settings::defaults(&paths.data_dir, &docs),
