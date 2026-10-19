@@ -441,6 +441,15 @@ pub fn restore_locked(
             "A previous restore didn't finish. Restart Runout before restoring again.",
         ));
     }
+    // A second restore in one session would overwrite the only copy of the pre-first-restore
+    // library; start-up (cleanup_pre_restore) clears it once the restored library is healthy.
+    if pre.exists() {
+        let _ = std::fs::remove_file(&staged);
+        return Err(AppError::new(
+            Code::Conflict,
+            "Restart Runout before restoring again — the previous library is still kept as a safety copy.",
+        ));
+    }
     let old = std::mem::replace(conn, refusing()?);
     if let Err((old, e)) = old.close() {
         *conn = old;
@@ -845,8 +854,22 @@ mod tests {
             .pragma_query_value(None, "foreign_keys", |r| r.get(0))
             .unwrap();
         assert_eq!(fk, 1);
+        // restoring again in the same session must not overwrite the safety copy
+        let again = restore_backup(&db, &lib, Path::new(&made[3].path)).unwrap_err();
+        assert_eq!(again.code, Code::Conflict);
+        assert_eq!(
+            n_items(&Connection::open(&pre).unwrap()),
+            7,
+            "safety copy intact"
+        );
+        assert_eq!(n_items(&db.lock().unwrap()), 5, "live library untouched");
+        assert!(!sibling(&lib, "restore").exists(), "staged file removed");
         cleanup_pre_restore(&lib);
         assert!(!pre.exists());
+        // after restart (pre-restore cleared) a new restore works
+        restore_backup(&db, &lib, Path::new(&made[3].path)).unwrap();
+        assert_eq!(n_items(&db.lock().unwrap()), 7);
+        assert_eq!(n_items(&Connection::open(&pre).unwrap()), 5);
         drop(db);
         let _ = std::fs::remove_dir_all(d);
     }

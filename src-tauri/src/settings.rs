@@ -66,13 +66,38 @@ fn overlay(base: &Settings, patch: &Value) -> Result<Settings> {
     serde_json::from_value(v).map_err(|_| AppError::validation("A setting has the wrong type."))
 }
 
-/// Read `path` over `defaults`. Missing or unreadable file → defaults (never blocks start-up).
-pub fn load(path: &Path, defaults: Settings) -> Settings {
-    std::fs::read(path)
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-        .and_then(|v| overlay(&defaults, &v).ok())
-        .unwrap_or(defaults)
+/// Read `path` over `defaults`, key by key: unknown keys and wrong-typed values are skipped, valid
+/// ones kept. Missing file → defaults. A file that isn't a JSON object, or a `library_path` that
+/// isn't a non-empty string → error, so start-up never opens a fresh library and forgets a moved
+/// one (D15).
+pub fn load(path: &Path, defaults: Settings) -> Result<Settings> {
+    let bytes = match std::fs::read(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(defaults),
+        r => r?,
+    };
+    let bad = || {
+        AppError::new(
+            crate::error::Code::Integrity,
+            "Runout's settings file is damaged, so it can't tell where your library is. Fix or remove settings.json, then start again.",
+        )
+        .with_detail(path.display().to_string())
+    };
+    let Ok(Value::Object(file)) = serde_json::from_slice::<Value>(&bytes) else {
+        return Err(bad());
+    };
+    if file
+        .get("library_path")
+        .is_some_and(|v| !v.as_str().is_some_and(|p| !p.trim().is_empty()))
+    {
+        return Err(bad());
+    }
+    let mut s = defaults;
+    for (k, v) in file {
+        if let Ok(next) = overlay(&s, &Value::Object([(k, v)].into_iter().collect())) {
+            s = next;
+        }
+    }
+    Ok(s)
 }
 
 /// Write atomically (temp file + rename).
@@ -111,19 +136,37 @@ mod tests {
 
         let dir = std::env::temp_dir().join(format!("runout-settings-{}", std::process::id()));
         let path = dir.join(FILE);
-        assert_eq!(load(&path, d.clone()), d);
+        assert_eq!(load(&path, d.clone()).unwrap(), d);
         let moved = Settings {
             library_path: "elsewhere.db".into(),
             ..m.clone()
         };
         save(&path, &moved).unwrap();
         assert_eq!(
-            load(&path, d.clone()),
+            load(&path, d.clone()).unwrap(),
             moved,
             "load keeps a moved library_path"
         );
-        std::fs::write(&path, b"{corrupt").unwrap();
-        assert_eq!(load(&path, d.clone()), d);
+        // unknown key / wrong-typed other field: skipped, library_path kept
+        std::fs::write(
+            &path,
+            br#"{"library_path": "elsewhere.db", "future_key": 1, "size_warn_mb": "big", "backup_weekly": false}"#,
+        )
+        .unwrap();
+        let l = load(&path, d.clone()).unwrap();
+        assert_eq!(l.library_path, "elsewhere.db");
+        assert_eq!((l.size_warn_mb, l.backup_weekly), (d.size_warn_mb, false));
+        // unreadable JSON or a bad library_path: error, never silent defaults
+        for bad in [
+            &b"{corrupt"[..],
+            b"[]",
+            br#"{"library_path": 5}"#,
+            br#"{"library_path": ""}"#,
+        ] {
+            std::fs::write(&path, bad).unwrap();
+            let e = load(&path, d.clone()).unwrap_err();
+            assert_eq!(e.code, crate::error::Code::Integrity);
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 }
