@@ -100,14 +100,16 @@ pub async fn online() -> bool {
     now
 }
 
-/// Store a probe result; fires the hook when it differs from the last known value.
+/// Store a probe result; fires the hook when it differs from the last known value. No value yet
+/// counts as offline, so the first good probe at startup fires too and leftover queued links retry.
+/// Callers that hit a connectivity failure mid-request record `false` so the next good probe flips.
 pub fn record_online(now: bool) {
     let prev = ONLINE
         .lock()
         .unwrap()
         .replace((Instant::now(), now))
         .map(|(_, v)| v);
-    if prev.is_some_and(|p| p != now)
+    if prev.unwrap_or(false) != now
         && let Some(f) = &*ON_CHANGE.lock().unwrap()
     {
         f(now);
@@ -164,17 +166,18 @@ mod tests {
     }
 
     #[test]
-    fn online_change_fires_only_on_flip() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static FIRED: AtomicUsize = AtomicUsize::new(0);
-        on_online_change(|_| {
-            FIRED.fetch_add(1, Ordering::SeqCst);
-        });
+    fn online_change_fires_on_flip_and_first_online() {
+        static FIRED: Mutex<Vec<bool>> = Mutex::new(Vec::new());
+        on_online_change(|on| FIRED.lock().unwrap().push(on));
+        *ONLINE.lock().unwrap() = None; // fresh start
+        record_online(true); // startup online → fires (leftover queue retries)
         record_online(true);
-        record_online(true);
+        record_online(false); // e.g. resolve_or_queue hit a spotify.link timeout
         record_online(false);
-        record_online(false);
-        record_online(true);
-        assert_eq!(FIRED.load(Ordering::SeqCst), 2);
+        record_online(true); // next good probe → retry
+        assert_eq!(*FIRED.lock().unwrap(), [true, false, true]);
+        *ONLINE.lock().unwrap() = None;
+        record_online(false); // startup offline → nothing to report
+        assert_eq!(FIRED.lock().unwrap().len(), 3);
     }
 }

@@ -184,9 +184,58 @@ def check_commands():
             if not re.search(rf"export const {camel(n)}\b", api)]
     if not want:
         bad.append("no commands parsed from API.md (table format changed?)")
+    # Each api.ts wrapper is named camel(cmd), and every arg key it passes is a camelCased parameter of
+    # that command in commands.rs (state/app handles excluded). Commands not in commands.rs yet are skipped.
+    rs = cmds.read_text(encoding="utf-8")
+    calls = re.findall(r'export const (\w+) = [^;]*?\bcall<.*?>\("(\w+)"(.*?)\);\n', api, re.S)
+    for name, cmd, rest in calls:
+        if camel(cmd) != name:
+            bad.append(f"src/api.ts: '{name}' calls '{cmd}' (expected export const {camel(cmd)})")
+        fn = re.search(rf"pub (?:async )?fn {cmd}(?:<[^>]*>)?\((.*?)\) ->", rs, re.S)
+        obj = rest.strip().removeprefix(",").strip()
+        if not fn or not obj.startswith("{"):
+            continue
+        params = {camel(n) for n in re.findall(r"(\w+): (?!St<|State<|AppHandle<|tauri::)", fn.group(1))}
+        depth, keys = 0, [""]
+        for ch in obj[1:]:  # top-level keys of the args object literal
+            if ch in "})]" and depth == 0:
+                break
+            depth += (ch in "{([") - (ch in "})]")
+            if ch == "," and depth == 0:
+                keys.append("")
+            else:
+                keys[-1] += ch
+        for k in (m.group(1) for m in (re.match(r"\s*(\w+)", x) for x in keys) if m):
+            if k not in params:
+                bad.append(f"src/api.ts {name}: arg '{k}' is not a parameter of commands.rs {cmd}({', '.join(sorted(params))})")
+    if not calls:
+        bad.append('no call<...>("cmd") wrappers parsed from src/api.ts')
     if bad:
         failures.append("commands")
         print("--- commands: FAIL" + chr(10) + chr(10).join(bad))
+
+
+def check_link_parity():
+    # TSD §4.1: every row of src/lib/link.test.ts TABLE is in links.rs parse_table with the same state,
+    # so the mock parser and the real one agree. `${A}` <-> `{A}`; any other `${...}` <-> a `{}` arg.
+    ts_p, rs_p = ROOT / "src/lib/link.test.ts", TAURI / "src/links.rs"
+    if not (ts_p.exists() and rs_p.exists()):
+        return
+    table = re.search(r"const TABLE.*?= \[(.*?)\n\];", ts_p.read_text(encoding="utf-8"), re.S).group(1)
+    norm = lambda s: re.sub(r"\$\{[^}]*\}", "{}", s.replace("${A}", "{A}"))
+    ts = [(norm(raw), state + (":" + kind if kind else "")) for _, raw, state, kind in
+          re.findall(r'\[([`"])(.*?)\1,\s*\{\s*state:\s*"(\w+)"(?:,\s*type:\s*"(\w+)")?', table)]
+    body = re.search(r"fn parse_table\(\).*?\n    \}\n", rs_p.read_text(encoding="utf-8"), re.S).group(0)
+    rows = re.findall(r'\(\s*(?:format!\(\s*)?"((?:[^"\\]|\\.)*)".*?,\s*(?:ok\("(\w+)"\)|st\((\w+)\))\s*,?\s*\)',
+                      body, re.S)
+    rs = {(raw, f"ok:{kind}" if kind else state.lower()) for raw, kind, state in rows}
+    bad = [f"link.test.ts TABLE row {raw!r} -> {want}: no matching row in links.rs parse_table"
+           for raw, want in ts if (raw, want) not in rs]
+    if not ts:
+        bad.append("no rows parsed from link.test.ts TABLE (format changed?)")
+    if bad:
+        failures.append("link parity")
+        print("--- link parity: FAIL\n" + "\n".join(bad))
 
 
 def check_source_map():
@@ -280,6 +329,7 @@ check_restore_marker_guards()
 check_ui_purity()
 check_contract_and_attribution()
 check_commands()
+check_link_parity()
 check_source_map()
 check_design()
 

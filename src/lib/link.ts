@@ -1,6 +1,7 @@
 // TS port of TSD §4.1 link parsing: the mocks' `parse_link`, and the combined field's instant button label.
 // The real parse is the `parse_link` command; M3's links.rs reuses link.test.ts's table.
 import type { ItemType, ParsedLink } from "../api";
+import { LIMITS } from "./sanitize";
 
 const ID = "[A-Za-z0-9]{22}";
 const URL_RE = new RegExp(`^(?:https?://)?open\\.spotify\\.com/(?:intl-[a-z]{2}(?:-[a-z]{2})?/)?([a-z]+)/(${ID})(?:[/?#].*)?$`, "i");
@@ -13,6 +14,7 @@ const match = (raw: string) => { const s = raw.trim(); return s.match(URL_RE) ||
 
 /** Pure parse; `existing_id` is filled by the caller. */
 export function parseLink(raw: string): ParsedLink {
+  if (raw.trim().length > LIMITS.link) return { state: "invalid" }; // same cap as links.rs
   if (SHORT_RE.test(raw.trim())) return { state: "short" };
   const m = match(raw);
   if (!m) return { state: "invalid" };

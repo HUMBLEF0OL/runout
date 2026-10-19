@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { linkKind, parseLink } from "./link";
 
 const A = "3QJzdZJYIAcoET1GcfpNGi";
-// Same table M3's links.rs must pass (TSD §4.1).
+// Same table links.rs parse_table must pass (TSD §4.1); scripts/check.py enforces the parity.
 const TABLE: [string, ReturnType<typeof parseLink>][] = [
   [`https://open.spotify.com/album/${A}`, { state: "ok", type: "album", uri: `spotify:album:${A}` }],
   [`https://open.spotify.com/album/${A}?si=abc123`, { state: "ok", type: "album", uri: `spotify:album:${A}` }],
@@ -20,6 +20,7 @@ const TABLE: [string, ReturnType<typeof parseLink>][] = [
   [`evil.example.com/album/${A}`, { state: "invalid" }],
   ["coltrane", { state: "invalid" }],
   ["", { state: "invalid" }],
+  [`https://open.spotify.com/album/${A}?si=${"x".repeat(444)}`, { state: "invalid" }], // 501 chars > LIMITS.link
 ];
 
 describe("parseLink (TSD §4.1)", () => {

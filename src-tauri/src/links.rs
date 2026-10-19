@@ -378,6 +378,9 @@ pub async fn resolve_or_queue(
     let out = resolve_short(raw).await;
     if matches!(&out, Err(e) if e.code == Code::Offline) {
         queue_unresolved(&db.lock().unwrap(), raw, source)?;
+        // The probe may still say online (spotify.link alone timed out): mark offline so the next
+        // good probe flips and `retry_unresolved` runs (TSD §4.1 "retry on reconnect").
+        net::record_online(false);
     }
     out
 }
@@ -400,6 +403,7 @@ pub async fn retry_unresolved(db: &Mutex<Connection>) -> Result<(usize, Vec<i64>
             }
         }
         if offline {
+            net::record_online(false); // so the next good probe retries again
             break;
         }
     }
@@ -420,11 +424,10 @@ mod tests {
         Parsed::state(s)
     }
 
-    /// Rows 1–16 are `src/lib/link.test.ts`'s TABLE verbatim; the rest are Rust-side extras.
+    /// Rows 1–17 are `src/lib/link.test.ts`'s TABLE verbatim (check.py enforces it); the rest are Rust-side extras.
     #[test]
     fn parse_table() {
         use LinkState::*;
-        let long = format!("https://open.spotify.com/album/{A}?si={}", "x".repeat(600));
         let cases: Vec<(String, Parsed)> = vec![
             (format!("https://open.spotify.com/album/{A}"), ok("album")),
             (
@@ -466,6 +469,10 @@ mod tests {
             (format!("evil.example.com/album/{A}"), st(Invalid)),
             ("coltrane".into(), st(Invalid)),
             ("".into(), st(Invalid)),
+            (
+                format!("https://open.spotify.com/album/{A}?si={}", "x".repeat(444)),
+                st(Invalid),
+            ), // 501 chars > limit::LINK
             // extras
             (format!("http://open.spotify.com/album/{A}"), ok("album")),
             (format!("HTTPS://OPEN.SPOTIFY.COM/ALBUM/{A}"), ok("album")),
@@ -506,7 +513,6 @@ mod tests {
             ("https://spotify.link/".into(), st(Invalid)),
             ("https://spotify.link/aXk3P9q/?si=1".into(), st(Short)),
             ("https://spotify.link/a-b".into(), st(Invalid)),
-            (long, st(Invalid)),
         ];
         for (raw, want) in cases {
             assert_eq!(parse(&raw), want, "{raw:?}");
