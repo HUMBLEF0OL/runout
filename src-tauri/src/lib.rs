@@ -9,6 +9,7 @@ pub mod export;
 pub mod importer;
 pub mod library;
 pub mod links;
+pub mod logger;
 pub mod net;
 pub mod settings;
 pub mod state;
@@ -94,6 +95,11 @@ fn fatal_box(text: &str) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Rust-only (set_logger); the UI gets no autostart permission (TSD §7).
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(commands::handler())
         .setup(|app| {
             let st = match state::AppState::init(app.handle()) {
@@ -135,6 +141,8 @@ Settings file: {file}",
             let _ = listener.resume(); // port taken → stays off; Settings shows it off
             app.manage(listener);
             backup::spawn_scheduler(app.handle().clone());
+            app.manage(std::sync::Mutex::new(logger::Logger::default()));
+            logger::poll::spawn(app.handle().clone());
             let handle = app.handle().clone();
             net::on_online_change(move |on| {
                 let _ = handle.emit("online-changed", on);

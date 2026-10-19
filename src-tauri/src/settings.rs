@@ -25,7 +25,9 @@ pub struct Settings {
     pub include_private: bool,
     /// `SourceAppUserModelId` substrings the logger follows.
     pub logger_apps: Vec<String>,
-    /// ISO-8601 UTC end of a timed pause; `None` = not paused or paused until resumed (`logger_on`).
+    /// Logging paused (TSD §4.5): until `paused_until`, or until resumed when that is `None`.
+    pub logger_paused: bool,
+    /// ISO-8601 UTC end of a timed pause.
     pub paused_until: Option<String>,
 }
 
@@ -46,6 +48,7 @@ impl Settings {
             autostart: false,
             include_private: false,
             logger_apps: vec!["Spotify".into()],
+            logger_paused: false,
             paused_until: None,
         }
     }
@@ -62,6 +65,7 @@ pub fn merge(base: &Settings, patch: &Value) -> Result<Settings> {
         ("autostart", LOGGER),
         ("include_private", LOGGER),
         ("logger_apps", LOGGER),
+        ("logger_paused", LOGGER),
         ("paused_until", LOGGER),
     ] {
         if patch.get(key).is_some() {
@@ -163,6 +167,7 @@ mod tests {
             "backup_dir",
             "logger_on",
             "include_private",
+            "logger_paused",
             "paused_until",
         ] {
             let e = merge(&d, &json!({ key: "x" })).unwrap_err();
