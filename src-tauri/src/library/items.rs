@@ -56,6 +56,8 @@ pub struct TrackEntry {
     pub position: i64,
     pub name: String,
     pub item_id: Option<i64>,
+    /// Counted plays of the track (G-1); reconciled logger duplicates excluded (TSD §4.7).
+    pub plays: i64,
 }
 
 /// API.md §2 `NewItem`.
@@ -244,17 +246,21 @@ pub fn get(conn: &Connection, id: i64) -> Result<ItemDetail> {
 
 fn track_list(conn: &Connection, album: i64) -> Result<Vec<TrackEntry>> {
     let mut st = conn.prepare(
-        "SELECT t.id, COALESCE(t.display_name, t.spotify_uri, '') FROM item_link l
+        "SELECT t.id, COALESCE(t.display_name, t.spotify_uri, ''),
+           (SELECT COUNT(*) FROM listening_event e
+             WHERE e.item_id = t.id AND e.counts_as_play AND e.reconciled_with IS NULL)
+         FROM item_link l
          JOIN item t ON t.id = l.from_id WHERE l.to_id = ?1 AND l.kind = 'on_album' ORDER BY t.id",
     )?;
-    let rows = st.query_map([album], |r| Ok((r.get::<_, i64>(0)?, r.get(1)?)))?;
+    let rows = st.query_map([album], |r| Ok((r.get::<_, i64>(0)?, r.get(1)?, r.get(2)?)))?;
     let mut out = vec![];
     for (n, row) in rows.enumerate() {
-        let (id, name) = row?;
+        let (id, name, plays) = row?;
         out.push(TrackEntry {
             position: n as i64 + 1,
             name,
             item_id: Some(id),
+            plays,
         });
     }
     Ok(out)

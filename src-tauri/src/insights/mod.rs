@@ -1,0 +1,358 @@
+//! Insights and the plays list (TSD §4.9, API.md §4): SQL over `item`, `status_history` and
+//! `listening_event` only. Every function takes the library connection and nothing else: this
+//! module has no handle to the Spotify cache DB (FR-031; `scripts/check.py` greps for it).
+use chrono::{DateTime, Months, TimeDelta, Utc};
+use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
+
+use crate::error::Result;
+
+pub mod collection;
+pub mod listening;
+pub mod plays;
+pub mod take;
+
+/// API.md §2 `Range`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum Range {
+    #[serde(rename = "7d")]
+    Week,
+    #[serde(rename = "30d")]
+    Month,
+    #[serde(rename = "12m")]
+    Year,
+    #[serde(rename = "all")]
+    All,
+}
+
+impl Range {
+    /// `(start, start of the period before)` as stored UTC strings; `None` for `all`.
+    fn bounds(self, now: DateTime<Utc>) -> Option<(String, String)> {
+        let (a, b) = match self {
+            Self::Week => (now - TimeDelta::days(7), now - TimeDelta::days(14)),
+            Self::Month => (now - TimeDelta::days(30), now - TimeDelta::days(60)),
+            Self::Year => (now - Months::new(12), now - Months::new(24)),
+            Self::All => return None,
+        };
+        Some((utc(a), utc(b)))
+    }
+
+    /// Start of the range (`""` for `all`, which every stored timestamp sorts after).
+    fn start(self, now: DateTime<Utc>) -> String {
+        self.bounds(now).map(|b| b.0).unwrap_or_default()
+    }
+}
+
+/// API.md §2 `Freshness`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Freshness {
+    pub logger_last_event: Option<String>,
+    pub export_latest_event: Option<String>,
+}
+
+/// API.md §2 `Sourced<T>` (FR-032). `sources` never holds `A` (DESIGN §7).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Sourced<T> {
+    pub data: T,
+    pub sources: Vec<&'static str>,
+    pub freshness: Freshness,
+}
+
+/// The stored UTC format (`ended_at_utc`, column defaults).
+pub(crate) fn utc(t: DateTime<Utc>) -> String {
+    t.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+/// The base view as a CTE (`base`): events minus reconciled logger rows (TSD §4.7) and, unless
+/// `include_private`, private sessions (TSD §4.8). `local` = local time, UTC when unknown.
+// ponytail: a CTE rather than a stored view, because the private-session filter is a setting.
+pub(crate) fn base(include_private: bool) -> String {
+    let private = if include_private {
+        ""
+    } else {
+        " AND e.private_session = 0"
+    };
+    format!(
+        "WITH base AS (SELECT e.*, COALESCE(e.ended_at_local, substr(e.ended_at_utc, 1, 19)) AS local
+           FROM listening_event e WHERE e.reconciled_with IS NULL{private})"
+    )
+}
+
+/// Appended to `base(..)`: `attr(item_id, event_id)` pairs each event with the records it counts
+/// for: its track (`item_id`), that track's album (`on_album`) and artists (`by_artist`, direct or
+/// through the album). An event linked to an album counts for the album and its artists.
+pub(crate) const ATTR: &str = ", attr(item_id, event_id) AS (
+    SELECT item_id, id FROM base WHERE item_id IS NOT NULL
+    UNION SELECT l.to_id, b.id FROM base b
+      JOIN item_link l ON l.from_id = b.item_id AND l.kind IN ('on_album', 'by_artist')
+    UNION SELECT l2.to_id, b.id FROM base b
+      JOIN item_link l ON l.from_id = b.item_id AND l.kind = 'on_album'
+      JOIN item_link l2 ON l2.from_id = l.to_id AND l2.kind = 'by_artist')";
+
+/// `ms` → hours, one decimal.
+pub(crate) fn hours(ms: i64) -> f64 {
+    (ms as f64 / 360_000.0).round() / 10.0
+}
+
+/// Share as a percentage with one decimal; 0 when there is nothing to divide.
+pub(crate) fn pct(part: i64, whole: i64) -> f64 {
+    if whole == 0 {
+        0.0
+    } else {
+        (part as f64 * 1000.0 / whole as f64).round() / 10.0
+    }
+}
+
+pub fn freshness(conn: &Connection) -> Result<Freshness> {
+    Ok(conn.query_row(
+        "SELECT (SELECT MAX(ended_at_utc) FROM listening_event WHERE source = 'logger'),
+                (SELECT MAX(ended_at_utc) FROM listening_event WHERE source = 'export')",
+        [],
+        |r| {
+            Ok(Freshness {
+                logger_last_event: r.get(0)?,
+                export_latest_event: r.get(1)?,
+            })
+        },
+    )?)
+}
+
+/// `data` with `U` plus `S` (logger) / `E` (export) when the base view holds such events.
+pub(crate) fn sourced<T>(conn: &Connection, include_private: bool, data: T) -> Result<Sourced<T>> {
+    let (s, e): (bool, bool) = conn.query_row(
+        &format!(
+            "{} SELECT EXISTS(SELECT 1 FROM base WHERE source = 'logger'),
+                       EXISTS(SELECT 1 FROM base WHERE source = 'export')",
+            base(include_private)
+        ),
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let mut sources = vec!["U"];
+    sources.extend(s.then_some("S"));
+    sources.extend(e.then_some("E"));
+    Ok(Sourced {
+        data,
+        sources,
+        freshness: freshness(conn)?,
+    })
+}
+
+/// `YYYY-MM` of the last `n` months up to `now`, oldest first.
+pub(crate) fn last_months(now: DateTime<Utc>, n: u32) -> Vec<String> {
+    (0..n)
+        .rev()
+        .map(|k| (now - Months::new(k)).format("%Y-%m").to_string())
+        .collect()
+}
+
+/// Synthetic library + events shared by the insight tests; every total below is hand-computed
+/// in the tests from this list.
+#[cfg(test)]
+pub(crate) mod fixture {
+    use chrono::{DateTime, TimeZone, Utc};
+    use rusqlite::Connection;
+
+    use crate::db;
+    use crate::importer::events::{Event, Source, insert};
+
+    pub fn now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 10, 19, 12, 0, 0).unwrap()
+    }
+
+    pub const ARTIST: i64 = 1;
+    pub const ALBUM: i64 = 2;
+    pub const LONELY_ALBUM: i64 = 3;
+    pub const T1: i64 = 10;
+    pub const T2: i64 = 11;
+    pub const T3: i64 = 12;
+    pub const TWIN_A: i64 = 20;
+    pub const TWIN_B: i64 = 21;
+
+    pub struct Ev<'a> {
+        pub source: Source,
+        pub utc: &'a str,
+        pub ms: i64,
+        pub track: &'a str,
+        pub artist: &'a str,
+        pub album: &'a str,
+        pub item: Option<i64>,
+        pub platform: &'a str,
+        pub skipped: bool,
+        pub private: bool,
+    }
+
+    pub fn ev<'a>(utc: &'a str, ms: i64, track: &'a str, item: Option<i64>) -> Ev<'a> {
+        Ev {
+            source: Source::Export,
+            utc,
+            ms,
+            track,
+            artist: "Zorblax",
+            album: "Album One",
+            item,
+            platform: "windows",
+            skipped: false,
+            private: false,
+        }
+    }
+
+    pub fn put(c: &Connection, e: Ev) -> i64 {
+        insert(
+            c,
+            &Event {
+                source: e.source,
+                ended_at_utc: e.utc.into(),
+                // fixture zone: local = UTC
+                ended_at_local: Some(e.utc[..19].into()),
+                ms_played: e.ms,
+                track_name: e.track.into(),
+                artist_name: e.artist.into(),
+                album_name: e.album.into(),
+                spotify_track_uri: None,
+                platform: Some(e.platform.into()),
+                reason_start: None,
+                reason_end: None,
+                shuffle: None,
+                skipped: Some(e.skipped),
+                offline: None,
+                private_session: e.private,
+                item_id: e.item,
+                import_batch_id: None,
+            },
+        )
+        .unwrap()
+        .unwrap()
+    }
+
+    /// Ids of the events, in the order listed (`e1`..`e9`).
+    pub fn build() -> (Connection, Vec<i64>) {
+        let c = db::open_in_memory().unwrap();
+        c.execute_batch(
+            "INSERT INTO item(id, type, display_name, rating, status, in_backlog, added_at, explored_at, review, reviewed_at, modified_at) VALUES
+               (1, 'artist', 'Zorblax', NULL, 'in_progress', 0, '2026-01-05T10:00:00Z', NULL, NULL, NULL, '2026-03-01T00:00:00Z'),
+               (2, 'album', 'Album One', 4.0, 'explored', 0, '2026-02-01T10:00:00Z', '2026-03-10T10:00:00Z', 'Good.', '2026-03-10T10:00:00Z', '2026-03-01T00:00:00Z'),
+               (3, 'album', 'Lonely Album', NULL, 'planned', 1, '2026-09-25T10:00:00Z', NULL, NULL, NULL, '2026-03-01T00:00:00Z'),
+               (10, 'track', 'Song One', NULL, 'planned', 0, '2026-02-01T10:00:00Z', NULL, NULL, NULL, '2026-03-01T00:00:00Z'),
+               (11, 'track', 'Song Two', 5.0, 'explored', 0, '2025-11-01T10:00:00Z', '2025-12-01T10:00:00Z', NULL, NULL, '2026-03-01T00:00:00Z'),
+               (12, 'track', 'Song Three', NULL, 'planned', 1, '2026-02-01T10:00:00Z', NULL, NULL, NULL, '2026-03-01T00:00:00Z'),
+               (20, 'track', 'Twin', NULL, 'planned', 0, '2026-02-01T10:00:00Z', NULL, NULL, NULL, '2026-03-01T00:00:00Z'),
+               (21, 'track', 'Twin', NULL, 'planned', 0, '2026-02-01T10:00:00Z', NULL, NULL, NULL, '2026-03-01T00:00:00Z');
+             INSERT INTO item_link(from_id, to_id, kind) VALUES
+               (10, 2, 'on_album'), (11, 2, 'on_album'), (12, 2, 'on_album'),
+               (10, 1, 'by_artist'), (11, 1, 'by_artist'), (12, 1, 'by_artist'), (2, 1, 'by_artist');",
+        )
+        .unwrap();
+        let mut ids = vec![];
+        // e1: in 7d, phone, counted
+        ids.push(put(
+            &c,
+            Ev {
+                platform: "iOS 17.1 (iPhone15,2)",
+                ..ev("2026-10-18T10:00:00Z", 200_000, "Song One", Some(T1))
+            },
+        ));
+        // e2: in 7d, skipped, counted
+        ids.push(put(
+            &c,
+            Ev {
+                skipped: true,
+                ..ev("2026-10-17T10:00:00Z", 100_000, "Song One", Some(T1))
+            },
+        ));
+        // e3: in 7d, not counted (< 30 s), skipped, new artist, no record
+        ids.push(put(
+            &c,
+            Ev {
+                artist: "Quuxley",
+                album: "Elsewhere",
+                skipped: true,
+                ..ev("2026-10-16T10:00:00Z", 20_000, "Other Song", None)
+            },
+        ));
+        // e4: logger duplicate of e1 → reconciled below, never counted
+        ids.push(put(
+            &c,
+            Ev {
+                source: Source::Logger,
+                ..ev("2026-10-18T10:00:40Z", 200_000, "Song One", Some(T1))
+            },
+        ));
+        // e5: private session → excluded unless the setting is on
+        ids.push(put(
+            &c,
+            Ev {
+                private: true,
+                ..ev("2026-10-15T10:00:00Z", 60_000, "Secret", None)
+            },
+        ));
+        // e6: 2025, Song Two
+        ids.push(put(
+            &c,
+            ev("2025-01-10T10:00:00Z", 120_000, "Song Two", Some(T2)),
+        ));
+        // e7: the 7 days before the 7d range
+        ids.push(put(
+            &c,
+            ev("2026-10-10T10:00:00Z", 90_000, "Song One", Some(T1)),
+        ));
+        // e8, e9: ambiguous name ("Twin" ×2), unmatched
+        ids.push(put(
+            &c,
+            Ev {
+                artist: "Nobody",
+                album: "Album One",
+                ..ev("2026-06-01T10:00:00Z", 40_000, "Twin", None)
+            },
+        ));
+        ids.push(put(
+            &c,
+            Ev {
+                artist: "Nobody",
+                album: "Album One",
+                ..ev("2026-06-02T10:00:00Z", 10_000, "Twin", None)
+            },
+        ));
+        c.execute(
+            "UPDATE listening_event SET reconciled_with = ?1 WHERE id = ?2",
+            [ids[0], ids[3]],
+        )
+        .unwrap();
+        (c, ids)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn freshness_and_sources() {
+        let (c, _) = fixture::build();
+        let f = freshness(&c).unwrap();
+        assert_eq!(f.logger_last_event.as_deref(), Some("2026-10-18T10:00:40Z"));
+        assert_eq!(
+            f.export_latest_event.as_deref(),
+            Some("2026-10-18T10:00:00Z")
+        );
+        // the only logger row is reconciled → no S
+        assert_eq!(sourced(&c, false, ()).unwrap().sources, vec!["U", "E"]);
+    }
+
+    #[test]
+    fn helpers() {
+        assert_eq!(hours(320_000), 0.1);
+        assert_eq!(hours(5_400_000), 1.5);
+        assert_eq!(pct(2, 3), 66.7);
+        assert_eq!(pct(1, 0), 0.0);
+        assert_eq!(
+            last_months(fixture::now(), 3),
+            vec!["2026-08", "2026-09", "2026-10"]
+        );
+        assert_eq!(
+            Range::Week.bounds(fixture::now()),
+            Some(("2026-10-12T12:00:00Z".into(), "2026-10-05T12:00:00Z".into()))
+        );
+        assert_eq!(Range::All.start(fixture::now()), "");
+    }
+}

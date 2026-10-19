@@ -15,6 +15,11 @@ use crate::capture::{CaptureInfo, Listener};
 use crate::cleanup;
 use crate::error::{AppError, Result};
 use crate::export;
+use crate::insights::collection::{self, CollectionInsights};
+use crate::insights::listening::{self, ListeningInsights, YearReview};
+use crate::insights::plays::{self, ItemListening, Play, PlayQuery, Unmatched};
+use crate::insights::take::{self, TakeInsights};
+use crate::insights::{self, Freshness, Range, Sourced};
 use crate::library::dashboard::{self, Counts, Dashboard};
 use crate::library::filters::{self, ItemFilter, SavedFilter};
 use crate::library::items::{self, ItemDetail, ItemPatch, ItemSummary, NewItem};
@@ -77,6 +82,15 @@ pub fn handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + 
         delete_library,
         record_page_visit,
         get_success_metrics,
+        list_plays,
+        list_unmatched,
+        link_play,
+        get_item_listening,
+        get_freshness,
+        get_listening_insights,
+        get_collection_insights,
+        get_take_insights,
+        get_year_review,
     ]
 }
 
@@ -430,6 +444,65 @@ pub fn record_page_visit(st: St<'_>, page: String) -> Result<()> {
 #[tauri::command(async)]
 pub fn get_success_metrics(st: St<'_>) -> Result<SuccessMetrics> {
     usage::get_success_metrics(&st.db.lock().unwrap())
+}
+
+/* ------------------------------------------------------------- R2 insights */
+
+fn private(st: &AppState) -> bool {
+    settings_now(st).include_private
+}
+
+#[tauri::command(async)]
+pub fn list_plays(st: St<'_>, q: PlayQuery) -> Result<Page<Play>> {
+    plays::list_plays(&st.db.lock().unwrap(), &q, private(&st), chrono::Utc::now())
+}
+
+#[tauri::command(async)]
+pub fn list_unmatched(st: St<'_>) -> Result<Vec<Unmatched>> {
+    plays::list_unmatched(&st.db.lock().unwrap(), private(&st))
+}
+
+#[tauri::command(async)]
+pub fn link_play(st: St<'_>, event_id: i64, item_id: i64) -> Result<()> {
+    plays::link_play(&st.db.lock().unwrap(), event_id, item_id).map(drop)
+}
+
+#[tauri::command(async)]
+pub fn get_item_listening(st: St<'_>, id: i64) -> Result<Sourced<ItemListening>> {
+    plays::item_listening(&st.db.lock().unwrap(), id, private(&st), chrono::Utc::now())
+}
+
+#[tauri::command(async)]
+pub fn get_freshness(st: St<'_>) -> Result<Freshness> {
+    insights::freshness(&st.db.lock().unwrap())
+}
+
+#[tauri::command(async)]
+pub fn get_listening_insights(st: St<'_>, range: Range) -> Result<Sourced<ListeningInsights>> {
+    listening::listening(
+        &st.db.lock().unwrap(),
+        range,
+        private(&st),
+        chrono::Utc::now(),
+    )
+}
+
+#[tauri::command(async)]
+pub fn get_collection_insights(st: St<'_>, range: Range) -> Result<Sourced<CollectionInsights>> {
+    collection::collection(&st.db.lock().unwrap(), range, chrono::Utc::now())
+}
+
+#[tauri::command(async)]
+pub fn get_take_insights(st: St<'_>) -> Result<Sourced<TakeInsights>> {
+    take::take(&st.db.lock().unwrap(), private(&st), chrono::Utc::now())
+}
+
+#[tauri::command(async)]
+pub fn get_year_review(st: St<'_>, year: i32) -> Result<Sourced<YearReview>> {
+    if !(1900..=9999).contains(&year) {
+        return Err(AppError::validation("Pick a year between 1900 and 9999."));
+    }
+    listening::year_review(&st.db.lock().unwrap(), year, private(&st))
 }
 
 #[cfg(test)]
