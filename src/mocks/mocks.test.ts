@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createItem, getCounts, getDashboard, getItem, linkItems, listItems, setStatus, unlinkItems, updateItem, type AppError } from "../api";
+import { createItem, getCounts, getDashboard, getItem, linkItems, listItems, listSavedFilters, listTags, renameTag, saveFilter, setStatus, unlinkItems, updateItem, type AppError } from "../api";
 import { setDev } from "./devState";
 
 describe("mock commands (API.md)", () => {
@@ -26,6 +26,28 @@ describe("mock commands (API.md)", () => {
     expect(d.status).toBe("explored");
     expect(d.in_backlog).toBe(false);
     expect(d.history[0]).toMatchObject({ from: "planned", to: "explored" });
+    const back = await setStatus(b.id, "planned");
+    expect(back.explored_at).toBeNull();
+    expect(back.in_backlog).toBe(true);
+    const orders = (await listItems({ in_backlog: true, limit: 1000 })).rows.map((r) => r.backlog_order ?? 0);
+    expect(back.backlog_order).toBe(Math.max(...orders));
+    await setStatus(b.id, "not_for_me");
+    const prog = await setStatus(b.id, "in_progress");
+    expect(prog.explored_at).toBeNull();
+    expect(prog.in_backlog).toBe(false);
+  });
+  it("create_item with status explored sets explored_at and skips the backlog, like set_status", async () => {
+    const it = await createItem({ type: "album", display_name: "Heard it", spotify_uri: null, provenance: "user", status: "explored" });
+    expect(it.explored_at).not.toBeNull();
+    expect(it.in_backlog).toBe(false);
+    expect(it.backlog_order).toBeNull();
+  });
+  it("save_filter cleans tags so rename_tag rewrites them", async () => {
+    const tag = (await listTags())[0];
+    const f = await saveFilter("Spaced", { tags: [` ${tag.name}`, tag.name.toUpperCase(), " "] });
+    expect(f.definition.tags).toEqual([tag.name]);
+    await renameTag(tag.id, "mellowzz");
+    expect((await listSavedFilters()).find((x) => x.id === f.id)?.definition.tags).toEqual(["mellowzz"]);
   });
   it("create_item with album_id links the new track on_album (G-3)", async () => {
     const [album] = (await listItems({ type: "album", limit: 1 })).rows;
