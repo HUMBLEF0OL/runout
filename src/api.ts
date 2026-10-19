@@ -102,7 +102,7 @@ export interface Unmatched { norm_key: string; track_name: string; artist_name: 
 export interface ItemListening { plays: number; ms_total: number; last_played_local: string | null; by_month: { month: string; plays: number }[] }
 export interface ImportPreview { music: number; podcasts_skipped: number; overlap: number; playlists: number; private: number; from: string; until: string; files: string[] }
 export interface ImportResult { batch_id: number; added: number; duplicates: number; reconciled: number; playlists: number; took_ms: number }
-export interface ImportRecord { id: number; kind: "account" | "extended"; imported_at: string; record_count: number; latest_event_utc: string }
+export interface ImportRecord { id: number; kind: "account" | "extended"; imported_at: string; record_count: number; latest_event_utc: string | null }
 export interface RankRow { name: string; by: string; plays: number; hours: number; item_id: number | null; rating: number | null; status: Status | null }
 export interface PeriodStats { plays: number; plays_prev: number; ms: number; ms_prev: number; new_artists: number; rated_this_period: number; unrated_plays: number }
 export interface ListeningInsights {

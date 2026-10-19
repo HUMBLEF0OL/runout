@@ -125,7 +125,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `pick_import_source` | — | `string \| null` | Folder or .zip |
 | `preview_import` | `path` | `{music, podcasts_skipped, overlap, playlists, private, from, until, files: string[]}` | No writes (SC-10 step 2) |
 | `run_import` | `path` | `{batch_id, added, duplicates, reconciled, playlists, took_ms}` | One transaction; `import_unrecognized` on bad file (TSD §6) |
-| `list_imports` | — | `{id, kind, imported_at, record_count, latest_event_utc}[]` | Settings |
+| `list_imports` | — | `{id, kind, imported_at, record_count, latest_event_utc: string \| null}[]` | Settings; `latest_event_utc` is null for `account` batches (no plays) |
 | `get_freshness` | — | `Freshness` | Rail freshness box |
 | `get_listening_insights` | `range` | `Sourced<{top_artists, top_albums, top_tracks, monthly, heatmap, skip_rate, phone_share, totals}>` | FR-031; no source A |
 | `get_collection_insights` | `range` | `Sourced<{backlog_growth, completion, rating_spread, tag_trends}>` | |

@@ -113,10 +113,12 @@ impl AppState {
                     "The moved library didn't match.",
                 ));
             }
-            let mut s = self.settings.lock().unwrap().clone();
+            // one guard from read to write: no lost update from a concurrent settings change
+            let mut held = self.settings.lock().unwrap();
+            let mut s = held.clone();
             s.library_path = to.to_string_lossy().into_owned();
             settings::save(&self.paths.settings_file(), &s)?;
-            *self.settings.lock().unwrap() = s;
+            *held = s;
             Ok(new)
         })();
         let new = match new {

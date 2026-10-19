@@ -66,7 +66,8 @@ export default function Settings() {
   if (s.error || !s.data) return <>{head}<ErrorBanner title="Couldn’t load your settings." error={s.error} onRetry={s.reload} /></>;
   const st = s.data;
   const latest = backups.data?.[0];
-  const lastImport = imports.data?.[0];
+  // account batches carry no plays (latest_event_utc null), so take the newest that does
+  const lastPlay = imports.data?.find((m) => m.latest_event_utc)?.latest_event_utc;
   const lg = logger.data;
   const sp = spotify.data;
 
@@ -173,7 +174,7 @@ export default function Settings() {
 
         {r2 && (
           <Card id="import" title="Spotify history">
-            {lastImport ? <span>Last import covers plays up to {dayY(lastImport.latest_event_utc)}.</span> : <span>No export imported yet.</span>}
+            {lastPlay ? <span>Last import covers plays up to {dayY(lastPlay)}.</span> : <span>No listening history imported yet.</span>}
             <span className="text-muted text-sm leading-[1.5]">Request a fresh copy from Spotify’s privacy page, then import it here. Plays already imported are skipped.</span>
             {!!imports.data?.length && (
               <div className="flex flex-col gap-1">

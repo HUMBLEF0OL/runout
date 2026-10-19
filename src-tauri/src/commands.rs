@@ -135,24 +135,40 @@ pub fn list_items(st: St<'_>, filter: ItemFilter) -> Result<Page<ItemSummary>> {
 
 #[tauri::command(async)]
 pub fn get_item(st: St<'_>, id: i64) -> Result<ItemDetail> {
-    items::get(&st.db.lock().unwrap(), id)
+    items::detail(&st.db.lock().unwrap(), id, private(&st))
+}
+
+/// A mutation's returned detail counts track-list plays without private sessions; re-read it
+/// when the setting is on so it matches `get_item` (TSD §4.8).
+fn with_private(st: &AppState, conn: &rusqlite::Connection, d: ItemDetail) -> Result<ItemDetail> {
+    if d.track_list.is_some() && private(st) {
+        items::detail(conn, d.summary.id, true)
+    } else {
+        Ok(d)
+    }
 }
 
 /// Free text in `input` is cleaned by `items::create` (text.rs).
 #[tauri::command(async)]
 pub fn create_item(st: St<'_>, input: NewItem) -> Result<ItemDetail> {
-    items::create(&mut st.db.lock().unwrap(), input)
+    let mut db = st.db.lock().unwrap();
+    let d = items::create(&mut db, input)?;
+    with_private(&st, &db, d)
 }
 
 /// Free text in `patch` is cleaned by `items::update` (text.rs).
 #[tauri::command(async)]
 pub fn update_item(st: St<'_>, id: i64, patch: ItemPatch) -> Result<ItemDetail> {
-    items::update(&mut st.db.lock().unwrap(), id, patch)
+    let mut db = st.db.lock().unwrap();
+    let d = items::update(&mut db, id, patch)?;
+    with_private(&st, &db, d)
 }
 
 #[tauri::command(async)]
 pub fn set_status(st: St<'_>, id: i64, status: Status, note: Option<String>) -> Result<ItemDetail> {
-    status::set_status(&mut st.db.lock().unwrap(), id, status, note.as_deref())
+    let mut db = st.db.lock().unwrap();
+    let d = status::set_status(&mut db, id, status, note.as_deref())?;
+    with_private(&st, &db, d)
 }
 
 #[tauri::command(async)]
@@ -482,15 +498,22 @@ fn change_logger<R: Runtime>(
     let mut lg = lg.lock().unwrap();
     let db = st.db.lock().unwrap();
     let now = chrono::Utc::now();
-    let mut s = settings_now(st);
+    // held from read to write so a concurrent update_settings isn't overwritten (lock order
+    // logger -> db -> settings)
+    let mut held = st.settings.lock().unwrap();
+    let mut s = held.clone();
     f(&mut s)?;
-    if !logger::active(&s, now)
-        && let Some(id) = lg.close(&db, now)?
-    {
+    let logged = if logger::active(&s, now) {
+        None
+    } else {
+        lg.close(&db, now)?
+    };
+    settings::save(&st.paths.settings_file(), &s)?;
+    *held = s.clone();
+    drop(held);
+    if let Some(id) = logged {
         let _ = app.emit("play-logged", logger::play(&db, id)?);
     }
-    settings::save(&st.paths.settings_file(), &s)?;
-    *st.settings.lock().unwrap() = s.clone();
     let status = lg.status(&db, &s, now)?;
     let _ = app.emit("logger-status", &status);
     Ok(status)
@@ -596,7 +619,7 @@ pub fn list_exported_playlists(st: St<'_>) -> Result<Vec<ExportedPlaylist>> {
 
 #[tauri::command(async)]
 pub fn get_playlist_checkup(st: St<'_>, id: i64) -> Result<PlaylistCheckup> {
-    playlists::checkup(&st.db.lock().unwrap(), id)
+    playlists::checkup(&st.db.lock().unwrap(), id, private(&st))
 }
 
 /* ------------------------------------------------------------- R2 insights */

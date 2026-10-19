@@ -102,12 +102,14 @@ mod imp {
             if title.is_empty() {
                 return Ok(None); // between tracks
             }
+            let tl = s.GetTimelineProperties()?;
             let track = Track {
                 title,
                 artist: p.Artist()?.to_string(),
                 album: p.AlbumTitle()?.to_string(),
                 // TimeSpan is in 100 ns units
-                duration_ms: s.GetTimelineProperties()?.EndTime()?.Duration / 10_000,
+                duration_ms: tl.EndTime()?.Duration / 10_000,
+                position_ms: tl.Position()?.Duration / 10_000,
             };
             Ok(Some((track, state)))
         }

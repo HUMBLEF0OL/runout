@@ -1,10 +1,16 @@
 //! Pure play accumulation (TSD §4.5): feed it what the media session shows, get back each finished
 //! play. `ms_played` = time spent in `Playing` (pauses excluded; a seek is just another `Playing`
-//! snapshot, so it adds nothing). A play closes on a track change or session end; under 1 s is noise.
+//! snapshot, so it adds nothing). A play closes on a track change, a replay of the same track
+//! (timeline back to the start) or session end; under 1 s is noise.
 use chrono::{DateTime, Utc};
 
 /// Plays shorter than this are dropped (TSD §4.5 noise filter).
 pub const MIN_MS: i64 = 1000;
+
+/// A timeline position this close to the start, after being further in, is a replay (repeat-one,
+/// "previous" restart or seek to 0): Spotify logs each as a new play, so does the logger.
+// ponytail: position-based; a seek to 0:01 also counts as a replay, which matches Spotify's own rows.
+const RESTART_MS: i64 = 3000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayState {
@@ -20,6 +26,8 @@ pub struct Track {
     pub artist: String,
     pub album: String,
     pub duration_ms: i64,
+    /// Timeline position when the snapshot was taken (0 when the app doesn't report it).
+    pub position_ms: i64,
 }
 
 impl Track {
@@ -44,6 +52,8 @@ pub struct Accumulator {
     ms: i64,
     playing_since: Option<DateTime<Utc>>,
     last_played: Option<DateTime<Utc>>,
+    /// Furthest timeline position seen for this play (replay detection).
+    pos_ms: i64,
 }
 
 impl Accumulator {
@@ -54,7 +64,9 @@ impl Accumulator {
         at: DateTime<Utc>,
     ) -> Option<Closed> {
         let changed = match (&self.track, &now) {
-            (Some(cur), Some((t, _))) => !cur.same(t),
+            (Some(cur), Some((t, _))) => {
+                !cur.same(t) || (t.position_ms < RESTART_MS && self.pos_ms >= RESTART_MS)
+            }
             (None, None) => false,
             _ => true,
         };
@@ -62,6 +74,7 @@ impl Accumulator {
         let Some((track, state)) = now else {
             return closed;
         };
+        self.pos_ms = self.pos_ms.max(track.position_ms);
         if changed {
             self.track = Some(track);
         } else if let Some(cur) = &mut self.track {
@@ -123,6 +136,7 @@ mod tests {
             artist: "Fixture Artist".into(),
             album: "Fixture Album".into(),
             duration_ms: 200_000,
+            position_ms: 0,
         }
     }
 
@@ -200,6 +214,36 @@ mod tests {
         ] {
             assert_eq!(run(&steps), want, "{name}");
         }
+    }
+
+    #[test]
+    fn same_track_replayed_back_to_back_is_two_plays() {
+        // TSD §4.7: a track repeated back-to-back; the timeline returning to the start splits it
+        let at = |pos_s: i64| {
+            Some((
+                Track {
+                    position_ms: pos_s * 1000,
+                    ..song("A")
+                },
+                Playing,
+            ))
+        };
+        let mut a = Accumulator::default();
+        assert_eq!(a.observe(at(0), t(0.0)), None);
+        assert_eq!(a.observe(at(150), t(150.0)), None);
+        let first = a.observe(at(1), t(200.0)).unwrap();
+        assert_eq!(first.ms_played, 200_000);
+        assert_eq!(a.observe(at(100), t(300.0)), None); // later polls don't split again
+        let second = a.observe(None, t(400.0)).unwrap();
+        assert_eq!(
+            (second.track.title.as_str(), second.ms_played),
+            ("A", 200_000)
+        );
+        // a pause near the start then resume is still one play
+        let mut b = Accumulator::default();
+        b.observe(at(1), t(0.0));
+        b.observe(at(2), t(2.0));
+        assert_eq!(b.observe(at(2), t(5.0)), None);
     }
 
     #[test]

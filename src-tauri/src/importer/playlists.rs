@@ -127,7 +127,9 @@ pub struct PlaylistCheckup {
     pub tracks: Vec<CheckRow>,
 }
 
-fn rows(conn: &Connection, m: &Matcher, id: i64) -> Result<Vec<CheckRow>> {
+/// `never_played` reads the insights base view (TSD §4.9): reconciled logger rows and, unless
+/// `include_private`, private sessions don't count.
+fn rows(conn: &Connection, m: &Matcher, id: i64, include_private: bool) -> Result<Vec<CheckRow>> {
     let mut st = conn.prepare(
         "SELECT position, track_name, artist_name, spotify_track_uri FROM exported_playlist_item
          WHERE playlist_id = ?1 ORDER BY position",
@@ -136,10 +138,11 @@ fn rows(conn: &Connection, m: &Matcher, id: i64) -> Result<Vec<CheckRow>> {
     let mut tags = conn.prepare(
         "SELECT t.name FROM item_tag it JOIN tag t ON t.id = it.tag_id WHERE it.item_id = ?1 ORDER BY t.name",
     )?;
-    let mut played = conn.prepare(
-        "SELECT EXISTS (SELECT 1 FROM listening_event WHERE counts_as_play
+    let mut played = conn.prepare(&format!(
+        "{} SELECT EXISTS (SELECT 1 FROM base WHERE counts_as_play
            AND (spotify_track_uri = ?1 OR item_id = ?2))",
-    )?;
+        crate::insights::base(include_private)
+    ))?;
     let raw = st.query_map([id], |r| {
         Ok((
             r.get::<_, i64>(0)?,
@@ -187,7 +190,8 @@ pub fn list(conn: &Connection) -> Result<Vec<ExportedPlaylist>> {
     lists
         .into_iter()
         .map(|(id, name)| {
-            let rs = rows(conn, &m, id)?;
+            // never_played isn't summarised here, so the private-session setting doesn't matter
+            let rs = rows(conn, &m, id, false)?;
             Ok(ExportedPlaylist {
                 id,
                 name,
@@ -199,7 +203,7 @@ pub fn list(conn: &Connection) -> Result<Vec<ExportedPlaylist>> {
         .collect()
 }
 
-pub fn checkup(conn: &Connection, id: i64) -> Result<PlaylistCheckup> {
+pub fn checkup(conn: &Connection, id: i64, include_private: bool) -> Result<PlaylistCheckup> {
     let exists: Option<i64> = conn
         .query_row(
             "SELECT id FROM exported_playlist WHERE id = ?1",
@@ -214,7 +218,7 @@ pub fn checkup(conn: &Connection, id: i64) -> Result<PlaylistCheckup> {
     }
     let m = Matcher::load(conn)?;
     Ok(PlaylistCheckup {
-        tracks: rows(conn, &m, id)?,
+        tracks: rows(conn, &m, id, include_private)?,
     })
 }
 
@@ -268,7 +272,7 @@ mod tests {
         let all = list(&c).unwrap();
         let mix = all.iter().find(|p| p.name == "Fixture Mix").unwrap();
         assert_eq!((mix.tracks, mix.dupes, mix.low), (4, 1, 2));
-        let t = checkup(&c, mix.id).unwrap().tracks;
+        let t = checkup(&c, mix.id, false).unwrap().tracks;
         let flags: Vec<_> = t
             .iter()
             .map(|r| (r.dupe, r.rating, r.never_played))
@@ -283,8 +287,13 @@ mod tests {
             ]
         );
         assert_eq!(t[0].tags, ["calm"]);
+        // a play heard only in a private session counts only with the setting on (D24, TSD §4.8)
+        c.execute("UPDATE listening_event SET private_session = 1", [])
+            .unwrap();
+        assert!(checkup(&c, mix.id, false).unwrap().tracks[0].never_played);
+        assert!(!checkup(&c, mix.id, true).unwrap().tracks[0].never_played);
         assert_eq!(
-            checkup(&c, 999).err().unwrap().code,
+            checkup(&c, 999, false).err().unwrap().code,
             crate::error::Code::NotFound
         );
     }

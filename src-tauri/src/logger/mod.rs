@@ -281,6 +281,7 @@ mod tests {
                 artist: "Fixture Artist".into(),
                 album: "Fixture Album".into(),
                 duration_ms: 180_000,
+                position_ms: 0,
             },
             st,
         ))

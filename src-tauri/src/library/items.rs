@@ -222,6 +222,11 @@ pub fn insert_name_needed(
 }
 
 pub fn get(conn: &Connection, id: i64) -> Result<ItemDetail> {
+    detail(conn, id, false)
+}
+
+/// The item page; `include_private` is the private-session setting for track-list plays (TSD §4.8).
+pub fn detail(conn: &Connection, id: i64, include_private: bool) -> Result<ItemDetail> {
     let summary = summary(conn, id)?;
     let (review, explored_at, reviewed_at) = conn.query_row(
         "SELECT review, explored_at, reviewed_at FROM item WHERE id = ?1",
@@ -229,7 +234,7 @@ pub fn get(conn: &Connection, id: i64) -> Result<ItemDetail> {
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?;
     let track_list = match summary.r#type {
-        ItemType::Album => Some(track_list(conn, id)?).filter(|t| !t.is_empty()),
+        ItemType::Album => Some(track_list(conn, id, include_private)?).filter(|t| !t.is_empty()),
         _ => None,
     };
     Ok(ItemDetail {
@@ -244,14 +249,15 @@ pub fn get(conn: &Connection, id: i64) -> Result<ItemDetail> {
     })
 }
 
-fn track_list(conn: &Connection, album: i64) -> Result<Vec<TrackEntry>> {
-    let mut st = conn.prepare(
-        "SELECT t.id, COALESCE(t.display_name, t.spotify_uri, ''),
-           (SELECT COUNT(*) FROM listening_event e
-             WHERE e.item_id = t.id AND e.counts_as_play AND e.reconciled_with IS NULL)
+/// Plays come from the insights base view (TSD §4.9), like every other listening figure.
+fn track_list(conn: &Connection, album: i64, include_private: bool) -> Result<Vec<TrackEntry>> {
+    let mut st = conn.prepare(&format!(
+        "{} SELECT t.id, COALESCE(t.display_name, t.spotify_uri, ''),
+           (SELECT COUNT(*) FROM base e WHERE e.item_id = t.id AND e.counts_as_play)
          FROM item_link l
          JOIN item t ON t.id = l.from_id WHERE l.to_id = ?1 AND l.kind = 'on_album' ORDER BY t.id",
-    )?;
+        crate::insights::base(include_private)
+    ))?;
     let rows = st.query_map([album], |r| Ok((r.get::<_, i64>(0)?, r.get(1)?, r.get(2)?)))?;
     let mut out = vec![];
     for (n, row) in rows.enumerate() {

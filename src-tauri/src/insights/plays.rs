@@ -422,14 +422,22 @@ mod tests {
     fn album_track_list_carries_track_plays() {
         // G-1: Song One e1, e2, e7 (e4 reconciled); Song Two e6; Song Three none
         let (c, _) = fixture::build();
-        let tl = crate::library::items::get(&c, ALBUM)
-            .unwrap()
-            .track_list
-            .unwrap();
-        assert_eq!(
-            tl.iter().map(|t| t.plays).collect::<Vec<_>>(),
-            vec![3, 1, 0]
-        );
+        let plays = |p| {
+            let tl = crate::library::items::detail(&c, ALBUM, p)
+                .unwrap()
+                .track_list
+                .unwrap();
+            tl.iter().map(|t| t.plays).collect::<Vec<i64>>()
+        };
+        assert_eq!(plays(false), vec![3, 1, 0]);
+        // Song Two's play becomes private: hidden unless the setting is on (D24, TSD §4.8)
+        c.execute(
+            "UPDATE listening_event SET private_session = 1 WHERE item_id = ?1",
+            [T2],
+        )
+        .unwrap();
+        assert_eq!(plays(false), vec![3, 0, 0]);
+        assert_eq!(plays(true), vec![3, 1, 0]);
     }
 
     #[test]

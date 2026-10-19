@@ -159,7 +159,7 @@ ID must match `^[A-Za-z0-9]{22}$`. Playlist links are accepted only by Playlist 
 
 ### 4.5 Logger (FR-026)
 - Subscribe to `GlobalSystemMediaTransportControlsSessionManager`; track the session whose `SourceAppUserModelId` contains `Spotify` (configurable allow-list).
-- On media-properties change or session end: close the current event; `ms_played` = accumulated time in `Playing` state (sum of intervals; pauses excluded; seeks don’t add time).
+- On media-properties change, a replay of the same track (timeline position back under 3 s after being further in) or session end: close the current event; `ms_played` = accumulated time in `Playing` state (sum of intervals; pauses excluded; seeks don’t add time).
 - Poll timeline every 5 s as a fallback (some apps don’t raise every event).
 - Event is written only if `ms_played >= 1000` (noise filter); `counts_as_play` derives as above.
 - Logger rows use `dedupe_hash = sha256("logger|" ts|uri-or-norm_key|ms_played)`, so they never collide with export rows (one writer for both: `importer/events.rs`).
@@ -169,7 +169,7 @@ ID must match `^[A-Za-z0-9]{22}$`. Playlist links are accepted only by Playlist 
 `norm(s) = lower(strip_diacritics(s))` with suffixes such as ` - Remastered 2011`, ` (feat. …)`, ` - Live` removed by a small regex list. `norm_key = norm(artist) + "|" + norm(track)`.
 
 Artist strings differ by source: the export’s `master_metadata_album_artist_name` may be the album artist, while SMTC’s Artist may list several artists. So matching keys on the **track** name and uses the artist only to break ties.
-- Event → item: by `spotify_track_uri` when present; else by `norm(track)` against track items, tie-broken by any overlap between the event’s artist string and the item’s linked artists. Still ambiguous → unmatched (user links manually from the “unmatched plays” list).
+- Event → item: by `spotify_track_uri` when present; else by `norm(track)` against track items (an event with an unknown uri only against items without a uri: one with a different uri is another recording), tie-broken by any overlap between the event’s artist string and the item’s linked artists. Still ambiguous → unmatched (user links manually from the “unmatched plays” list).
 
 ### 4.7 Reconciliation (FR-028)
 On each export import, for every logger event with no export partner: candidates = export events with the same `norm(track)` and `|Δ ended_at_utc| ≤ 120 s` that are not yet linked to another logger event. Several candidates → prefer artist overlap, then the smallest time gap. Link by setting `reconciled_with` on the logger event. The unique partial index makes the link one-to-one. Insights exclude reconciled logger events.

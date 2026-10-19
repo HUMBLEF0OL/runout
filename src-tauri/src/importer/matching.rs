@@ -1,6 +1,7 @@
 //! Event → library item (TSD §4.6): `spotify_track_uri` first; else `norm(track)` against track
 //! items, tie-broken by overlap between the event's artist string and the item's linked artists.
-//! Still ambiguous → `None` (the user links it from "unmatched plays").
+//! An event whose uri is unknown only name-matches items without a uri. Still ambiguous →
+//! `None` (the user links it from "unmatched plays").
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -27,14 +28,14 @@ pub fn artists(s: &str) -> Vec<String> {
 /// Track items indexed once, so a batch import doesn't query per event.
 pub struct Matcher {
     by_uri: HashMap<String, i64>,
-    /// norm(track name) → (item id, norm(linked artist names)).
-    by_track: HashMap<String, Vec<(i64, Vec<String>)>>,
+    /// norm(track name) → (item id, has a spotify_uri, norm(linked artist names)).
+    by_track: HashMap<String, Vec<(i64, bool, Vec<String>)>>,
 }
 
 impl Matcher {
     pub fn load(conn: &Connection) -> Result<Self> {
         let mut by_uri = HashMap::new();
-        let mut by_track: HashMap<String, Vec<(i64, Vec<String>)>> = HashMap::new();
+        let mut by_track: HashMap<String, Vec<(i64, bool, Vec<String>)>> = HashMap::new();
         let mut artists: HashMap<i64, Vec<String>> = HashMap::new();
         let mut st = conn.prepare(
             "SELECT l.from_id, a.display_name FROM item_link l JOIN item a ON a.id = l.to_id
@@ -55,12 +56,16 @@ impl Matcher {
         })?;
         for r in rows {
             let (id, uri, name) = r?;
+            let has_uri = uri.is_some();
             if let Some(uri) = uri {
                 by_uri.insert(uri, id);
             }
             if let Some(name) = name {
                 let linked = artists.remove(&id).unwrap_or_default();
-                by_track.entry(norm(&name)).or_default().push((id, linked));
+                by_track
+                    .entry(norm(&name))
+                    .or_default()
+                    .push((id, has_uri, linked));
             }
         }
         Ok(Self { by_uri, by_track })
@@ -70,16 +75,22 @@ impl Matcher {
         if let Some(id) = uri.and_then(|u| self.by_uri.get(u)) {
             return Some(*id);
         }
-        let cands = self.by_track.get(&norm(track))?;
-        if let [(id, _)] = cands.as_slice() {
+        // An event with an unknown uri is a different recording from any item that has a uri.
+        let cands: Vec<_> = self
+            .by_track
+            .get(&norm(track))?
+            .iter()
+            .filter(|(_, has_uri, _)| uri.is_none() || !has_uri)
+            .collect();
+        if let [(id, _, _)] = cands.as_slice() {
             return Some(*id);
         }
         let parts = artists(artist);
         let mut hits = cands
             .iter()
-            .filter(|(_, linked)| linked.iter().any(|a| parts.contains(a)));
+            .filter(|(_, _, linked)| linked.iter().any(|a| parts.contains(a)));
         match (hits.next(), hits.next()) {
-            (Some((id, _)), None) => Some(*id),
+            (Some((id, _, _)), None) => Some(*id),
             _ => None,
         }
     }
@@ -112,12 +123,19 @@ mod tests {
         for (uri, track, artist, want) in [
             // uri wins even when the name differs
             (Some(URI), "Other Title", "Nobody", Some(10)),
-            // unknown uri falls back to the name
+            // an unknown uri never matches an item carrying a different uri (another recording)
             (
                 Some("spotify:track:BBBBBBBBBBBBBBBBBBBBBB"),
                 "Unique Song",
                 "Nobody",
-                Some(10),
+                None,
+            ),
+            // ...but falls back to the name among items without a uri
+            (
+                Some("spotify:track:BBBBBBBBBBBBBBBBBBBBBB"),
+                "Shared Name",
+                "Quuxley",
+                Some(12),
             ),
             // single candidate by normalized name, artist not needed
             (None, "UNIQUE SONG - Remastered 2011", "Anyone", Some(10)),
