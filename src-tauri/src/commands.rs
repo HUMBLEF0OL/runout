@@ -134,12 +134,20 @@ pub fn delete_item(st: St<'_>, id: i64) -> Result<()> {
 
 #[tauri::command(async)]
 pub fn link_items(st: St<'_>, from_id: i64, to_id: i64, kind: LinkKind) -> Result<()> {
-    item_links::link(&st.db.lock().unwrap(), from_id, to_id, kind)
+    // Several writes (old album link out, new in, touch): all or nothing (NFR-05).
+    let mut c = st.db.lock().unwrap();
+    let tx = c.transaction()?;
+    item_links::link(&tx, from_id, to_id, kind)?;
+    Ok(tx.commit()?)
 }
 
 #[tauri::command(async)]
 pub fn unlink_items(st: St<'_>, from_id: i64, to_id: i64, kind: LinkKind) -> Result<()> {
-    item_links::unlink(&st.db.lock().unwrap(), from_id, to_id, kind)
+    // Several writes (old album link out, new in, touch): all or nothing (NFR-05).
+    let mut c = st.db.lock().unwrap();
+    let tx = c.transaction()?;
+    item_links::unlink(&tx, from_id, to_id, kind)?;
+    Ok(tx.commit()?)
 }
 
 #[tauri::command(async)]

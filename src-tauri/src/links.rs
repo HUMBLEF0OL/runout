@@ -2,7 +2,7 @@
 //! `unresolved_capture` queue. `parse` mirrors `src/lib/link.ts`; both pass the same case table.
 use std::sync::Mutex;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use crate::error::{AppError, Code, Result};
@@ -321,10 +321,12 @@ pub enum Applied {
 
 /// Apply one resolve attempt to a queued row. Ok → name-needed item + row removed; a phone share
 /// (`shortcut`) also records its `capture` usage event, timed from `received_at` (TSD §4.12).
-/// Offline → left as is; any other error → `failed` with its message.
+/// Offline → left as is; any other error → `failed` with its message. The row must still be
+/// `(id, raw)`: one discarded, or swapped out by a restore, during the network wait is left alone.
 pub fn apply_resolution(
     conn: &mut Connection,
     id: i64,
+    raw: &str,
     source: &str,
     outcome: Result<(String, ItemType)>,
 ) -> Result<Applied> {
@@ -332,6 +334,17 @@ pub fn apply_resolution(
         Ok((uri, kind)) => {
             let phone = source == "shortcut";
             let tx = conn.transaction()?;
+            let ms: Option<Option<i64>> = tx
+                .query_row(
+                    "SELECT CAST((julianday('now') - julianday(received_at)) * 86400000 AS INTEGER)
+                     FROM unresolved_capture WHERE id = ?1 AND raw_link = ?2",
+                    params![id, raw],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let Some(ms) = ms else {
+                return Ok(Applied::Pending); // gone since it was read: nothing to apply
+            };
             let applied = match items::id_by_uri(&tx, &uri)? {
                 Some(existing) => Applied::Existing(existing),
                 None => {
@@ -342,12 +355,6 @@ pub fn apply_resolution(
                         if phone { "phone" } else { "pc" },
                     )?;
                     if phone {
-                        let ms: Option<i64> = tx.query_row(
-                            "SELECT CAST((julianday('now') - julianday(received_at)) * 86400000 AS INTEGER)
-                             FROM unresolved_capture WHERE id = ?1",
-                            [id],
-                            |r| r.get(0),
-                        )?;
                         crate::usage::record(&tx, crate::usage::Kind::Capture, Some("phone"), ms)?;
                     }
                     Applied::New(item)
@@ -360,8 +367,8 @@ pub fn apply_resolution(
         Err(e) if e.code == Code::Offline => Ok(Applied::Pending),
         Err(e) => {
             conn.execute(
-                "UPDATE unresolved_capture SET state = 'failed', error = ?2 WHERE id = ?1",
-                params![id, e.message],
+                "UPDATE unresolved_capture SET state = 'failed', error = ?3 WHERE id = ?1 AND raw_link = ?2",
+                params![id, raw, e.message],
             )?;
             Ok(Applied::Pending)
         }
@@ -394,7 +401,7 @@ pub async fn retry_unresolved(db: &Mutex<Connection>) -> Result<(usize, Vec<i64>
     for u in pending {
         let out = resolve_short(&u.raw_link).await;
         let offline = matches!(&out, Err(e) if e.code == Code::Offline);
-        match apply_resolution(&mut db.lock().unwrap(), u.id, &u.source, out)? {
+        match apply_resolution(&mut db.lock().unwrap(), u.id, &u.raw_link, &u.source, out)? {
             Applied::Pending => {}
             Applied::Existing(_) => resolved += 1,
             Applied::New(id) => {
@@ -623,15 +630,27 @@ mod tests {
 
         // offline: untouched
         assert_eq!(
-            apply_resolution(&mut c, a, "shortcut", Err(AppError::offline())).unwrap(),
+            apply_resolution(
+                &mut c,
+                a,
+                "https://spotify.link/aXk3P9q",
+                "shortcut",
+                Err(AppError::offline())
+            )
+            .unwrap(),
             Applied::Pending
         );
         assert_eq!(list_unresolved(&c).unwrap().len(), 3);
         // resolved: name-needed item from the phone, row gone
         let uri = format!("spotify:track:{A}");
-        let Applied::New(new_id) =
-            apply_resolution(&mut c, a, "shortcut", Ok((uri.clone(), ItemType::Track))).unwrap()
-        else {
+        let Applied::New(new_id) = apply_resolution(
+            &mut c,
+            a,
+            "https://spotify.link/aXk3P9q",
+            "shortcut",
+            Ok((uri.clone(), ItemType::Track)),
+        )
+        .unwrap() else {
             panic!("expected a new item")
         };
         // a phone share resolved later still counts as a phone capture (TSD §4.12)
@@ -657,7 +676,14 @@ mod tests {
         );
         // same URI again: no duplicate item
         assert_eq!(
-            apply_resolution(&mut c, b, "paste", Ok((uri, ItemType::Track))).unwrap(),
+            apply_resolution(
+                &mut c,
+                b,
+                "https://spotify.link/NBdJ4D2",
+                "paste",
+                Ok((uri, ItemType::Track))
+            )
+            .unwrap(),
             Applied::Existing(new_id)
         );
         let n: i64 = c
@@ -667,7 +693,7 @@ mod tests {
         // other error: marked failed
         let bad = AppError::new(Code::InvalidLink, "nope");
         assert_eq!(
-            apply_resolution(&mut c, d, "paste", Err(bad)).unwrap(),
+            apply_resolution(&mut c, d, "https://spotify.link/Qq1", "paste", Err(bad)).unwrap(),
             Applied::Pending
         );
         let rows = list_unresolved(&c).unwrap();
@@ -677,5 +703,34 @@ mod tests {
         );
         discard_unresolved(&c, d).unwrap();
         assert_eq!(discard_unresolved(&c, d).unwrap_err().code, Code::NotFound);
+    }
+
+    /// A row discarded (or replaced by a restore) while its retry waited on the network is left
+    /// alone: no item, no error, other rows untouched.
+    #[test]
+    fn resolution_of_a_row_gone_meanwhile_is_ignored() {
+        let mut c = db::open_in_memory().unwrap();
+        let a =
+            queue_unresolved(&c, "https://spotify.link/aXk3P9q", CaptureSource::Shortcut).unwrap();
+        let uri = format!("spotify:track:{A}");
+        discard_unresolved(&c, a).unwrap();
+        let ok = || Ok((uri.clone(), ItemType::Track));
+        assert_eq!(
+            apply_resolution(&mut c, a, "https://spotify.link/aXk3P9q", "shortcut", ok()).unwrap(),
+            Applied::Pending
+        );
+        // same id now holds a different link (restored library): not applied, not marked failed
+        let b = queue_unresolved(&c, "https://spotify.link/NBdJ4D2", CaptureSource::Paste).unwrap();
+        assert_eq!(
+            apply_resolution(&mut c, b, "https://spotify.link/aXk3P9q", "paste", ok()).unwrap(),
+            Applied::Pending
+        );
+        let bad = AppError::new(Code::InvalidLink, "nope");
+        apply_resolution(&mut c, b, "https://spotify.link/aXk3P9q", "paste", Err(bad)).unwrap();
+        let n: i64 = c
+            .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
+        assert_eq!(list_unresolved(&c).unwrap()[0].state, "unresolved");
     }
 }
