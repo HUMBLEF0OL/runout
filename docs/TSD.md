@@ -173,12 +173,12 @@ On each export import, for every logger event with no export partner: candidates
 Fixtures must include a featured-artist track, a compilation track and a track repeated back-to-back.
 
 ### 4.8 Import (FR-027, FR-029, FR-033)
-- Input: the user selects the unzipped export folder (or the .zip).
-- Streaming history: files `Streaming_History_Audio_*.json` **⚑ verify file names and field names against the real export in M4**. Expected fields: `ts, platform, ms_played, conn_country, ip_addr, master_metadata_track_name, master_metadata_album_artist_name, master_metadata_album_album_name, spotify_track_uri, episode_*, audiobook_*, reason_start, reason_end, shuffle, skipped, offline, offline_timestamp, incognito_mode`.
-- Parse into an explicit allow-list of fields; everything else is discarded at parse time and never written. In particular, any key matching `ip_addr*`, `user_agent*` or `username` is dropped (older exports used `ip_addr_decrypted` / `user_agent_decrypted`). Skip rows where `spotify_track_uri` is null (episodes/audiobooks/video).
+- Input: the user selects the unzipped export folder (or the .zip). The files sit in the subfolder `Spotify Extended Streaming History/`, so match files by name at any depth (zip entry path or folder walk).
+- Streaming history: files `Streaming_History_Audio_<YYYY>[_<n>].json` and `Streaming_History_Video_<YYYY>.json`. Each holds a UTF-8 top-level JSON array of flat objects, every key present (`null` when empty). Fields (verified 19 Oct 2026, [KB](kb/spotify.md#extended-streaming-history-format-t1--verified-2026-10-19)): `ts` (`YYYY-MM-DDTHH:MM:SSZ`, UTC, stream end), `platform, ms_played, conn_country, ip_addr, master_metadata_track_name, master_metadata_album_artist_name, master_metadata_album_album_name, spotify_track_uri, episode_name, episode_show_name, spotify_episode_uri, audiobook_title, audiobook_uri, audiobook_chapter_uri, audiobook_chapter_title, reason_start, reason_end, shuffle, skipped, offline, offline_timestamp, incognito_mode`. Video files also contain music-track rows, so import both kinds. Don't infer the year from the file name.
+- Parse into an explicit allow-list (`ts, platform, ms_played, master_metadata_*, spotify_track_uri, reason_start, reason_end, shuffle, skipped, offline, incognito_mode`). Everything else, including `conn_country` and `offline_timestamp`, is discarded at parse time and never written. In particular, any key matching `ip_addr*`, `user_agent*` or `username` is dropped; older exports used `ip_addr_decrypted` / `user_agent_decrypted`, and the bundled ReadMe still shows them. Booleans may be null and store as NULL. Skip rows where `spotify_track_uri` is null (episodes, audiobooks, rows with no URI).
 - `dedupe_hash = sha256(ts|spotify_track_uri|ms_played)`; insert-or-ignore → idempotent.
 - `ended_at_local` = convert `ts` with Windows time-zone rules for the PC’s zone at that date.
-- `private_session = incognito_mode`; excluded from insights unless the setting is on.
+- `private_session = incognito_mode` (null → false); excluded from insights unless the setting is on.
 - Account data: only `Playlist*.json` **⚑ verify in M4** → `exported_playlist*`. `YourLibrary.json` is not imported (data minimization; nothing uses it). Playlists are matched across exports by name.
 - Whole import runs in one transaction; raw files are not copied.
 
@@ -295,7 +295,7 @@ spotify-companion/
 ## 10. Open technical items
 | # | Item | Resolve in |
 |---|---|---|
-| T1 | Export file and field names (4.8) | M4 |
+| T1 | ~~Export file and field names (4.8)~~ Resolved 19 Oct 2026 for streaming history ([KB](kb/spotify.md#extended-streaming-history-format-t1--verified-2026-10-19)). Account data `Playlist*.json` not received, still ⚑ in 4.8 | M4 |
 | T2 | NSIS checkbox relabel and update-mode detection in the pre-uninstall hook (4.11) | M6 |
 | T3 | Re-check redirect-URI rules just before registering the app (5.2); confirmed 18 Oct 2026 | M5 |
 | T4 | ~~Incognito (InPrivate) WebView2 works with Spotify embeds and keeps no disk cache (§1)~~ Resolved 18 Oct 2026: yes ([KB](kb/windows-tauri.md#webview2)); re-check in the real app window in M2 | M2 |

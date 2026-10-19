@@ -30,8 +30,42 @@ Constraints table with sources: [BRD §11](../../BRD.md) (S1–S17). This file h
 
 ## Data export
 - "Extended streaming history" = lifetime, all devices, JSON, includes IP + user agent, no track duration — **Documented**, BRD S13.
-- Expected file `Streaming_History_Audio_*.json` and fields in TSD §4.8 — **Unverified (T1)** until the real export arrives (U-2).
-- Delivery time not published (third-party: up to 30 days) — **Unverified (O2)**; U-1 requested: _date pending_.
+- Delivery time not published by Spotify. **Measured (O2)**: Extended streaming history requested ~18 Oct 2026; files inside the zip dated 2026-10-18 22:29; downloaded 19 Oct 2026, so it took about 1 day for one account. It was delivered as a separate package with no Account data part. — **Verified**, 2026-10-19, user's own export (U-1/U-2).
+
+### Extended streaming history format (T1) — **Verified**, 2026-10-19
+Source: the user's real export, read in place with `python -I` + `zipfile` (structure only; nothing copied), plus the bundled `ReadMeFirst_ExtendedStreamingHistory.pdf` (English pp. 3–5). Counts are from one account (~180k rows, 2019–2026).
+- **Zip layout**: `my_spotify_data.zip` → one folder `Spotify Extended Streaming History/` containing
+  - `Streaming_History_Audio_<YYYY>[_<n>].json`: one or more files per year, split at about 12 MB; for example `_2023`, `_2023_1`, `_2023_2`. A few rows (9 here) fall in a different year from the file name, so don't rely on it.
+  - `Streaming_History_Video_<YYYY>.json`
+  - `ReadMeFirst_ExtendedStreamingHistory.pdf`
+- **File shape**: UTF-8 without BOM. A top-level JSON array of flat objects, pretty-printed Jackson style (`[ {`, `"key" : value`). Each file is sorted by `ts`.
+- **Keys**: every row in both Audio and Video files has the same 23 keys, in this order. Null fields are present as `null`, not left out.
+
+| Field | JSON type | Nulls (audio / video) | Notes |
+|---|---|---|---|
+| `ts` | string | 0 | `YYYY-MM-DDTHH:MM:SSZ`, UTC, when the stream **stopped** (PDF) |
+| `platform` | string | 0 | free text, e.g. `windows …`, `android …`, `ios …`, `osx …`, `unknown` |
+| `ms_played` | int | 0 | 0 occurs (~0.5%) |
+| `conn_country` | string | 0 | 2-letter code. **Personal, drop.** |
+| `ip_addr` | string | 0 | IPv4 or IPv6. **Personal, drop.** Older exports and the PDF call it `ip_addr_decrypted` |
+| `master_metadata_track_name` | string\|null | 44 / 28 | null exactly when `spotify_track_uri` is null |
+| `master_metadata_album_artist_name` | string\|null | 44 / 28 | the track's artist (PDF: “artist, band or podcast”) |
+| `master_metadata_album_album_name` | string\|null | 44 / 28 | |
+| `spotify_track_uri` | string\|null | 44 / 28 | `spotify:track:<22 base62>` |
+| `episode_name`, `episode_show_name` | string\|null | non-null only on episode rows | |
+| `spotify_episode_uri` | string\|null | non-null 41 / 28 | `spotify:episode:<22 base62>` |
+| `audiobook_title`, `audiobook_uri`, `audiobook_chapter_uri`, `audiobook_chapter_title` | null here | all null | present as keys; not described in the PDF |
+| `reason_start` | string | 0 | seen: `trackdone clickrow fwdbtn playbtn appload remote unknown backbtn trackerror switched-to-video switched-to-audio` |
+| `reason_end` | string | 0 | seen: `trackdone endplay fwdbtn logout remote unexpected-exit-while-paused unknown backbtn unexpected-exit trackerror switched-to-video` |
+| `shuffle`, `skipped` | bool | 0 | the PDF says they may be null |
+| `offline` | bool\|null | 0 / 323 | |
+| `offline_timestamp` | int\|null | ~1.3% null | usually epoch **seconds** (10 digits), but some rows hold epoch **ms** (13 digits). Not needed; drop |
+| `incognito_mode` | bool\|null | 30 / 0 | → `private_session`. Null → false |
+
+- **Telling rows apart**: a music row has `spotify_track_uri` non-null. A podcast row has `spotify_episode_uri` non-null. An audiobook row has `audiobook_*` set (none in this export). A few rows (3 here, all `reason_start=unknown`, under 4 s) have no URI at all. Audio files also contain episodes. Video files contain music-track rows (706 here, no overlap with the Audio files) and video-podcast rows. The file kind does not tell you the content kind.
+- **Not present** in this export, though listed in the PDF example: `username`, `user_agent_decrypted`, `ip_addr_decrypted`. The allow-list must still drop them if they appear.
+- **Dedupe key** `ts|spotify_track_uri|ms_played`: 25 groups collide (~0.03%). 9 groups are byte-identical rows. In the other 16, the first two rows differ only in `offline_timestamp`, and 1 of those has a further member that differs. In every case it is the same play logged twice, so merging them is correct.
+- Synthetic fixture with this structure (fake values): `src-tauri/tests/fixtures/export_synthetic/`.
 
 ## Local client data (desktop)
 - Windows media session (SMTC) exposes title, artist, album, album artist, track #, position, duration, play state, shuffle/repeat, thumbnail; **no Spotify URI**, no private-session flag — **Verified**, 2026-10-18, Spotify Store build 1.305.

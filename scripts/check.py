@@ -23,7 +23,7 @@ if HOOK:
 
 def run(name, cmd, cwd):
     print(f"--- {name}", flush=True)
-    r = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, text=True)
+    r = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode:
         failures.append(name)
         print((r.stdout + r.stderr)[-3000:])
