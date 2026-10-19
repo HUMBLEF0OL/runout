@@ -149,6 +149,7 @@ function Detail({ it }: { it: ItemDetail }) {
       {it.track_list?.length ? it.track_list.map((t) => (
         <div key={t.position} className="flex justify-between items-baseline gap-3 py-[3px]">
           <span><span className="font-mono text-faint text-xs mr-2.5">{t.position}</span>{t.item_id ? <Link to={`/item/${t.item_id}`} className="text-text">{t.name}</Link> : t.name}</span>
+          {r2 && <span className={`text-xs ${t.plays ? "text-muted" : "text-accent"}`}>{t.plays ? "Played" : "Not played yet"}</span>}
         </div>))
         : onAlbum.length ? onAlbum.map((t) => (
           <div key={t.id} className="flex justify-between items-baseline gap-3 py-[3px]"><Link to={`/item/${t.id}`} className="text-text">{nameOf(t)}</Link><span className="text-muted text-xs">{statusMeta(t)}</span></div>))

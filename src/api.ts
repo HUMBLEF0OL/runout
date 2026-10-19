@@ -40,7 +40,7 @@ export type LinkKind = "by_artist" | "on_album" | "version_of";
 export interface ItemDetail extends ItemSummary {
   review: string | null; notes: string | null; recommended_by: string | null;
   explored_at: string | null; reviewed_at: string | null;
-  track_list: { position: number; name: string; item_id: number | null }[] | null; // albums with a known track list (TSD §4.9)
+  track_list: { position: number; name: string; item_id: number | null; plays: number }[] | null; // albums with a known track list (TSD §4.9)
   provenance: Record<string, "user" | "promoted">;
   links: { kind: LinkKind; direction: "from" | "to"; item: ItemSummary }[];
   history: { from: Status | null; to: Status; at: string; note: string | null }[];
@@ -96,7 +96,7 @@ export interface LoggerStatus { state: "listening" | "idle" | "paused" | "off" |
 export interface Play {
   id: number; ended_at_local: string; ms_played: number; counts_as_play: boolean; skipped: boolean;
   track_name: string; artist_name: string; album_name: string; source: "logger" | "export";
-  spotify_uri: string | null; item: ItemSummary | null;
+  spotify_uri: string | null; item: ItemSummary | null; album_rating: number | null; // item = the track record; album_rating = its album record's rating
 }
 export interface Unmatched { norm_key: string; track_name: string; artist_name: string; plays: number; detail: string; suggestion: string; event_id: number; candidates: ItemSummary[] } // candidates[0] = the suggestion
 export interface ItemListening { plays: number; ms_total: number; last_played_local: string | null; by_month: { month: string; plays: number }[] }
@@ -121,6 +121,7 @@ export interface Take { item: ItemSummary; line: string }
 export interface TakeInsights {
   rated_vs_played: Take[]; never_played_backlog: Take[]; loved_but_forgotten: Take[];
   unfinished_albums: { item: ItemSummary; played: number; total: number }[];
+  unfinished_unknown: number; // albums without a track list
 }
 export interface YearReview {
   year: number; plays: number; hours: number; explored: number; reviews: number; busiest_month: string;

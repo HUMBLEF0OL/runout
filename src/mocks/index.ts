@@ -142,7 +142,10 @@ function detail(i: MItem): ItemDetail {
   return {
     ...summary(i), review: i.review, notes: i.notes, recommended_by: i.recommended_by, explored_at: i.explored_at,
     reviewed_at: i.reviewed_at, provenance: { ...i.provenance }, links,
-    track_list: i.tracklist ? i.tracklist.map((name, n) => ({ position: n + 1, name, item_id: items.find((x) => x.album_id === i.id && x.display_name === name)?.id ?? null })) : null,
+    track_list: i.tracklist ? i.tracklist.map((name, n) => {
+      const unf = L.unfinished.find((u: any) => u.item_id === i.id); // first `played` tracks count as played (prototype rule)
+      return { position: n + 1, name, item_id: items.find((x) => x.album_id === i.id && x.display_name === name)?.id ?? null, plays: !unf || n < unf.played ? 3 : 0 };
+    }) : null,
     history: history.filter((h) => h.item_id === i.id).reverse().sort((a, b) => b.at.localeCompare(a.at)).map(({ from, to, at, note }) => ({ from, to, at, note })),
   };
 }
@@ -179,10 +182,12 @@ const sourced = <T,>(data: T, sources: Source[]) => ({ data, sources, freshness:
 const RANGE_DAYS: Record<Range, number> = { "7d": 7, "30d": 30, "12m": 365, all: 1e6 };
 const sumByName = (type: MItem["type"], name: string, by?: string) => items.find((i) => i.type === type && i.display_name === name && (!by || type === "artist" || i.artist === by));
 function play(e: any, n: number): Play {
-  const it = e.item_id != null ? byId(e.item_id) : sumByName("track", e.track, e.artist);
+  const linked = e.item_id != null ? byId(e.item_id) : undefined;
+  const it = linked?.type === "track" ? linked : sumByName("track", e.track, e.artist); // item is the track record (API.md §4)
+  const al = linked?.type === "album" ? linked : sumByName("album", e.album, e.artist);
   return {
     id: n + 1, ended_at_local: e.ended_at, ms_played: e.ms, counts_as_play: e.counts, skipped: e.skipped, track_name: e.track,
-    artist_name: e.artist, album_name: e.album, source: e.source, spotify_uri: e.spotify_uri ?? null, item: it ? summary(it) : null,
+    artist_name: e.artist, album_name: e.album, source: e.source, spotify_uri: e.spotify_uri ?? null, item: it ? summary(it) : null, album_rating: al?.rating ?? null,
   };
 }
 const allPlays = (): Play[] => [...L.recent, ...L.export_sample].sort((a: any, b: any) => b.ended_at.localeCompare(a.ended_at)).map(play);
@@ -417,6 +422,7 @@ const H: Record<string, Handler> = {
     return sourced({
       rated_vs_played: take("played_not_rated"), never_played_backlog: take("backlog_never_played"), loved_but_forgotten: take("loved_not_played"),
       unfinished_albums: L.unfinished.filter((u: any) => byId(u.item_id)).map((u: any) => ({ item: summary(byId(u.item_id)!), played: u.played, total: u.total })),
+      unfinished_unknown: items.filter((i) => i.type === "album" && !i.tracklist).length,
     }, ["U", "S", "E"]);
   },
   get_year_review: () => {

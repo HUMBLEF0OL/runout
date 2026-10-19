@@ -52,7 +52,7 @@ interface ItemSummary {
 interface ItemDetail extends ItemSummary {
   review: string | null; notes: string | null; recommended_by: string | null;
   explored_at: string | null; reviewed_at: string | null;
-  track_list: { position: number; name: string; item_id: number | null }[] | null;  // albums with a known track list (TSD §4.9)
+  track_list: { position: number; name: string; item_id: number | null; plays: number }[] | null;  // albums with a known track list (TSD §4.9); plays = counted plays of that track, 0 = "Not played yet" (G-1)
   provenance: Record<string, 'user' | 'promoted'>;
   links: { kind: 'by_artist' | 'on_album' | 'version_of'; direction: 'from' | 'to'; item: ItemSummary }[];
   history: { from: Status | null; to: Status; at: string; note: string | null }[];
@@ -119,7 +119,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `get_logger_status` | — | `{state: 'listening' \| 'idle' \| 'paused' \| 'off' \| 'error', now_playing: NowPlaying \| null, last_event_at, paused_until, autostart, include_private}` | Tray + SC-08; `NowPlaying = {track_name, artist_name, album_name, spotify_uri, ms_played, duration_ms, item}` |
 | `set_logger` | `patch: {on?, autostart?, include_private?}` | same as above | FR-026 |
 | `pause_logger` / `resume_logger` | `minutes: number \| null` / — | same | null = until resumed |
-| `list_plays` | `q: {tab: 'all' \| 'unrated' \| 'missing', range, offset, limit}` | `Page<Play>` | `Play = {id, ended_at_local, ms_played, counts_as_play, skipped, track_name, artist_name, album_name, source: 'logger' \| 'export', spotify_uri, item: ItemSummary \| null}` |
+| `list_plays` | `q: {tab: 'all' \| 'unrated' \| 'missing', range, offset, limit}` | `Page<Play>` | `Play = {id, ended_at_local, ms_played, counts_as_play, skipped, track_name, artist_name, album_name, source: 'logger' \| 'export', spotify_uri, item: ItemSummary \| null, album_rating: number \| null}`; `item` is the track record, `album_rating` the rating of the play's album record (null if none or unrated) |
 | `list_unmatched` / `link_play` | — / `event_id, item_id` | `Unmatched[]` / `void` | Grouped by `norm_key` with play count (FR-030); `Unmatched = {norm_key, track_name, artist_name, plays, detail, suggestion, event_id, candidates: ItemSummary[]}`; `candidates[0]` is the suggested record, the rest are the other records it could be (for "Choose another") |
 | `get_item_listening` | `id` | `Sourced<{plays, ms_total, last_played_local, by_month}>` | SC-05 listening panel |
 | `pick_import_source` | — | `string \| null` | Folder or .zip |
@@ -129,7 +129,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `get_freshness` | — | `Freshness` | Rail freshness box |
 | `get_listening_insights` | `range` | `Sourced<{top_artists, top_albums, top_tracks, monthly, heatmap, skip_rate, phone_share, totals}>` | FR-031; no source A |
 | `get_collection_insights` | `range` | `Sourced<{backlog_growth, completion, rating_spread, tag_trends}>` | |
-| `get_take_insights` | — | `Sourced<{rated_vs_played, never_played_backlog, loved_but_forgotten, unfinished_albums}>` | Unfinished: only albums with a track list (TSD §4.9) |
+| `get_take_insights` | — | `Sourced<{rated_vs_played, never_played_backlog, loved_but_forgotten, unfinished_albums, unfinished_unknown}>` | Unfinished: only albums with a track list (TSD §4.9); `unfinished_unknown` = albums without one ("N other albums can't be checked") |
 | `get_year_review` | `year` | `Sourced<{plays, hours, top_artist, top_album, explored, reviews, busiest_month}>` | FR-034 |
 | `list_exported_playlists` / `get_playlist_checkup` | — / `id` | `{id, name, tracks, dupes, low}[]` / `{tracks: {position, name, artist, dupe, rating, never_played}[]}` | Read-only (FR-033) |
 
@@ -153,6 +153,7 @@ interface Take { item: ItemSummary; line: string }
 interface TakeInsights {
   rated_vs_played: Take[]; never_played_backlog: Take[]; loved_but_forgotten: Take[];
   unfinished_albums: { item: ItemSummary; played: number; total: number }[];
+  unfinished_unknown: number;   // albums in the library without a track list (can't be checked)
 }
 interface YearReview {
   year: number; plays: number; hours: number; explored: number; reviews: number; busiest_month: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createItem, getCounts, getDashboard, getItem, linkItems, listItems, listSavedFilters, listTags, renameTag, saveFilter, setStatus, unlinkItems, updateItem, type AppError } from "../api";
+import { createItem, getCounts, getDashboard, getItem, getTakeInsights, listPlays, linkItems, listItems, listSavedFilters, listTags, renameTag, saveFilter, setStatus, unlinkItems, updateItem, type AppError } from "../api";
 import { setDev } from "./devState";
 
 describe("mock commands (API.md)", () => {
@@ -78,5 +78,15 @@ describe("mock commands (API.md)", () => {
     setDev({ view: "error" });
     await expect(listItems({})).rejects.toMatchObject({ code: "io" });
     setDev({ view: "normal" });
+  });
+  it("G-1/G-7/G-8: track plays, album rating on plays, uncheckable albums count", async () => {
+    const take = (await getTakeInsights()).data;
+    expect(take.unfinished_unknown).toBeGreaterThan(0);
+    const u = take.unfinished_albums[0];
+    const tl = (await getItem(u.item.id)).track_list!;
+    expect(tl.filter((t) => t.plays > 0)).toHaveLength(u.played);
+    const rows = (await listPlays({ tab: "all", range: "all", offset: 0, limit: 500 })).rows;
+    expect(rows.every((p) => !p.item || p.item.type === "track")).toBe(true);
+    expect(rows.some((p) => p.album_rating != null)).toBe(true);
   });
 });

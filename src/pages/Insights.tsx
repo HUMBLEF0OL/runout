@@ -81,7 +81,7 @@ function Listening({ range }: { range: Range }) {
         </div>
       </Card>
       <Card title="Unfinished albums" src={take.data?.sources ?? []} side>
-        <span className="text-muted text-xs leading-[1.45]">Only albums whose tracks you've added.</span>
+        <span className="text-muted text-xs leading-[1.45]">Only albums whose tracks you've added.{take.data?.data.unfinished_unknown ? ` ${pl(take.data.data.unfinished_unknown, "other album")} can't be checked.` : ""}</span>
         {take.data?.data.unfinished_albums.length ? take.data.data.unfinished_albums.map((u) => (
           <Link key={u.item.id} to={`/item/${u.item.id}`} className="flex justify-between items-baseline gap-3 text-text py-[3px]">
             <span className="font-semibold">{nameOf(u.item)}</span><span className="font-mono text-text-2 whitespace-nowrap text-xs">{u.played} of {u.total} played</span>

@@ -203,9 +203,10 @@ function PlayRowWide({ p, onRate, onSave }: { p: Play; onRate?: (p: Play) => voi
   );
 }
 
-/** Your stars, else Rate (play linked to a record), else Save (not in your library). */
+/** Your stars (the track's, else the album's with an "album" suffix), else Rate (play linked to a record), else Save (not in your library). */
 function PlayAction({ p, onRate, onSave, save }: { p: Play; onRate?: (p: Play) => void; onSave?: (p: Play) => void; save: string }) {
   if (p.item?.rating) return <Stars r={p.item.rating} />;
+  if (p.album_rating) return <span className="stars whitespace-nowrap" aria-label={`Album rated ${p.album_rating} of 5`}>{stars(p.album_rating)}<span className="text-faint text-[11px] tracking-normal"> album</span></span>;
   return p.item
     ? <button className="btn btn-secondary s" onClick={() => onRate?.(p)} aria-label={`Rate ${p.track_name}`}>Rate</button>
     : <button className="btn btn-secondary s" onClick={() => onSave?.(p)} aria-label={`Save ${p.track_name} to backlog`}>{save}</button>;
