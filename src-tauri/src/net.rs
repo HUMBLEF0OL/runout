@@ -102,8 +102,9 @@ pub async fn online() -> bool {
 
 /// Store a probe result; fires the hook when it differs from the last known value. No value yet
 /// counts as offline, so the first good probe at startup fires too and leftover queued links retry.
-/// Callers that hit a connectivity failure mid-request record `false` so the next good probe flips.
-pub fn record_online(now: bool) {
+/// Only the open.spotify.com probe writes here (TSD §4.3); a spotify.link timeout sets
+/// `links::RETRY_PENDING` instead, so embeds don't unmount over it.
+fn record_online(now: bool) {
     let prev = ONLINE
         .lock()
         .unwrap()
@@ -172,7 +173,7 @@ mod tests {
         *ONLINE.lock().unwrap() = None; // fresh start
         record_online(true); // startup online → fires (leftover queue retries)
         record_online(true);
-        record_online(false); // e.g. resolve_or_queue hit a spotify.link timeout
+        record_online(false); // probe failed
         record_online(false);
         record_online(true); // next good probe → retry
         assert_eq!(*FIRED.lock().unwrap(), [true, false, true]);

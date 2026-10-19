@@ -159,6 +159,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Upgrade path (SOURCE_MAP "fresh + upgrade"): a review deleted under schema 1 is gone from the
+    /// file once the library is migrated, vacuumed and checkpointed.
+    #[test]
+    fn deleted_review_is_gone_after_upgrade_from_v1() {
+        const TOKEN: &str = "zqxv-upgrade-token-7731";
+        let dir = std::env::temp_dir().join(format!("runout-upgrade-{}", std::process::id()));
+        let path = dir.join("library.db");
+        std::fs::create_dir_all(&dir).unwrap();
+        let c = Connection::open(&path).unwrap();
+        c.pragma_update(None, "journal_mode", "WAL").unwrap();
+        c.execute_batch(MIGRATIONS[0]).unwrap();
+        c.pragma_update(None, "user_version", 1).unwrap();
+        c.execute(
+            "INSERT INTO item(id, type, display_name, review) VALUES (1, 'album', 'A', ?1)",
+            [TOKEN],
+        )
+        .unwrap();
+        c.execute("DELETE FROM item WHERE id = 1", []).unwrap();
+        drop(c);
+        let c = open(&path).unwrap();
+        assert_eq!(version(&c), SCHEMA_VERSION);
+        c.execute_batch("VACUUM").unwrap();
+        c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .unwrap();
+        drop(c);
+        for f in ["library.db", "library.db-wal"] {
+            let bytes = std::fs::read(dir.join(f)).unwrap_or_default();
+            assert!(
+                !bytes.windows(TOKEN.len()).any(|w| w == TOKEN.as_bytes()),
+                "token left in {f}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn checks_reject_bad_status_and_rating() {
         let c = open_in_memory().unwrap();

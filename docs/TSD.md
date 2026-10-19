@@ -191,7 +191,7 @@ Fixtures must include a featured-artist track, a compilation track and a track r
 2. Zip (deflate) → `runout-backup-YYYYMMDD-HHMMSS.zip` with a `manifest.json` (app version, schema version, sha256 of db, counts). `library.db` holds no source-A data, so backups never contain Spotify-provided data.
 3. Keep newest 3; delete older.
 4. If zip size > threshold (default 100 MB) → warning notification; backup still kept.
-- Restore: verify sha256 and `PRAGMA integrity_check` on the extracted DB, show counts, then swap files (old DB kept as `library.db.pre-restore` until next successful start).
+- Restore: verify sha256 and `PRAGMA integrity_check` on the extracted DB, show counts, then swap files (old DB kept as `library.db.pre-restore` until next successful start; a second restore in the same session is refused, and a pre-restore left by an earlier session — kept because the restored library failed `integrity_check` — is renamed `library.db.pre-restore.<UTC stamp>`, never deleted; Delete library removes these too).
 
 ### 4.11 Uninstall (FR-024)
 Tauri’s NSIS uninstaller has a “delete application data” checkbox. It is off by default, removes `%APPDATA%\<identifier>` and `%LOCALAPPDATA%\<identifier>`, and is skipped in update mode.

@@ -80,7 +80,7 @@ function statusEffects(it: MItem, from: Status | null, to: Status) {
   if (done(to)) { it.explored_at = TODAY; it.in_backlog = false; it.backlog_order = null; }
   else if (done(from)) {
     it.explored_at = null;
-    if (to === "planned") { it.in_backlog = true; it.backlog_order = Math.max(0, ...items.map((i) => i.backlog_order ?? 0)) + 1; }
+    if (to === "planned") { it.in_backlog = true; it.backlog_order ??= Math.max(0, ...items.map((i) => i.backlog_order ?? 0)) + 1; }
   }
 }
 /** Mirrors Rust `tags::rewrite_saved_filters`: saved filters naming `from` (ignoring case) now name `to`, deduped. */

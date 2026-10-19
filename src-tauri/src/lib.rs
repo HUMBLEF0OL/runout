@@ -38,13 +38,59 @@ pub fn uninstall_cleanup() -> i32 {
     }
 }
 
+/// Retry the offline queue and emit `capture-received` / `unresolved-resolved` (TSD §4.1).
+fn retry_queued(h: &tauri::AppHandle) {
+    let st = h.state::<state::AppState>();
+    if let Ok((n, new)) = tauri::async_runtime::block_on(links::retry_unresolved(&st.db)) {
+        commands::emit_resolved(h, &st, &new);
+        if n > 0 {
+            let _ = h.emit("unresolved-resolved", serde_json::json!({ "resolved": n }));
+        }
+    }
+}
+
+/// Blocking native error box; works before any window or event loop exists.
+#[cfg(windows)]
+fn fatal_box(text: &str) {
+    use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+    use windows::core::{HSTRING, w};
+    unsafe {
+        MessageBoxW(
+            None,
+            &HSTRING::from(text),
+            w!("Runout can't start"),
+            MB_OK | MB_ICONERROR,
+        )
+    };
+}
+
+#[cfg(not(windows))]
+fn fatal_box(text: &str) {
+    eprintln!("{text}");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(commands::handler())
         .setup(|app| {
-            let st = state::AppState::init(app.handle())?;
+            let st = match state::AppState::init(app.handle()) {
+                Ok(st) => st,
+                Err(e) => {
+                    // Release builds have no console: say why, then exit without a panic (TSD §6).
+                    let file = app.path().app_config_dir().map(|d| d.join(settings::FILE));
+                    let file =
+                        file.map_or_else(|_| "settings.json".into(), |f| f.display().to_string());
+                    fatal_box(&format!(
+                        "{}
+
+Settings file: {file}",
+                        e.message
+                    ));
+                    std::process::exit(1);
+                }
+            };
             backup::cleanup_pre_restore(std::path::Path::new(
                 &st.settings.lock().unwrap().library_path,
             ));
@@ -73,25 +119,17 @@ pub fn run() {
                 let _ = handle.emit("online-changed", on);
                 if on {
                     let h = handle.clone();
-                    std::thread::spawn(move || {
-                        let st = h.state::<state::AppState>();
-                        if let Ok((n, new)) =
-                            tauri::async_runtime::block_on(links::retry_unresolved(&st.db))
-                        {
-                            commands::emit_resolved(&h, &st, &new);
-                            if n > 0 {
-                                let _ = h.emit(
-                                    "unresolved-resolved",
-                                    serde_json::json!({ "resolved": n }),
-                                );
-                            }
-                        }
-                    });
+                    std::thread::spawn(move || retry_queued(&h));
                 }
             });
-            std::thread::spawn(|| {
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
                 loop {
-                    tauri::async_runtime::block_on(net::online());
+                    // Online but a spotify.link request was queued/stopped offline: retry now.
+                    if tauri::async_runtime::block_on(net::online()) && links::take_retry_pending()
+                    {
+                        retry_queued(&handle);
+                    }
                     std::thread::sleep(ONLINE_POLL);
                 }
             });

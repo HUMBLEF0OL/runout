@@ -1,6 +1,7 @@
 //! Spotify link parsing (TSD §4.1, FR-002), short-link resolution via `net`, and the offline
 //! `unresolved_capture` queue. `parse` mirrors `src/lib/link.ts`; both pass the same case table.
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
@@ -383,24 +384,40 @@ pub async fn resolve_or_queue(
     source: CaptureSource,
 ) -> Result<(String, ItemType)> {
     let out = resolve_short(raw).await;
-    if matches!(&out, Err(e) if e.code == Code::Offline) {
+    if note_offline(&out) {
         queue_unresolved(&db.lock().unwrap(), raw, source)?;
-        // The probe may still say online (spotify.link alone timed out): mark offline so the next
-        // good probe flips and `retry_unresolved` runs (TSD §4.1 "retry on reconnect").
-        net::record_online(false);
     }
     out
+}
+
+/// Queued rows wait for a retry. spotify.link can time out while open.spotify.com (the `online()`
+/// probe, TSD §4.3) answers, so this flag, not the ONLINE cache, tells lib.rs's poll loop to retry.
+static RETRY_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Sets [`RETRY_PENDING`] when `out` is an offline error; returns whether it was.
+fn note_offline<T>(out: &Result<T>) -> bool {
+    let offline = matches!(out, Err(e) if e.code == Code::Offline);
+    if offline {
+        RETRY_PENDING.store(true, Ordering::SeqCst);
+    }
+    offline
+}
+
+/// Poll loop: true (and cleared) when a queued row is waiting for a retry.
+pub fn take_retry_pending() -> bool {
+    RETRY_PENDING.swap(false, Ordering::SeqCst)
 }
 
 /// `retry_unresolved` (and on `online-changed` → true): returns `(resolved count, new item ids)`; the
 /// caller emits `capture-received` per new item. Stops at the first offline answer so a flaky
 /// connection doesn't mark rows failed.
 pub async fn retry_unresolved(db: &Mutex<Connection>) -> Result<(usize, Vec<i64>)> {
+    RETRY_PENDING.store(false, Ordering::SeqCst); // this run covers every queued row
     let pending = list_unresolved(&db.lock().unwrap())?;
     let (mut resolved, mut new) = (0, vec![]);
     for u in pending {
         let out = resolve_short(&u.raw_link).await;
-        let offline = matches!(&out, Err(e) if e.code == Code::Offline);
+        let offline = note_offline(&out); // stops here; the poll loop retries later
         match apply_resolution(&mut db.lock().unwrap(), u.id, &u.raw_link, &u.source, out)? {
             Applied::Pending => {}
             Applied::Existing(_) => resolved += 1,
@@ -410,7 +427,6 @@ pub async fn retry_unresolved(db: &Mutex<Connection>) -> Result<(usize, Vec<i64>
             }
         }
         if offline {
-            net::record_online(false); // so the next good probe retries again
             break;
         }
     }
@@ -608,6 +624,25 @@ mod tests {
         // a non-short link resolves without any network
         let r = tauri::async_runtime::block_on(resolve_short(&uri)).unwrap();
         assert_eq!(r, (uri, ItemType::Album));
+    }
+
+    #[test]
+    fn retry_pending_flag() {
+        take_retry_pending();
+        assert!(!note_offline(&Ok(())));
+        assert!(!take_retry_pending(), "success sets nothing");
+        assert!(!note_offline::<()>(&Err(AppError::new(
+            Code::InvalidLink,
+            "x"
+        ))));
+        assert!(!take_retry_pending(), "non-offline error sets nothing");
+        assert!(note_offline::<()>(&Err(AppError::offline())));
+        assert!(take_retry_pending(), "offline sets it");
+        assert!(!take_retry_pending(), "take clears it");
+        note_offline::<()>(&Err(AppError::offline()));
+        let db = Mutex::new(db::open_in_memory().unwrap());
+        tauri::async_runtime::block_on(retry_unresolved(&db)).unwrap();
+        assert!(!take_retry_pending(), "a retry run clears it");
     }
 
     #[test]

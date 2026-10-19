@@ -443,12 +443,21 @@ pub fn restore_locked(
     }
     // A second restore in one session would overwrite the only copy of the pre-first-restore
     // library; start-up (cleanup_pre_restore) clears it once the restored library is healthy.
-    if pre.exists() {
+    if pre.exists() && RESTORED.lock().unwrap().contains(&pre) {
         let _ = std::fs::remove_file(&staged);
         return Err(AppError::new(
             Code::Conflict,
             "Restart Runout before restoring again — the previous library is still kept as a safety copy.",
         ));
+    }
+    // An older session's copy (kept because the restored library failed integrity_check): set it
+    // aside under a UTC stamp, never delete it.
+    if pre.exists() {
+        let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+        if let Err(e) = move_db(&pre, &sibling(&pre, &stamp.to_string())) {
+            let _ = std::fs::remove_file(&staged);
+            return Err(e.into());
+        }
     }
     let old = std::mem::replace(conn, refusing()?);
     if let Err((old, e)) = old.close() {
@@ -470,8 +479,12 @@ pub fn restore_locked(
             return Err(e);
         }
     }
+    RESTORED.lock().unwrap().push(pre);
     Ok(check)
 }
+
+/// Pre-restore copies made by a restore in this process: those block a second restore until restart.
+static RESTORED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
 /// At a successful start the pre-restore copy is no longer needed (TSD §4.10) — but it is only
 /// deleted when library.db opens and passes `integrity_check` and no failed restore left a marker.
@@ -491,7 +504,17 @@ pub fn cleanup_pre_restore(library_path: &Path) {
 
 /// `delete_library` (cleanup.rs): the pre-restore copy and its marker go too.
 pub(crate) fn remove_pre_restore(library_path: &Path) -> std::io::Result<()> {
-    remove_db_files(&sibling(library_path, "pre-restore"));
+    let pre = sibling(library_path, "pre-restore");
+    remove_db_files(&pre);
+    // set-aside copies `library.db.pre-restore.<stamp>` (restore_locked)
+    let prefix = format!("{}.", pre.file_name().unwrap_or_default().to_string_lossy());
+    if let Some(Ok(dir)) = library_path.parent().map(std::fs::read_dir) {
+        for f in dir.flatten() {
+            if f.file_name().to_string_lossy().starts_with(&prefix) {
+                let _ = std::fs::remove_file(f.path());
+            }
+        }
+    }
     match std::fs::remove_file(marker(library_path)) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
@@ -726,6 +749,46 @@ mod tests {
         assert!(!pre.exists(), "healthy library, no marker → deleted");
         let _ = std::fs::remove_dir_all(d);
     }
+    /// A pre-restore left by an earlier session (restored library failed integrity_check, so start-up
+    /// kept it) must not block restoring forever: it is set aside under a stamp, never deleted.
+    #[test]
+    fn earlier_sessions_pre_restore_is_set_aside() {
+        let d = tmp("aside");
+        let lib = d.join("library.db");
+        let db = Mutex::new(db::open(&lib).unwrap());
+        db::fixture(&db.lock().unwrap(), 2);
+        let b = backup_at(&db.lock().unwrap(), &d.join("Backups"), 100, at(1)).unwrap();
+        let pre = pre_restore(&lib);
+        std::fs::write(&pre, b"earlier session").unwrap();
+        restore_backup(&db, &lib, Path::new(&b.path)).unwrap();
+        let asides: Vec<_> = std::fs::read_dir(&d)
+            .unwrap()
+            .flatten()
+            .filter(|f| {
+                f.file_name()
+                    .to_string_lossy()
+                    .starts_with("library.db.pre-restore.2")
+            })
+            .collect();
+        assert_eq!(asides.len(), 1);
+        assert_eq!(std::fs::read(asides[0].path()).unwrap(), b"earlier session");
+        assert_eq!(
+            n_items(&Connection::open(&pre).unwrap()),
+            3,
+            "this restore's copy"
+        );
+        // ...but this session's own copy still blocks a second restore
+        let e = restore_backup(&db, &lib, Path::new(&b.path)).unwrap_err();
+        assert_eq!(e.code, Code::Conflict);
+        remove_pre_restore(&lib).unwrap();
+        assert!(
+            !asides[0].path().exists() && !pre.exists(),
+            "delete_library removes both"
+        );
+        drop(db);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
     fn n_items(c: &Connection) -> i64 {
         c.query_row("SELECT count(*) FROM item", [], |r| r.get(0))
             .unwrap()
