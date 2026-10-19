@@ -142,7 +142,7 @@ Work items
 9. 500k-event + 10-year synthetic export generator. — **done** (`tests/perf_listening.rs`, `4ad5a14`)
 
 Acceptance
-- [ ] SMTC spike logs 3 consecutive real Spotify tracks with plausible `ms_played` (pause excluded). *(open: live spike ran one track only, 55.2 s over 55 s ([KB](kb/windows-tauri.md)); track change and pause not yet run live)*
+- [x] SMTC spike logs 3 consecutive real Spotify tracks with plausible `ms_played` (pause excluded). *(19 Oct 2026, `examples/smtc_spike.rs` release build: 3 consecutive tracks closed at 54.4 s (joined mid-track), 180.3 s and 193.7 s; no pause occurred live, pause exclusion proven by `logger::accumulator::tests::accumulation_table`)*
 - [x] Real lifetime history imports; second import adds 0 rows. *(19 Oct 2026, `examples/real_import.rs` on a temp copy of the library (deleted afterwards): 180,149 plays added, 48 duplicates merged, 18.7 s; second import added 0; forbidden-field check over every column and TEXT value: 0 hits)*
 - [x] No IP/user agent/username anywhere in `library.db` (query check). *(`importer::run` test `forbidden_fields_never_reach_the_db` walks every TEXT column)*
 - [x] Overlap test: no double counts, incl. featured-artist, compilation and back-to-back repeat fixtures. *(`importer::run` `overlap_has_no_double_counts`; logger `same_track_replayed_back_to_back_is_two_plays`)*
