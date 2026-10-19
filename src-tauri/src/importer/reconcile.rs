@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn one_to_one_artist_then_gap() {
         let c = db::open_in_memory().unwrap();
-        let mut add = |s, ts, t, a| insert(&c, &ev(s, ts, t, a)).unwrap().unwrap();
+        let add = |s, ts, t, a| insert(&c, &ev(s, ts, t, a)).unwrap().unwrap();
         use Source::{Export as E, Logger as L};
         // artist overlap beats a closer candidate without it
         let far = add(E, "2026-01-01T10:01:30Z", "Song", "Band A");

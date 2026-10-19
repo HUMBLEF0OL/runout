@@ -81,7 +81,7 @@ pub fn apply(tx: &Transaction, l: &Loaded) -> Result<ImportResult> {
         r.playlists = playlists::store(tx, r.batch_id, lists)?;
         tx.execute(
             "UPDATE import_batch SET record_count = ?2 WHERE id = ?1",
-            params![r.batch_id, r.playlists],
+            params![r.batch_id, r.playlists as i64],
         )?;
     }
     if let Some((sum, parsed)) = &l.streaming {

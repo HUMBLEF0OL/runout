@@ -1,6 +1,6 @@
 //! Account data (TSD §4.8, FR-033): `Playlist*.json` → `exported_playlist*`, replaced by name on a
 //! newer export (exports carry no playlist id). Read-only check-up: duplicates, low-rated, never played.
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};

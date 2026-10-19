@@ -64,10 +64,10 @@ fn walk(dir: &Path, out: &mut Export) -> Result<()> {
         let p = e?.path();
         if p.is_dir() {
             walk(&p, out)?;
-        } else if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-            if kind(name).is_some() {
-                push(out, name.to_owned(), FsFile::open(&p)?)?;
-            }
+        } else if let Some(name) = p.file_name().and_then(|n| n.to_str())
+            && kind(name).is_some()
+        {
+            push(out, name.to_owned(), FsFile::open(&p)?)?;
         }
     }
     Ok(())
@@ -91,6 +91,7 @@ pub fn read(path: &Path) -> Result<Export> {
             let f = z.by_index(i).map_err(bad)?;
             let name = f
                 .name()
+                .map_err(bad)?
                 .rsplit(['/', '\\'])
                 .next()
                 .unwrap_or_default()
