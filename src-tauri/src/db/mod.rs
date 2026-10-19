@@ -41,6 +41,8 @@ pub fn open_in_memory() -> Result<Connection, AppError> {
 
 fn configure(conn: &mut Connection) -> Result<(), AppError> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
+    // Deleted notes/reviews are zeroed on disk, not left in freed pages (FR-022).
+    conn.pragma_update(None, "secure_delete", "ON")?;
     conn.busy_timeout(Duration::from_secs(5))?;
     migrate(conn)
 }
