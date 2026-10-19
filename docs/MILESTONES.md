@@ -24,7 +24,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 - **Known gaps:** see [Known gaps](#known-gaps) below (G-2 to G-5 closed in M3).
 - **Your open hard stops:** U-1 (request Spotify exports) not recorded as done; U-2 needed by M4; U-6/U-7 by M5; U-3/U-4/U-5 by M6.
 - **M3 closed** 18 Oct 2026: all 8 acceptance lines ticked with evidence; four external spec reviews, every finding fixed. Contract changes in M3: `ItemSummary.notes`, `NewItem.album_id`, `ItemPatch.type`, `search` `type`, `recent_activity` dropped.
-- **M3 post-close audit** 19 Oct 2026: 3 rounds of parallel spec reviews, 30 findings fixed (FTS secure-delete migration `0002`, restore/move safety copies, capture off mid-request, link-retry races, settings load, input clamps); check.py + journeys 30/30 green.
+- **M3 post-close audit** 19 Oct 2026: 3 rounds of parallel spec reviews + 2 verification passes, 36 findings fixed (FTS secure-delete migration `0002`, restore/move safety copies, capture off mid-request, link-retry races, settings load, input clamps); check.py + journeys 30/30 green.
 - **Next:** M4 work item 1 (SMTC spike) per `docs/plans/M4-listening-insights.md`; M4 WI 4 waits on **U-2**. M5 starts at its U-6 gate.
 
 ### Known gaps
