@@ -71,9 +71,9 @@ mod tests {
                 p.playlists,
                 p.private
             ),
-            (15, 2, 0, 2, 1)
+            (16, 2, 0, 2, 1)
         );
-        assert_eq!(p.files.len(), 3);
+        assert_eq!(p.files.len(), 4);
         assert!(
             p.from.starts_with("2026-03-0") && p.until.starts_with("2026-10-25"),
             "{p:?}"

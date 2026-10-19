@@ -228,7 +228,7 @@ mod tests {
         let p = parse(&e.streaming, &mut LocalTime::system()).unwrap();
         assert_eq!(
             (p.events.len(), p.skipped),
-            (15, 2),
+            (16, 2),
             "music; podcast + audiobook"
         );
         assert_eq!(p.events.iter().filter(|e| e.private_session).count(), 1);

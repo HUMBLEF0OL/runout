@@ -165,19 +165,19 @@ mod tests {
         let mut c = db::open_in_memory().unwrap();
         let l = load(&fixture()).unwrap();
         let r = run(&mut c, &l).unwrap();
-        // 15 music rows, one repeated across the two files
-        assert_eq!((r.added, r.duplicates, r.playlists), (14, 1, 2));
+        // 16 music rows (15 Audio + 1 Video), one repeated across the Audio files
+        assert_eq!((r.added, r.duplicates, r.playlists), (15, 1, 2));
         let again = run(&mut c, &load(&fixture()).unwrap()).unwrap();
         assert_eq!(
             (again.added, again.duplicates, again.batch_id),
-            (0, 15, r.batch_id)
+            (0, 16, r.batch_id)
         );
-        assert_eq!(count(&c, "SELECT count(*) FROM listening_event"), 14);
+        assert_eq!(count(&c, "SELECT count(*) FROM listening_event"), 15);
         assert_eq!(count(&c, "SELECT count(*) FROM exported_playlist"), 2);
         assert_eq!(count(&c, "SELECT count(*) FROM import_batch"), 2);
         let imports = list_imports(&c).unwrap();
         assert_eq!(imports[0].kind, "extended");
-        assert_eq!(imports[0].record_count, 14);
+        assert_eq!(imports[0].record_count, 15);
         assert_eq!(
             imports[0].latest_event_utc.as_deref(),
             Some("2026-10-25T01:00:00Z")

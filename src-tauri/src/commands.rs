@@ -799,10 +799,10 @@ mod tests {
         let p = call(&w, "preview_import", json!({ "path": path })).unwrap();
         assert_eq!(
             (p["music"].clone(), p["playlists"].clone()),
-            (json!(15), json!(2))
+            (json!(16), json!(2))
         );
         let r = call(&w, "run_import", json!({ "path": path })).unwrap();
-        assert_eq!(r["added"], json!(14));
+        assert_eq!(r["added"], json!(15));
         assert_eq!(
             call(&w, "list_imports", json!({})).unwrap()[0]["kind"],
             json!("extended")

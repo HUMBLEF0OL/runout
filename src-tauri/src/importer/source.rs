@@ -28,10 +28,13 @@ enum Kind {
     Playlist,
 }
 
-// ⚑ T1: names per TSD §4.8 until U-2 confirms them (WI 4).
+// T1 verified (TSD §4.8): Video files hold track plays too; rows are filtered by URI, not file kind.
 fn kind(name: &str) -> Option<Kind> {
     let json = name.ends_with(".json");
-    if json && name.starts_with("Streaming_History_Audio_") {
+    if json
+        && (name.starts_with("Streaming_History_Audio_")
+            || name.starts_with("Streaming_History_Video_"))
+    {
         Some(Kind::Streaming)
     } else if json && name.starts_with("Playlist") {
         Some(Kind::Playlist)
@@ -107,7 +110,7 @@ pub fn read(path: &Path) -> Result<Export> {
     }
     if out.streaming.is_empty() && out.playlists.is_empty() {
         return Err(unrecognized("No Spotify export files found there.")
-            .with_detail("Expected Streaming_History_Audio_*.json or Playlist*.json"));
+            .with_detail("Expected Streaming_History_Audio_*.json, Streaming_History_Video_*.json or Playlist*.json"));
     }
     out.streaming.sort_by(|a, b| a.name.cmp(&b.name));
     out.playlists.sort_by(|a, b| a.name.cmp(&b.name));
@@ -149,10 +152,10 @@ mod tests {
         assert!(
             names
                 .iter()
-                .all(|n| n.starts_with("Streaming_History_Audio_") || n.starts_with("Playlist")),
+                .all(|n| n.starts_with("Streaming_History_") || n.starts_with("Playlist")),
             "{names:?}"
         );
-        assert_eq!((e.streaming.len(), e.playlists.len()), (2, 1));
+        assert_eq!((e.streaming.len(), e.playlists.len()), (3, 1));
 
         // same files zipped inside a subfolder → same set, same checksum
         let zp = std::env::temp_dir().join(format!("runout-src-{}.zip", std::process::id()));
