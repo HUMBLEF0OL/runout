@@ -367,7 +367,8 @@ pub fn create(conn: &mut Connection, input: NewItem) -> Result<ItemDetail> {
     if let Some(ms) = input.capture_ms {
         tx.execute(
             "INSERT INTO usage_event(kind, duration_ms) VALUES ('capture', ?1)",
-            [ms.max(0)],
+            // TSD §7: an hour caps a bogus value so the median sum can't overflow (BRD §15)
+            [ms.clamp(0, 3_600_000)],
         )?;
     }
     tx.commit()?;
@@ -631,6 +632,16 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ms, 4200);
+        let mut huge = new(ItemType::Album, "Other");
+        huge.capture_ms = Some(i64::MAX);
+        create(&mut c, huge).unwrap();
+        let max: i64 = c
+            .query_row("SELECT max(duration_ms) FROM usage_event", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            max, 3_600_000,
+            "TSD §7: clamped, so the median can't overflow"
+        );
     }
 
     #[test]

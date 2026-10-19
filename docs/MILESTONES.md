@@ -117,7 +117,7 @@ Work items
 12. Performance generator (10k items).
 
 Acceptance
-- [x] `cargo test` green, incl. ≥ 15 link-parser cases, promotion rule, duplicate block, tag merge, backup rotation ×4. *(18 Oct 2026: `cargo test` 88 lib + integrity + persistence green; `links::tests::parse_table` 35 cases; `provenance` promotion tests; `items` duplicate block; `tags::merge_keeps_every_item_tagged_once`; `backup` rotation ×4 keeps newest 3)*
+- [x] `cargo test` green, incl. ≥ 15 link-parser cases, promotion rule, duplicate block, tag merge, backup rotation ×4. *(18 Oct 2026: `cargo test` lib + integrity + persistence green; `links::tests::parse_table` 35 cases; `provenance` promotion tests; `items` duplicate block; `tags::merge_keeps_every_item_tagged_once`; `backup` rotation ×4 keeps newest 3)*
 - [x] Every `api.ts` MVP call has a Rust command with matching types. *(43 §3 commands in `commands.rs`, enforced by check.py `commands`; serde structs compared field by field in the pre-close review; `commands::tests::invoke_keys_match_api_ts` proves the invoke keys)*
 - [x] NFR-04 on 10k items: search < 200 ms; search finds a word that appears only in a review. *(`tests/perf.rs` release: worst search 24.9 ms, list page 9.9 ms, start 48 ms; review-only word 1 hit in 0.3 ms)*
 - [x] All data persists across restart; merging two tags keeps every item tagged once. *(`tests/persistence.rs`: file DB written, dropped, reopened, full ItemDetail + filters/tags/counts/search equal; tag merge test above)*

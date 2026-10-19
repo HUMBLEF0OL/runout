@@ -45,7 +45,7 @@ Every column of the `item` table (TSD §3), plus two keys:
 | `provenance` | object | Field name → `user` (you typed it) or `promoted` (you confirmed it from a Spotify link, TSD §4.2). Fields not listed have no recorded source |
 
 ## Example
-Abridged from an actual export of a synthetic two-record library (some free-text values filled in for illustration) (ids are random, not real Spotify ids):
+Abridged from an export of a synthetic two-record library (free text and timestamps filled in to show an explored, reviewed album) (ids are random, not real Spotify ids):
 
 ```json
 {
@@ -56,9 +56,25 @@ Abridged from an actual export of a synthetic two-record library (some free-text
       "at": "2026-10-18T14:23:07Z",
       "from_status": null,
       "id": 1,
+      "item_id": 1,
+      "note": null,
+      "to_status": "planned"
+    },
+    {
+      "at": "2026-10-18T14:23:07Z",
+      "from_status": null,
+      "id": 2,
       "item_id": 2,
       "note": null,
       "to_status": "planned"
+    },
+    {
+      "at": "2026-10-18T20:41:55Z",
+      "from_status": "planned",
+      "id": 3,
+      "item_id": 2,
+      "note": null,
+      "to_status": "explored"
     }
   ],
   "items": [
@@ -71,7 +87,7 @@ Abridged from an actual export of a synthetic two-record library (some free-text
       "explored_at": null,
       "favourite": 0,
       "id": 1,
-      "in_backlog": 1,
+      "in_backlog": 0,
       "modified_at": "2026-10-18T14:23:07Z",
       "notes": null,
       "priority": null,
@@ -89,14 +105,14 @@ Abridged from an actual export of a synthetic two-record library (some free-text
     {
       "added_at": "2026-10-18T14:23:07Z",
       "added_via": "pc",
-      "backlog_order": 0,
+      "backlog_order": null,
       "created_at": "2026-10-18T14:23:07Z",
       "display_name": "Fixture album 0",
-      "explored_at": null,
+      "explored_at": "2026-10-18T20:41:55Z",
       "favourite": 0,
       "id": 2,
-      "in_backlog": 1,
-      "modified_at": "2026-10-18T14:23:07Z",
+      "in_backlog": 0,
+      "modified_at": "2026-10-18T20:45:12Z",
       "notes": "my own note",
       "priority": null,
       "provenance": {
@@ -106,7 +122,7 @@ Abridged from an actual export of a synthetic two-record library (some free-text
       "rating": 4.5,
       "recommended_by": "a friend",
       "review": "a made-up review",
-      "reviewed_at": null,
+      "reviewed_at": "2026-10-18T20:45:12Z",
       "revisit": 0,
       "spotify_uri": "spotify:album:UyasRLN3R6mDSPiqdJ8pME",
       "status": "explored",

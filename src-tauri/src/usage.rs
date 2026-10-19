@@ -80,7 +80,7 @@ fn metrics_at(conn: &Connection, now: &str) -> Result<SuccessMetrics> {
     let median_ms = match ms.len() {
         0 => 0.0,
         n if n % 2 == 1 => ms[n / 2] as f64,
-        n => (ms[n / 2 - 1] + ms[n / 2]) as f64 / 2.0,
+        n => (ms[n / 2 - 1] as f64 + ms[n / 2] as f64) / 2.0,
     };
     let sql = format!(
         "WITH wk AS (SELECT * FROM usage_event WHERE at > strftime({ISO}, ?1, '-7 days') AND at <= ?1)

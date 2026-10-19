@@ -132,13 +132,16 @@ impl AppState {
         for side in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{side}", from.display()));
         }
-        // TSD §4.10 keeps pre-restore until the next successful start: it travels with the library.
-        let pre = backup::pre_restore(&from);
-        if pre.exists() && backup::move_db(&pre, &backup::pre_restore(&to)).is_err() {
-            // rename fails across drives: copy it over and remove the old one only once the copy exists
-            // (a failed copy leaves it at the old place rather than losing the only safety copy)
-            if std::fs::copy(&pre, backup::pre_restore(&to)).is_ok() {
-                let _ = backup::remove_pre_restore(&from);
+        // TSD §4.10: pre-restore copies (incl. set-aside `.<stamp>` ones) travel with the library and
+        // are never lost: rename, or across drives copy and remove each only once its copy exists.
+        let (old_prefix, new_prefix) = (
+            backup::pre_restore(&from).to_string_lossy().into_owned(),
+            backup::pre_restore(&to).to_string_lossy().into_owned(),
+        );
+        for f in backup::pre_restore_files(&from) {
+            let t = PathBuf::from(f.to_string_lossy().replacen(&old_prefix, &new_prefix, 1));
+            if std::fs::rename(&f, &t).is_err() && std::fs::copy(&f, &t).is_ok() {
+                let _ = std::fs::remove_file(&f);
             }
         }
         Ok(to.to_string_lossy().into_owned())
@@ -240,8 +243,21 @@ mod tests {
         std::fs::remove_file(&marker).unwrap();
         // a leftover pre-restore moves with the library (kept until next successful start, TSD §4.10)
         std::fs::write(backup::pre_restore(&old), b"old").unwrap();
+        let stamped = |lib: &std::path::Path| {
+            PathBuf::from(format!(
+                "{}.20261019T000000Z",
+                backup::pre_restore(lib).display()
+            ))
+        };
+        std::fs::write(stamped(&old), b"older").unwrap();
         let new = st.move_library(&d.join("b")).unwrap();
         assert!(!backup::pre_restore(&old).exists(), "not left behind");
+        assert!(!stamped(&old).exists(), "set-aside copy not left behind");
+        assert_eq!(
+            std::fs::read(stamped(std::path::Path::new(&new))).unwrap(),
+            b"older",
+            "set-aside copy moved too"
+        );
         assert_eq!(
             std::fs::read(backup::pre_restore(std::path::Path::new(&new))).unwrap(),
             b"old",

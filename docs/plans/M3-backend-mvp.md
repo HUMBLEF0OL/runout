@@ -8,7 +8,7 @@ Agent: `rust-core` for everything; `spec-reviewer` after steps 4, 7 and 11.
 **Known gaps owned here:** G-2, G-3, G-4, G-5 (decide before step 1), G-10, plus the M2 contract additions listed in the MILESTONES Status block. See [MILESTONES Known gaps](../MILESTONES.md#known-gaps); remove each row when fixed.
 
 ## Steps
-1. **Skeleton + DB (WI 1).** Crates: `rusqlite` (bundled, FTS5), `serde`/`serde_json`, `thiserror`, `chrono`, `sha2`, `zip`, `reqwest` (rustls, blocking off), `tiny_http`, `rand`, `tauri-plugin-dialog`. Modules per TSD §9. `db/`: open with WAL + `foreign_keys=ON`, migration runner over embedded `migrations/*.sql` using `PRAGMA user_version`. `0001_init.sql` = TSD §3 core tables + `item_fts` (+ triggers) + `usage_event`. `AppError` per API.md §1 with `From<rusqlite::Error>` etc.
+1. **Skeleton + DB (WI 1).** Crates: `rusqlite` (bundled, FTS5), `serde`/`serde_json`, `thiserror`, `chrono`, `sha2`, `zip`, `reqwest` (rustls, blocking off), ~~`tiny_http`~~ (replaced by `std::net::TcpListener`, G-17, TSD §2), `rand`, `tauri-plugin-dialog`. Modules per TSD §9. `db/`: open with WAL + `foreign_keys=ON`, migration runner over embedded `migrations/*.sql` using `PRAGMA user_version`. `0001_init.sql` = TSD §3 core tables + `item_fts` (+ triggers) + `usage_event`. `AppError` per API.md §1 with `From<rusqlite::Error>` etc.
    - Tests: fresh DB migrates to v1; running twice is a no-op; CHECK constraints reject a bad status and rating 0.7.
 2. **Links (WI 2).** `links.rs`: TSD §4.1 table as a pure `parse(&str) -> Parsed`; `resolve_short(url)` via `net` (max 5 redirects, 5 s). Offline → row in `unresolved_capture`; `retry_unresolved` on `online-changed`.
    - Tests: ≥ 15 table cases (intl prefix, `?si=`, URI form, 21/23-char IDs, episode/show/audiobook rejected, playlist rejected as item, whitespace, `http://`, garbage). Reuse the M2 mock table so both sides agree.
@@ -41,7 +41,7 @@ Agent: `rust-core` for everything; `spec-reviewer` after steps 4, 7 and 11.
 |---|---|
 | FTS5 over linked artist names needs denormalised content | Maintain via triggers on `item`, `item_tag`, `item_link`; test rename propagates |
 | Kill-test flakiness on Windows | Retry kill at 3 offsets; assert integrity each time |
-| `tiny_http` blocks shutdown | Listener thread holds a stop flag + `unblock()` on disable/quit |
+| Listener blocks shutdown | Non-blocking `std::net::TcpListener` polled with a stop flag (replaced `tiny_http`, G-17) |
 
 ## Done when
 MILESTONES M3 acceptance passes; `python scripts/check.py` exits 0; `docs/EXPORT_FORMAT.md` exists.

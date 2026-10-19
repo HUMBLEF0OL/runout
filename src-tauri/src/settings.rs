@@ -47,7 +47,13 @@ pub fn merge(base: &Settings, patch: &Value) -> Result<Settings> {
             return Err(AppError::validation(what));
         }
     }
-    overlay(base, patch)
+    let s = overlay(base, patch)?;
+    if s.size_warn_mb == 0 {
+        return Err(AppError::validation(
+            "The size warning must be at least 1 MB.",
+        ));
+    }
+    Ok(s)
 }
 
 /// `base` with the keys of `patch` laid over it; unknown keys or wrong types → `validation`.
@@ -127,6 +133,7 @@ mod tests {
         );
         assert!(merge(&d, &json!({"nope": 1})).is_err());
         assert!(merge(&d, &json!({"size_warn_mb": "big"})).is_err());
+        assert!(merge(&d, &json!({"size_warn_mb": 0})).is_err());
         // only move_library may change library_path
         // only the Rust pickers may change paths (API.md §1)
         for key in ["library_path", "backup_dir"] {

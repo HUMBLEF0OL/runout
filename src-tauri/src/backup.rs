@@ -443,7 +443,7 @@ pub fn restore_locked(
     }
     // A second restore in one session would overwrite the only copy of the pre-first-restore
     // library; start-up (cleanup_pre_restore) clears it once the restored library is healthy.
-    if pre.exists() && RESTORED.lock().unwrap().contains(&pre) {
+    if pre.exists() && RESTORED.load(std::sync::atomic::Ordering::SeqCst) {
         let _ = std::fs::remove_file(&staged);
         return Err(AppError::new(
             Code::Conflict,
@@ -479,12 +479,29 @@ pub fn restore_locked(
             return Err(e);
         }
     }
-    RESTORED.lock().unwrap().push(pre);
+    RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
     Ok(check)
 }
 
-/// Pre-restore copies made by a restore in this process: those block a second restore until restart.
-static RESTORED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+/// A restore succeeded in this process: its pre-restore copy (wherever `move_library` took it)
+/// blocks a second restore until restart.
+static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Every pre-restore file beside `library_path`: the copy, set-aside `.<stamp>` copies, their -wal/-shm.
+pub(crate) fn pre_restore_files(library_path: &Path) -> Vec<PathBuf> {
+    let prefix = pre_restore(library_path)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let Some(Ok(dir)) = library_path.parent().map(std::fs::read_dir) else {
+        return vec![];
+    };
+    dir.flatten()
+        .filter(|f| f.file_name().to_string_lossy().starts_with(&prefix))
+        .map(|f| f.path())
+        .collect()
+}
 
 /// At a successful start the pre-restore copy is no longer needed (TSD §4.10) — but it is only
 /// deleted when library.db opens and passes `integrity_check` and no failed restore left a marker.
