@@ -135,7 +135,10 @@ mod tests {
     #[test]
     fn allow_list_is_a_case_insensitive_substring() {
         let apps = vec!["Spotify".to_string(), " ".to_string()];
-        assert!(allowed("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify", &apps));
+        assert!(allowed(
+            "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify",
+            &apps
+        ));
         assert!(allowed("spotify.exe", &apps));
         assert!(!allowed("Microsoft.ZuneMusic", &apps));
         assert!(!allowed("anything", &[String::new()]));

@@ -48,7 +48,11 @@ pub struct Accumulator {
 
 impl Accumulator {
     /// One snapshot at `at`: `None` = no session (closed). Returns the play this snapshot finished.
-    pub fn observe(&mut self, now: Option<(Track, PlayState)>, at: DateTime<Utc>) -> Option<Closed> {
+    pub fn observe(
+        &mut self,
+        now: Option<(Track, PlayState)>,
+        at: DateTime<Utc>,
+    ) -> Option<Closed> {
         let changed = match (&self.track, &now) {
             (Some(cur), Some((t, _))) => !cur.same(t),
             (None, None) => false,

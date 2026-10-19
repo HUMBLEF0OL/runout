@@ -43,11 +43,17 @@ fn spike() {
             last = shown;
         }
         if let Some(c) = acc.observe(snap, chrono::Utc::now()) {
-            println!("closed: {} / {} ms_played={}", c.track.title, c.track.artist, c.ms_played);
+            println!(
+                "closed: {} / {} ms_played={}",
+                c.track.title, c.track.artist, c.ms_played
+            );
         }
     }
     if let Some(c) = acc.close(chrono::Utc::now()) {
-        println!("closed at exit: {} ms_played={}", c.track.title, c.ms_played);
+        println!(
+            "closed at exit: {} ms_played={}",
+            c.track.title, c.ms_played
+        );
     }
     println!("wakes={wakes} smtc_events={events} (the rest were 5 s polls)");
 }

@@ -51,7 +51,11 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>) {
 }
 
 /// `logger-status` only when something other than the running `ms_played` changed.
-fn emit_if_changed<R: Runtime>(app: &AppHandle<R>, last: &mut Option<LoggerStatus>, s: LoggerStatus) {
+fn emit_if_changed<R: Runtime>(
+    app: &AppHandle<R>,
+    last: &mut Option<LoggerStatus>,
+    s: LoggerStatus,
+) {
     let key = |s: &LoggerStatus| {
         let mut k = s.clone();
         if let Some(np) = &mut k.now_playing {

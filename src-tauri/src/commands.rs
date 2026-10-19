@@ -478,14 +478,20 @@ pub fn set_logger<R: Runtime>(
     app: AppHandle<R>,
     st: St<'_>,
     lg: Lg<'_>,
-    patch: LoggerPatch,
+    patch: Value,
 ) -> Result<LoggerStatus> {
+    // parsed here so a bad key is a `validation` error, not Tauri's plain deserialize string
+    let patch: LoggerPatch = serde_json::from_value(patch)
+        .map_err(|_| AppError::validation("Unknown or mistyped logger setting."))?;
     if let Some(on) = patch.autostart {
         // absent only in the mock-runtime tests, which don't register the plugin
         if let Some(a) = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>() {
             if on { a.enable() } else { a.disable() }.map_err(|e| {
-                AppError::new(crate::error::Code::Io, "Couldn't change start with Windows.")
-                    .with_detail(e.to_string())
+                AppError::new(
+                    crate::error::Code::Io,
+                    "Couldn't change start with Windows.",
+                )
+                .with_detail(e.to_string())
             })?;
         }
     }
@@ -511,7 +517,11 @@ pub fn pause_logger<R: Runtime>(
 }
 
 #[tauri::command(async)]
-pub fn resume_logger<R: Runtime>(app: AppHandle<R>, st: St<'_>, lg: Lg<'_>) -> Result<LoggerStatus> {
+pub fn resume_logger<R: Runtime>(
+    app: AppHandle<R>,
+    st: St<'_>,
+    lg: Lg<'_>,
+) -> Result<LoggerStatus> {
     change_logger(&app, &st, &lg, |s| {
         logger::resume(s);
         Ok(())
@@ -630,16 +640,27 @@ mod tests {
         let lg = call(&w, "pause_logger", json!({"minutes": 60})).unwrap();
         assert_eq!(lg["state"], json!("paused"));
         assert!(lg["paused_until"].is_string());
-        let lg = call(&w, "set_logger", json!({"patch": {"include_private": true}})).unwrap();
+        let lg = call(
+            &w,
+            "set_logger",
+            json!({"patch": {"include_private": true}}),
+        )
+        .unwrap();
         assert_eq!(lg["include_private"], json!(true));
         let lg = call(&w, "resume_logger", json!({})).unwrap();
-        assert_eq!((&lg["state"], &lg["paused_until"]), (&json!("idle"), &Value::Null));
+        assert_eq!(
+            (&lg["state"], &lg["paused_until"]),
+            (&json!("idle"), &Value::Null)
+        );
         let e = call(&w, "set_logger", json!({"patch": {"nope": true}})).unwrap_err();
         assert_eq!(e["code"], json!("validation"), "unknown patch key");
         let e = call(&w, "pause_logger", json!({"minutes": 0})).unwrap_err();
         assert_eq!(e["code"], json!("validation"));
         let lg = call(&w, "get_logger_status", json!({})).unwrap();
-        assert_eq!((&lg["autostart"], &lg["now_playing"]), (&json!(false), &Value::Null));
+        assert_eq!(
+            (&lg["autostart"], &lg["now_playing"]),
+            (&json!(false), &Value::Null)
+        );
         let e = call(&w, "check_backup", json!({"path": "C:\\nope.txt"})).unwrap_err();
         assert_eq!(e["code"], json!("validation"));
         drop(w);

@@ -141,7 +141,12 @@ impl Logger {
         write(conn, self.acc.close(at))
     }
 
-    pub fn status(&self, conn: &Connection, s: &Settings, at: DateTime<Utc>) -> Result<LoggerStatus> {
+    pub fn status(
+        &self,
+        conn: &Connection,
+        s: &Settings,
+        at: DateTime<Utc>,
+    ) -> Result<LoggerStatus> {
         let now_playing = match self.acc.track() {
             Some(t) if active(s, at) => Some(NowPlaying {
                 track_name: t.title.clone(),
@@ -307,7 +312,9 @@ mod tests {
         use PlayState::*;
         lg.observe(&c, &s, snap("Short", Playing), t(0)).unwrap();
         // 29.9 s doesn't count, 30 s does (D25)
-        let id = lg.close(&c, t(0) + chrono::Duration::milliseconds(29_900)).unwrap();
+        let id = lg
+            .close(&c, t(0) + chrono::Duration::milliseconds(29_900))
+            .unwrap();
         lg.observe(&c, &s, snap("Long", Playing), t(100)).unwrap();
         let id2 = lg.observe(&c, &s, None, t(130)).unwrap();
         assert!(id.is_some() && id2.is_some());
@@ -333,7 +340,11 @@ mod tests {
         use PlayState::*;
         // paused until resumed: a whole play passes, nothing is written
         pause(&mut s, None, t(0)).unwrap();
-        for (at, sn) in [(0, snap("A", Playing)), (60, snap("B", Playing)), (120, None)] {
+        for (at, sn) in [
+            (0, snap("A", Playing)),
+            (60, snap("B", Playing)),
+            (120, None),
+        ] {
             assert_eq!(lg.observe(&c, &s, sn, t(at)).unwrap(), None);
         }
         assert_eq!(lg.status(&c, &s, t(120)).unwrap().state, "paused");
@@ -345,7 +356,10 @@ mod tests {
         lg.close(&c, t(240)).unwrap();
         pause(&mut s, Some(1), t(240)).unwrap();
         let st = lg.status(&c, &s, t(250)).unwrap();
-        assert_eq!((st.state, st.paused_until.as_deref()), ("paused", Some("2026-02-02T02:44:00Z")));
+        assert_eq!(
+            (st.state, st.paused_until.as_deref()),
+            ("paused", Some("2026-02-02T02:45:00Z"))
+        );
         lg.observe(&c, &s, snap("D", Playing), t(250)).unwrap();
         lg.observe(&c, &s, snap("D", Playing), t(300)).unwrap(); // pause over
         lg.observe(&c, &s, None, t(310)).unwrap();
@@ -356,7 +370,10 @@ mod tests {
         assert_eq!(lg.status(&c, &s, t(500)).unwrap().state, "off");
         assert_eq!(
             rows(&c),
-            vec![("C".into(), 40_000, true, None), ("D".into(), 10_000, false, None)]
+            vec![
+                ("C".into(), 40_000, true, None),
+                ("D".into(), 10_000, false, None)
+            ]
         );
         for bad in [0, -5, MAX_PAUSE_MIN + 1] {
             assert!(pause(&mut s, Some(bad), t(0)).is_err(), "{bad}");

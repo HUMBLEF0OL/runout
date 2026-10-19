@@ -8,6 +8,7 @@ Format: fact — **status**, date, source. Design decisions live in [TSD](../TSD
 ## SMTC (`Windows.Media.Control`)
 - Entry point `GlobalSystemMediaTransportControlsSessionManager::RequestAsync()`; per-session `MediaPropertiesChanged`, `PlaybackInfoChanged`, `TimelinePropertiesChanged` events — **Documented**, https://learn.microsoft.com/en-us/uwp/api/windows.media.control
 - Not every app raises every event → 5 s timeline poll fallback — **Interpretation**, TSD §4.5; confirm in the M4 SMTC spike.
+- M4 spike (`cargo run --example smtc_spike -- 60`, windows 0.62.2, Spotify desktop playing one track for the whole run): the Spotify session is found by AUMID substring `Spotify`, title/artist/album/status read fine, and the 5 s poll alone accumulated 55.2 s over the 55 s after the first snapshot. No SMTC event fired in 60 s with no track or state change, so the poll is what keeps `ms_played` live — **Verified** (tested), 2026-10-19. Track change, pause and seek events not yet exercised live (accumulator unit tests cover them).
 
 ## Tauri 2
 - App data paths must come from the path API (`app_data_dir`, `app_local_data_dir`) so the uninstaller deletes the same folders — **Documented**, TSD §2. Docs: https://v2.tauri.app/
