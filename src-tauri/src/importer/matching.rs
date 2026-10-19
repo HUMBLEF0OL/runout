@@ -15,6 +15,15 @@ static ARTIST_SEP: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\s*(?:[,;&/]|\s(?:feat\.?|ft\.?|featuring|x)\s)\s*").expect("valid regex")
 });
 
+/// The normalized artist string itself plus each artist in it ("A feat. B" → [a feat. b, a, b]).
+pub fn artists(s: &str) -> Vec<String> {
+    let whole = norm(s);
+    let mut out: Vec<String> = ARTIST_SEP.split(&whole).map(str::to_owned).collect();
+    out.push(whole);
+    out.retain(|a| !a.is_empty());
+    out
+}
+
 /// Track items indexed once, so a batch import doesn't query per event.
 pub struct Matcher {
     by_uri: HashMap<String, i64>,
@@ -65,13 +74,10 @@ impl Matcher {
         if let [(id, _)] = cands.as_slice() {
             return Some(*id);
         }
-        let whole = norm(artist);
-        let parts: Vec<&str> = ARTIST_SEP.split(&whole).collect();
-        let mut hits = cands.iter().filter(|(_, linked)| {
-            linked
-                .iter()
-                .any(|a| *a == whole || parts.contains(&a.as_str()))
-        });
+        let parts = artists(artist);
+        let mut hits = cands
+            .iter()
+            .filter(|(_, linked)| linked.iter().any(|a| parts.contains(a)));
         match (hits.next(), hits.next()) {
             (Some((id, _)), None) => Some(*id),
             _ => None,
