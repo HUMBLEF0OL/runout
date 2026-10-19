@@ -122,6 +122,48 @@ def check_insights_no_cache():
         print("--- insights no cache: FAIL\n" + "\n".join(bad))
 
 
+def check_listening_event_reads():
+    # G-20 / audit 4f53129: listening_event reads go through insights::base (reconciled rows out,
+    # private sessions per setting). A direct read needs `// unfiltered: <reason>` on the line or up to 2 lines above.
+    # ponytail: files another agent is annotating are skipped for now; drop them from SKIP once annotated.
+    skip = {"insights/listening.rs", "insights/plays.rs", "insights/mod.rs"}
+    src = TAURI / "src"
+    files = [p for d in ("insights", "library") if (src / d).exists() for p in (src / d).rglob("*.rs")]
+    files += [p for p in [src / "importer/playlists.rs"] if p.exists()]
+    bad = []
+    for p in files:
+        rel = p.relative_to(src).as_posix()
+        if rel in skip:
+            continue
+        lines, fn = p.read_text(encoding="utf-8").splitlines(), None
+        for i, line in enumerate(lines):
+            if m := re.search(r"\bfn (\w+)", line):
+                fn = m.group(1)
+            if "FROM listening_event" not in line or (rel == "insights/mod.rs" and fn == "base"):
+                continue
+            if not any(re.search(r"// unfiltered: \S", l) for l in lines[max(i - 2, 0):i + 1]):
+                bad.append(f"src-tauri/src/{rel}:{i + 1}: read insights::base, or add `// unfiltered: <reason>`")
+    if bad:
+        failures.append("listening_event reads")
+        print("--- listening_event reads: FAIL\n" + "\n".join(bad))
+
+
+def check_settings_clone_then_assign():
+    # G-20: cloning the settings, releasing the guard, then assigning loses a concurrent change.
+    # Use AppState::edit_settings (one guard from read to write) instead.
+    clone = re.compile(r"settings_now\(|settings\.lock\(\)\.unwrap\(\)\.clone\(\)")
+    assign = re.compile(r"\*[^;\n]*settings\.lock\(\)\.unwrap\(\)\s*=[^=]")
+    bad = []
+    for p in (TAURI / "src").rglob("*.rs"):
+        for body in re.split(r"\n\s*(?:pub(?:\(crate\))? )?fn ", p.read_text(encoding="utf-8")):
+            c = clone.search(body)
+            if c and assign.search(body, c.end()):
+                bad.append(f"{p.relative_to(ROOT)}: fn {body.split('(')[0].split()[-1]} clones settings then assigns; use edit_settings")
+    if bad:
+        failures.append("settings clone-then-assign")
+        print("--- settings clone-then-assign: FAIL\n" + "\n".join(bad))
+
+
 def check_ui_purity():
     # TSD §1 rule, M2 plan: src/ has no network or data code; only api.ts talks to Tauri.
     src = ROOT / "src"
@@ -336,6 +378,8 @@ check_events()
 check_settings_paths()
 check_restore_marker_guards()
 check_insights_no_cache()
+check_listening_event_reads()
+check_settings_clone_then_assign()
 check_ui_purity()
 check_contract_and_attribution()
 check_commands()

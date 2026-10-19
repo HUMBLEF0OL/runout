@@ -498,19 +498,15 @@ fn change_logger<R: Runtime>(
     let mut lg = lg.lock().unwrap();
     let db = st.db.lock().unwrap();
     let now = chrono::Utc::now();
-    // held from read to write so a concurrent update_settings isn't overwritten (lock order
-    // logger -> db -> settings)
-    let mut held = st.settings.lock().unwrap();
-    let mut s = held.clone();
-    f(&mut s)?;
-    let logged = if logger::active(&s, now) {
-        None
-    } else {
-        lg.close(&db, now)?
-    };
-    settings::save(&st.paths.settings_file(), &s)?;
-    *held = s.clone();
-    drop(held);
+    // one settings guard from read to write (lock order logger -> db -> settings)
+    let (logged, s) = st.edit_settings(|s| {
+        f(s)?;
+        Ok(if logger::active(s, now) {
+            None
+        } else {
+            lg.close(&db, now)?
+        })
+    })?;
     if let Some(id) = logged {
         let _ = app.emit("play-logged", logger::play(&db, id)?);
     }

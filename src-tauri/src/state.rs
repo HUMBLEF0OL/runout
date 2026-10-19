@@ -79,6 +79,21 @@ pub fn recover_library(library: &std::path::Path) -> bool {
 pub const LIBRARY_FILE: &str = "library.db";
 
 impl AppState {
+    /// Read-modify-write the settings under one guard, then save and store them: a concurrent
+    /// change can't be lost between the read and the write (G-20). `f` runs with the guard held,
+    /// so it must not lock `settings` itself. Returns `f`'s value and the new settings.
+    pub fn edit_settings<T>(
+        &self,
+        f: impl FnOnce(&mut Settings) -> Result<T>,
+    ) -> Result<(T, Settings)> {
+        let mut held = self.settings.lock().unwrap();
+        let mut s = held.clone();
+        let out = f(&mut s)?;
+        settings::save(&self.paths.settings_file(), &s)?;
+        *held = s.clone();
+        Ok((out, s))
+    }
+
     /// `move_library` (D15): copy library.db into `dir` with `VACUUM INTO` under the db lock, open the copy,
     /// check it holds the same items, save `settings.library_path`, then swap connections and delete the old
     /// file. Any failure before the swap leaves the old library live and removes the partial copy.
@@ -113,12 +128,10 @@ impl AppState {
                     "The moved library didn't match.",
                 ));
             }
-            // one guard from read to write: no lost update from a concurrent settings change
-            let mut held = self.settings.lock().unwrap();
-            let mut s = held.clone();
-            s.library_path = to.to_string_lossy().into_owned();
-            settings::save(&self.paths.settings_file(), &s)?;
-            *held = s;
+            self.edit_settings(|s| {
+                s.library_path = to.to_string_lossy().into_owned();
+                Ok(())
+            })?;
             Ok(new)
         })();
         let new = match new {
@@ -243,6 +256,63 @@ mod tests {
         // marker without pre-restore → marker cleared
         std::fs::write(&marker, b"").unwrap();
         assert!(!recover_library(&lib) && !marker.exists());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// G-20: A is mid-edit when B starts; B must wait and apply on top of A, so both survive.
+    /// Fails if `edit_settings` goes back to clone, release, assign (B would finish inside A's
+    /// window and A's stale clone would overwrite it).
+    #[test]
+    fn edit_settings_keeps_concurrent_changes() {
+        let d = std::env::temp_dir().join(format!("runout-edit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let paths = Paths {
+            config_dir: d.join("cfg"),
+            data_dir: d.clone(),
+            local_data_dir: d.clone(),
+        };
+        let mut s = Settings::defaults(&d, &d);
+        s.logger_on = true;
+        s.include_private = false;
+        let st = AppState {
+            db: Mutex::new(crate::db::open(&d.join(LIBRARY_FILE)).unwrap()),
+            paths,
+            settings: Mutex::new(s),
+        };
+        let (go, inside) = std::sync::mpsc::channel();
+        std::thread::scope(|sc| {
+            let a = sc.spawn(|| {
+                st.edit_settings(|s| {
+                    s.logger_on = false;
+                    go.send(()).unwrap();
+                    // window in which B runs if the guard isn't held
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    Ok(())
+                })
+                .unwrap()
+            });
+            inside.recv().unwrap();
+            let b = sc.spawn(|| {
+                st.edit_settings(|s| {
+                    s.include_private = true;
+                    Ok(())
+                })
+                .unwrap()
+            });
+            a.join().unwrap();
+            b.join().unwrap();
+        });
+        let now = st.settings.lock().unwrap().clone();
+        assert!(
+            !now.logger_on && now.include_private,
+            "a concurrent change was lost"
+        );
+        let saved = settings::load(&st.paths.settings_file(), Settings::defaults(&d, &d)).unwrap();
+        assert!(
+            !saved.logger_on && saved.include_private,
+            "file lost a change"
+        );
+        drop(st);
         let _ = std::fs::remove_dir_all(d);
     }
 
