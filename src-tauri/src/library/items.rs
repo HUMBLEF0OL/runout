@@ -365,11 +365,7 @@ pub fn create(conn: &mut Connection, input: NewItem) -> Result<ItemDetail> {
     status::insert(&tx, id, None, status, None)?;
     status::apply_side_effects(&tx, id, None, status)?;
     if let Some(ms) = input.capture_ms {
-        tx.execute(
-            "INSERT INTO usage_event(kind, duration_ms) VALUES ('capture', ?1)",
-            // TSD §7: an hour caps a bogus value so the median sum can't overflow (BRD §15)
-            [ms.clamp(0, 3_600_000)],
-        )?;
+        crate::usage::record(&tx, crate::usage::Kind::Capture, None, Some(ms))?;
     }
     tx.commit()?;
     get(conn, id)

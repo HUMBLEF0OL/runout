@@ -69,7 +69,14 @@ fn overlay(base: &Settings, patch: &Value) -> Result<Settings> {
         }
         obj.insert(k.clone(), val.clone());
     }
-    serde_json::from_value(v).map_err(|_| AppError::validation("A setting has the wrong type."))
+    let s: Settings = serde_json::from_value(v)
+        .map_err(|_| AppError::validation("A setting has the wrong type."))?;
+    if s.size_warn_mb == 0 {
+        return Err(AppError::validation(
+            "The size warning must be at least 1 MB.",
+        ));
+    }
+    Ok(s)
 }
 
 /// Read `path` over `defaults`, key by key: unknown keys and wrong-typed values are skipped, valid
@@ -163,6 +170,13 @@ mod tests {
         let l = load(&path, d.clone()).unwrap();
         assert_eq!(l.library_path, "elsewhere.db");
         assert_eq!((l.size_warn_mb, l.backup_weekly), (d.size_warn_mb, false));
+        // a hand-edited 0 is skipped like any invalid value (else every later update would fail)
+        std::fs::write(
+            &path,
+            br#"{"library_path": "elsewhere.db", "size_warn_mb": 0}"#,
+        )
+        .unwrap();
+        assert_eq!(load(&path, d.clone()).unwrap().size_warn_mb, d.size_warn_mb);
         // unreadable JSON or a bad library_path: error, never silent defaults
         for bad in [
             &b"{corrupt"[..],

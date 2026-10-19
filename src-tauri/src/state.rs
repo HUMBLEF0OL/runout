@@ -134,12 +134,19 @@ impl AppState {
         }
         // TSD §4.10: pre-restore copies (incl. set-aside `.<stamp>` ones) travel with the library and
         // are never lost: rename, or across drives copy and remove each only once its copy exists.
+        // Target built from file names, not path strings (settings may hold `/` separators).
+        let name = |p: &std::path::Path| {
+            p.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        };
         let (old_prefix, new_prefix) = (
-            backup::pre_restore(&from).to_string_lossy().into_owned(),
-            backup::pre_restore(&to).to_string_lossy().into_owned(),
+            name(&backup::pre_restore(&from)),
+            name(&backup::pre_restore(&to)),
         );
         for f in backup::pre_restore_files(&from) {
-            let t = PathBuf::from(f.to_string_lossy().replacen(&old_prefix, &new_prefix, 1));
+            let t = to.with_file_name(format!("{new_prefix}{}", &name(&f)[old_prefix.len()..]));
             relocate(&f, &t, |a, b| std::fs::rename(a, b));
         }
         Ok(to.to_string_lossy().into_owned())
@@ -250,7 +257,8 @@ mod tests {
             local_data_dir: d.join("local"),
         };
         let mut s = Settings::defaults(&paths.data_dir, &d);
-        s.library_path = old.to_string_lossy().into_owned();
+        // `/` separators (a hand-edited settings.json) must not stop pre-restore copies moving
+        s.library_path = old.to_string_lossy().replace('\\', "/");
         let st = AppState {
             db: Mutex::new(db),
             paths,

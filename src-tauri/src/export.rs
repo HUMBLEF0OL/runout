@@ -81,18 +81,54 @@ mod tests {
         k
     }
 
-    /// `docs/EXPORT_FORMAT.md`'s example must have the same keys as a real export.
+    /// The library behind `docs/EXPORT_FORMAT.md`'s example, built through the real commands: an
+    /// album pasted with its artist, tagged, explored and reviewed, plus a saved filter.
+    fn example_library() -> Connection {
+        use crate::library::{filters, items, status};
+        let mut c = db::open_in_memory().unwrap();
+        let album = items::create(
+            &mut c,
+            serde_json::from_value(json!({
+                "type": "album", "display_name": "Fixture album",
+                "spotify_uri": "spotify:album:UyasRLN3R6mDSPiqdJ8pME", "provenance": "user",
+                "promoted_fields": ["display_name", "artist"], "artist_name": "Synthetic Quartet",
+                "tags": ["late night"], "recommended_by": "a friend", "notes": "my own note"
+            }))
+            .unwrap(),
+        )
+        .unwrap()
+        .summary
+        .id;
+        let patch = json!({"rating": 4.5, "review": "a made-up review"});
+        items::update(&mut c, album, serde_json::from_value(patch).unwrap()).unwrap();
+        status::set_status(&mut c, album, crate::library::Status::Explored, None).unwrap();
+        let f = json!({"tags": ["late night"], "min_rating": 4});
+        filters::save_filter(
+            &c,
+            "Late-night favourites",
+            serde_json::from_value(f).unwrap(),
+        )
+        .unwrap();
+        c
+    }
+
+    /// Timestamps differ per run; everything else must match the doc exactly.
+    fn mask_times(v: &mut Value) {
+        match v {
+            Value::String(s) if s.len() == 20 && s.ends_with('Z') && s.as_bytes()[10] == b'T' => {
+                *s = "<time>".into()
+            }
+            Value::Array(a) => a.iter_mut().for_each(mask_times),
+            Value::Object(o) => o.values_mut().for_each(mask_times),
+            _ => {}
+        }
+    }
+
+    /// `docs/EXPORT_FORMAT.md`'s example is a real export (values too, timestamps aside). To refresh
+    /// it: `cargo test --lib print_example -- --ignored --nocapture`.
     #[test]
     fn doc_matches_a_real_export() {
-        let c = db::open_in_memory().unwrap();
-        db::fixture(&c, 5);
-        let dir = std::env::temp_dir().join(format!("runout-export-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("runout-library.json");
-        assert_eq!(export_library(&c, &path).unwrap(), 6); // 5 + the artist
-        let real: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        let _ = std::fs::remove_dir_all(dir);
-
+        let mut real = build(&example_library()).unwrap();
         let md = include_str!("../../docs/EXPORT_FORMAT.md");
         let example = md
             .split("```json")
@@ -101,12 +137,26 @@ mod tests {
             .split("```")
             .next()
             .unwrap();
-        let doc: Value = serde_json::from_str(example).expect("example is valid JSON");
-        assert_eq!(keys(&doc), keys(&real), "top-level keys");
-        for k in ["items", "tags", "links", "history", "saved_filters"] {
-            assert_eq!(keys(&doc[k][0]), keys(&real[k][0]), "{k}[] keys");
-        }
+        let mut doc: Value = serde_json::from_str(example).expect("example is valid JSON");
+        mask_times(&mut real);
+        mask_times(&mut doc);
+        assert_eq!(doc, real, "regenerate the example (see above)");
         assert_eq!(real["format_version"], FORMAT_VERSION);
+        // the file write path as well
+        let dir = std::env::temp_dir().join(format!("runout-export-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(
+            export_library(&example_library(), &dir.join("x.json")).unwrap(),
+            2
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    #[ignore]
+    fn print_example() {
+        let v = build(&example_library()).unwrap();
+        println!("{}", serde_json::to_string_pretty(&v).unwrap());
     }
 
     #[test]

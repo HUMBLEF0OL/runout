@@ -31,7 +31,13 @@ pub fn record(
 ) -> Result<()> {
     conn.execute(
         "INSERT INTO usage_event(kind, detail, duration_ms) VALUES (?1, ?2, ?3)",
-        params![kind.as_str(), detail, duration_ms],
+        // TSD §7: every duration is bounded here (bogus input, clock changes, days in the queue)
+        // so the BRD §15 median stays meaningful.
+        params![
+            kind.as_str(),
+            detail,
+            duration_ms.map(|ms| ms.clamp(0, 3_600_000))
+        ],
     )?;
     Ok(())
 }
@@ -120,6 +126,22 @@ fn metrics_at(conn: &Connection, now: &str) -> Result<SuccessMetrics> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn durations_are_bounded_for_every_caller() {
+        let c = crate::db::open_in_memory().unwrap();
+        for ms in [-5, i64::MAX] {
+            record(&c, Kind::Capture, Some("phone"), Some(ms)).unwrap();
+        }
+        let got: Vec<i64> = c
+            .prepare("SELECT duration_ms FROM usage_event ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(got, [0, 3_600_000], "clock went back / queued for days");
+    }
     use crate::db;
 
     const NOW: &str = "2026-10-18T12:00:00Z";

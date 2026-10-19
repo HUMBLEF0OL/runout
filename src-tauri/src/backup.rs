@@ -487,6 +487,15 @@ pub fn restore_locked(
 /// blocks a second restore until restart.
 static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Tests that restore share [`RESTORED`]: run them one at a time, each starting a fresh "session".
+#[cfg(test)]
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    RESTORED.store(false, std::sync::atomic::Ordering::SeqCst);
+    g
+}
+
 /// Every pre-restore file beside `library_path`: the copy, set-aside `.<stamp>` copies, their -wal/-shm.
 pub(crate) fn pre_restore_files(library_path: &Path) -> Vec<PathBuf> {
     let prefix = pre_restore(library_path)
@@ -678,6 +687,7 @@ mod tests {
     /// Swap fails after library.db was moved aside; moving it back works → library as before.
     #[test]
     fn failed_swap_moves_the_old_library_back() {
+        let _serial = serial();
         let d = tmp("swap-back");
         let lib = d.join("library.db");
         let db = Mutex::new(db::open(&lib).unwrap());
@@ -704,6 +714,7 @@ mod tests {
     /// a marker is left, and the next start keeps pre-restore. No empty library.db is created.
     #[test]
     fn failed_swap_and_move_back_keeps_pre_restore() {
+        let _serial = serial();
         let d = tmp("swap-stuck");
         let lib = d.join("library.db");
         let pre = sibling(&lib, "pre-restore");
@@ -770,6 +781,7 @@ mod tests {
     /// kept it) must not block restoring forever: it is set aside under a stamp, never deleted.
     #[test]
     fn earlier_sessions_pre_restore_is_set_aside() {
+        let _serial = serial();
         let d = tmp("aside");
         let lib = d.join("library.db");
         let db = Mutex::new(db::open(&lib).unwrap());
@@ -854,6 +866,7 @@ mod tests {
 
     #[test]
     fn corrupted_zip_is_integrity_error_and_library_untouched() {
+        let _serial = serial();
         let d = tmp("corrupt");
         let lib = d.join("library.db");
         let db = Mutex::new(db::open(&lib).unwrap());
@@ -889,6 +902,7 @@ mod tests {
 
     #[test]
     fn restore_of_oldest_verifies_counts() {
+        let _serial = serial();
         let d = tmp("restore");
         let lib = d.join("library.db");
         let bdir = d.join("Backups");

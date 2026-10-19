@@ -45,7 +45,7 @@ Every column of the `item` table (TSD §3), plus two keys:
 | `provenance` | object | Field name → `user` (you typed it) or `promoted` (you confirmed it from a Spotify link, TSD §4.2). Fields not listed have no recorded source |
 
 ## Example
-Abridged from an export of a synthetic two-record library (free text and timestamps filled in to show an explored, reviewed album) (ids are random, not real Spotify ids):
+A real export (the test `export::tests::doc_matches_a_real_export` keeps it in step) of a synthetic library: an album pasted with its artist, tagged, explored and reviewed, and one saved filter. Ids are random, not real Spotify ids; timestamps vary:
 
 ```json
 {
@@ -56,7 +56,7 @@ Abridged from an export of a synthetic two-record library (free text and timesta
       "at": "2026-10-18T14:23:07Z",
       "from_status": null,
       "id": 1,
-      "item_id": 1,
+      "item_id": 2,
       "note": null,
       "to_status": "planned"
     },
@@ -64,15 +64,15 @@ Abridged from an export of a synthetic two-record library (free text and timesta
       "at": "2026-10-18T14:23:07Z",
       "from_status": null,
       "id": 2,
-      "item_id": 2,
+      "item_id": 1,
       "note": null,
       "to_status": "planned"
     },
     {
-      "at": "2026-10-18T20:41:55Z",
+      "at": "2026-10-18T14:23:07Z",
       "from_status": "planned",
       "id": 3,
-      "item_id": 2,
+      "item_id": 1,
       "note": null,
       "to_status": "explored"
     }
@@ -83,46 +83,27 @@ Abridged from an export of a synthetic two-record library (free text and timesta
       "added_via": "pc",
       "backlog_order": null,
       "created_at": "2026-10-18T14:23:07Z",
-      "display_name": "Synthetic Quartet",
-      "explored_at": null,
+      "display_name": "Fixture album",
+      "explored_at": "2026-10-18T14:23:07Z",
       "favourite": 0,
       "id": 1,
       "in_backlog": 0,
       "modified_at": "2026-10-18T14:23:07Z",
-      "notes": null,
-      "priority": null,
-      "provenance": {},
-      "rating": null,
-      "recommended_by": null,
-      "review": null,
-      "reviewed_at": null,
-      "revisit": 0,
-      "spotify_uri": "spotify:artist:wYjbZWxTVJHn44OE70FdhT",
-      "status": "planned",
-      "tags": [],
-      "type": "artist"
-    },
-    {
-      "added_at": "2026-10-18T14:23:07Z",
-      "added_via": "pc",
-      "backlog_order": null,
-      "created_at": "2026-10-18T14:23:07Z",
-      "display_name": "Fixture album 0",
-      "explored_at": "2026-10-18T20:41:55Z",
-      "favourite": 0,
-      "id": 2,
-      "in_backlog": 0,
-      "modified_at": "2026-10-18T20:45:12Z",
       "notes": "my own note",
       "priority": null,
       "provenance": {
+        "artist": "promoted",
         "display_name": "promoted",
-        "rating": "user"
+        "notes": "user",
+        "rating": "user",
+        "recommended_by": "user",
+        "review": "user",
+        "spotify_uri": "promoted"
       },
       "rating": 4.5,
       "recommended_by": "a friend",
       "review": "a made-up review",
-      "reviewed_at": "2026-10-18T20:45:12Z",
+      "reviewed_at": "2026-10-18T14:23:07Z",
       "revisit": 0,
       "spotify_uri": "spotify:album:UyasRLN3R6mDSPiqdJ8pME",
       "status": "explored",
@@ -130,37 +111,58 @@ Abridged from an export of a synthetic two-record library (free text and timesta
         "late night"
       ],
       "type": "album"
+    },
+    {
+      "added_at": "2026-10-18T14:23:07Z",
+      "added_via": "pc",
+      "backlog_order": null,
+      "created_at": "2026-10-18T14:23:07Z",
+      "display_name": "Synthetic Quartet",
+      "explored_at": null,
+      "favourite": 0,
+      "id": 2,
+      "in_backlog": 0,
+      "modified_at": "2026-10-18T14:23:07Z",
+      "notes": null,
+      "priority": null,
+      "provenance": {
+        "display_name": "promoted"
+      },
+      "rating": null,
+      "recommended_by": null,
+      "review": null,
+      "reviewed_at": null,
+      "revisit": 0,
+      "spotify_uri": null,
+      "status": "planned",
+      "tags": [],
+      "type": "artist"
     }
   ],
   "links": [
     {
-      "from_id": 2,
+      "from_id": 1,
       "kind": "by_artist",
-      "to_id": 1
+      "to_id": 2
     }
   ],
   "saved_filters": [
     {
       "definition": {
-        "min_rating": 4,
+        "min_rating": 4.0,
         "tags": [
-          "jazz"
+          "late night"
         ]
       },
       "id": 1,
-      "name": "Top jazz"
+      "name": "Late-night favourites"
     }
   ],
   "tags": [
     {
-      "description": "after midnight",
+      "description": null,
       "id": 1,
       "name": "late night"
-    },
-    {
-      "description": null,
-      "id": 2,
-      "name": "jazz"
     }
   ]
 }
