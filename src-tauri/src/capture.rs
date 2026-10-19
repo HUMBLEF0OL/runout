@@ -246,6 +246,10 @@ fn handle(
     body: &[u8],
     arrived: Instant,
 ) -> (u16, String) {
+    // Turned off (or locked out) while this request was in flight: NFR-18 "disabled at any time".
+    if !sh.on.load(Ordering::SeqCst) {
+        return (503, "Phone capture is off on the PC.".into());
+    }
     let verdict = sh.guard.lock().unwrap().screen(ip, method, url, body);
     match verdict {
         Verdict::Reject {
@@ -454,8 +458,15 @@ fn serve(
                 }
                 let sh = sh.clone();
                 std::thread::spawn(move || {
+                    // Drop guard: the slot comes back even if serving panics.
+                    struct Slot<'a>(&'a AtomicUsize);
+                    impl Drop for Slot<'_> {
+                        fn drop(&mut self) {
+                            self.0.fetch_sub(1, Ordering::SeqCst);
+                        }
+                    }
+                    let _slot = Slot(&sh.in_flight);
                     serve_one(s, ip, &sh, arrived);
-                    sh.in_flight.fetch_sub(1, Ordering::SeqCst);
                 });
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => std::thread::sleep(POLL),
@@ -870,6 +881,24 @@ mod tests {
     }
 
     #[test]
+    fn request_in_flight_when_turned_off_is_refused() {
+        let dir = tmp("offinflight");
+        let (l, events) = listener(&dir, 0);
+        let code = l.info().code;
+        let (status, _) = handle(
+            &l.shared,
+            LAN,
+            "POST",
+            "/capture",
+            &body(&code, &album()),
+            Instant::now(),
+        );
+        assert_eq!(status, 503, "capture is off: nothing saved");
+        assert!(events.lock().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn lockout_disables_persists_and_emits() {
         let dir = tmp("lockout");
         let (l, events) = listener(&dir, 0);
@@ -975,6 +1004,7 @@ mod tests {
         let dir = tmp(name);
         let (l, _) = listener(&dir, 0);
         let code = l.info().code;
+        l.shared.on.store(true, Ordering::SeqCst); // a live listener's request
         let sh = l.shared.clone();
         let srv = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let mut c = connect(srv.local_addr().unwrap().port()).unwrap();
