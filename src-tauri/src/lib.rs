@@ -6,6 +6,7 @@ pub mod commands;
 pub mod db;
 pub mod error;
 pub mod export;
+pub mod importer;
 pub mod library;
 pub mod links;
 pub mod net;

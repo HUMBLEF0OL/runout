@@ -9,6 +9,8 @@ use crate::error::{AppError, Result};
 
 pub const FILE: &str = "settings.json";
 
+const LOGGER: &str = "Use the listening logger controls for this setting.";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     pub library_path: String,
@@ -16,6 +18,15 @@ pub struct Settings {
     pub backup_weekly: bool,
     pub size_warn_mb: u32,
     pub artwork_default: bool,
+    /// Listening logger (TSD §4.5); changed only by `set_logger` / `pause_logger` / `resume_logger`.
+    pub logger_on: bool,
+    pub autostart: bool,
+    /// Count private-session plays in insights (TSD §4.8, §4.9).
+    pub include_private: bool,
+    /// `SourceAppUserModelId` substrings the logger follows.
+    pub logger_apps: Vec<String>,
+    /// ISO-8601 UTC end of a timed pause; `None` = not paused or paused until resumed (`logger_on`).
+    pub paused_until: Option<String>,
 }
 
 impl Settings {
@@ -31,17 +42,27 @@ impl Settings {
             backup_weekly: true,
             size_warn_mb: 100,
             artwork_default: false,
+            logger_on: true,
+            autostart: false,
+            include_private: false,
+            logger_apps: vec!["Spotify".into()],
+            paused_until: None,
         }
     }
 }
 
 /// `update_settings`: `base` with the keys of `patch` laid over it; unknown keys, wrong types or a
 /// path the UI must not choose (API.md §1: only Rust's pickers `move_library` / `choose_backup_dir`
-/// set `library_path` / `backup_dir`) → `validation`.
+/// set `library_path` / `backup_dir`) or a logger key (the API.md §4 logger commands own those) → `validation`.
 pub fn merge(base: &Settings, patch: &Value) -> Result<Settings> {
     for (key, what) in [
         ("library_path", "Use Change location to move the library."),
         ("backup_dir", "Use Change folder to pick where backups go."),
+        ("logger_on", LOGGER),
+        ("autostart", LOGGER),
+        ("include_private", LOGGER),
+        ("logger_apps", LOGGER),
+        ("paused_until", LOGGER),
     ] {
         if patch.get(key).is_some() {
             return Err(AppError::validation(what));
@@ -137,7 +158,13 @@ mod tests {
         assert!(merge(&d, &json!({"size_warn_mb": 0})).is_err());
         // only move_library may change library_path
         // only the Rust pickers may change paths (API.md §1)
-        for key in ["library_path", "backup_dir"] {
+        for key in [
+            "library_path",
+            "backup_dir",
+            "logger_on",
+            "include_private",
+            "paused_until",
+        ] {
             let e = merge(&d, &json!({ key: "x" })).unwrap_err();
             assert_eq!(e.code, crate::error::Code::Validation, "{key}");
         }
@@ -145,6 +172,26 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("runout-settings-{}", std::process::id()));
         let path = dir.join(FILE);
         assert_eq!(load(&path, d.clone()).unwrap(), d);
+        assert_eq!(
+            (
+                d.logger_on,
+                d.autostart,
+                d.include_private,
+                d.logger_apps.as_slice(),
+                &d.paused_until
+            ),
+            (true, false, false, &["Spotify".to_string()][..], &None),
+            "logger defaults"
+        );
+        // a settings.json from before M4 (no logger keys) loads with the logger defaults
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &path,
+            br#"{"library_path": "old.db", "backup_weekly": false}"#,
+        )
+        .unwrap();
+        let old = load(&path, d.clone()).unwrap();
+        assert_eq!((old.library_path.as_str(), old.logger_on), ("old.db", true));
         let moved = Settings {
             library_path: "elsewhere.db".into(),
             ..m.clone()

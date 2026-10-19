@@ -10,6 +10,7 @@ use crate::error::AppError;
 const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0001_init.sql"),
     include_str!("../../migrations/0002_fts_secure_delete.sql"),
+    include_str!("../../migrations/0003_listening.sql"),
 ];
 
 /// Schema version a fully migrated library has.
@@ -192,6 +193,72 @@ mod tests {
             );
         }
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// v2 library with data → v3: data intact, R2 tables usable, play rule and one-to-one link enforced.
+    #[test]
+    fn v2_with_data_upgrades_to_v3() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        c.execute_batch(MIGRATIONS[0]).unwrap();
+        c.execute_batch(MIGRATIONS[1]).unwrap();
+        c.pragma_update(None, "user_version", 2).unwrap();
+        fixture(&c, 6);
+        let count = |c: &Connection, t: &str| -> i64 {
+            c.query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        let before: Vec<i64> = ["item", "item_link", "tag", "item_fts"]
+            .iter()
+            .map(|t| count(&c, t))
+            .collect();
+        migrate(&mut c).unwrap();
+        assert_eq!(version(&c), 3);
+        let after: Vec<i64> = ["item", "item_link", "tag", "item_fts"]
+            .iter()
+            .map(|t| count(&c, t))
+            .collect();
+        assert_eq!(before, after);
+
+        c.execute_batch(
+            "INSERT INTO listening_event(id, source, ended_at_utc, ms_played, dedupe_hash, item_id)
+               VALUES (1, 'logger', '2026-01-01T00:00:00Z', 29999, 'a', 2),
+                      (2, 'export', '2026-01-01T00:00:30Z', 30000, 'b', NULL),
+                      (3, 'export', '2026-01-01T00:01:00Z', 30000, 'c', NULL);
+             UPDATE listening_event SET reconciled_with = 2 WHERE id = 1;",
+        )
+        .unwrap();
+        let plays: Vec<i64> = c
+            .prepare("SELECT counts_as_play FROM listening_event ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(plays, vec![0, 1, 1]);
+        let dup = "INSERT INTO listening_event(source, ended_at_utc, ms_played, dedupe_hash) VALUES ('export', 'x', 1, 'a')";
+        assert!(c.execute(dup, []).is_err(), "dedupe_hash is unique");
+        assert!(
+            c.execute("INSERT INTO listening_event(source, ended_at_utc, ms_played, dedupe_hash) VALUES ('logger', 'x', 1, 'd')", [])
+                .is_ok()
+        );
+        assert!(
+            c.execute(
+                "UPDATE listening_event SET reconciled_with = 2 WHERE id = 4",
+                []
+            )
+            .is_err(),
+            "an export event pairs with one logger event"
+        );
+        c.execute("DELETE FROM item WHERE id = 2", []).unwrap();
+        let item: Option<i64> = c
+            .query_row(
+                "SELECT item_id FROM listening_event WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(item, None, "deleting an item keeps its plays");
     }
 
     #[test]

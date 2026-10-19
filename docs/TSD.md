@@ -158,6 +158,7 @@ ID must match `^[A-Za-z0-9]{22}$`. Playlist links are accepted only by Playlist 
 - On media-properties change or session end: close the current event; `ms_played` = accumulated time in `Playing` state (sum of intervals; pauses excluded; seeks don’t add time).
 - Poll timeline every 5 s as a fallback (some apps don’t raise every event).
 - Event is written only if `ms_played >= 1000` (noise filter); `counts_as_play` derives as above.
+- Logger rows use `dedupe_hash = sha256("logger|" ts|uri-or-norm_key|ms_played)`, so they never collide with export rows (one writer for both: `importer/events.rs`).
 - SMTC has no private-session flag, so desktop private sessions can’t be detected. Tray menu offers **Pause logging** (until resumed or for 1 h); paused time writes nothing.
 
 ### 4.6 Normalization and matching (FR-028, FR-030)
