@@ -226,11 +226,11 @@ pub fn listening(
              FROM base WHERE {in_range} GROUP BY 1, 2"
     ))?;
     for r in st.query_map([&start], |r| {
-        Ok((r.get::<_, usize>(0)?, r.get::<_, usize>(1)?, r.get(2)?))
+        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get(2)?))
     })? {
         let (d, h, ms) = r?;
-        if d < 7 && h < 24 {
-            heat[d][h] = ms;
+        if (0..7).contains(&d) && (0..24).contains(&h) {
+            heat[d as usize][h as usize] = ms;
         }
     }
     let max = heat.iter().flatten().copied().max().unwrap_or(0).max(1) as f64;

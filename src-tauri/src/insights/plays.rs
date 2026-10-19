@@ -149,7 +149,7 @@ pub fn list_plays(
 /// tracks with the same normalized name first, then albums named like the play's album.
 /// Groups with no candidate aren't listed (nothing to link them to).
 pub fn list_unmatched(conn: &Connection, include_private: bool) -> Result<Vec<Unmatched>> {
-    let mut by_name: HashMap<(ItemType, String), Vec<i64>> = HashMap::new();
+    let mut by_name: HashMap<(&str, String), Vec<i64>> = HashMap::new();
     let mut st = conn.prepare(
         "SELECT id, type, display_name FROM item
          WHERE type IN ('track', 'album') AND display_name IS NOT NULL ORDER BY id",
@@ -162,7 +162,10 @@ pub fn list_unmatched(conn: &Connection, include_private: bool) -> Result<Vec<Un
         ))
     })? {
         let (id, kind, name) = r?;
-        by_name.entry((kind, norm(&name))).or_default().push(id);
+        by_name
+            .entry((kind.as_str(), norm(&name)))
+            .or_default()
+            .push(id);
     }
     let mut st = conn.prepare(&format!(
         "{} SELECT norm_key, MAX(track_name), MAX(artist_name), MAX(album_name),
@@ -188,10 +191,8 @@ pub fn list_unmatched(conn: &Connection, include_private: bool) -> Result<Vec<Un
         // norm_key = norm(artist) | norm(track)
         let track = norm_key.split_once('|').map_or("", |(_, t)| t).to_owned();
         let none = vec![];
-        let tracks = by_name.get(&(ItemType::Track, track)).unwrap_or(&none);
-        let albums = by_name
-            .get(&(ItemType::Album, norm(&album)))
-            .unwrap_or(&none);
+        let tracks = by_name.get(&("track", track)).unwrap_or(&none);
+        let albums = by_name.get(&("album", norm(&album))).unwrap_or(&none);
         if tracks.is_empty() && albums.is_empty() {
             continue;
         }

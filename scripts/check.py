@@ -113,6 +113,15 @@ def check_no_oembed_or_tokens_logged():
         print("--- no secrets in logs: FAIL\n" + "\n".join(bad))
 
 
+def check_insights_no_cache():
+    # M4 acceptance / FR-031: insights read the library DB only, never the Spotify cache (source A).
+    d = TAURI / "src" / "insights"
+    bad = [str(p.relative_to(ROOT)) for p in d.rglob("*.rs") if "spotify_cache" in p.read_text(encoding="utf-8")] if d.exists() else []
+    if bad:
+        failures.append("insights no cache")
+        print("--- insights no cache: FAIL\n" + "\n".join(bad))
+
+
 def check_ui_purity():
     # TSD §1 rule, M2 plan: src/ has no network or data code; only api.ts talks to Tauri.
     src = ROOT / "src"
@@ -326,6 +335,7 @@ check_one_item_summary()
 check_events()
 check_settings_paths()
 check_restore_marker_guards()
+check_insights_no_cache()
 check_ui_purity()
 check_contract_and_attribution()
 check_commands()

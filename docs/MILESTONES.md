@@ -32,10 +32,7 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 
 | # | Gap | Where | Why it's open | Fix in |
 |---|---|---|---|---|
-| G-1 | Album page "Tracks you've added" has no Played / Not played column | `src/pages/Item.tsx` | `ItemDetail.track_list` has no per-track play data (contract) | M4 (listening data) |
 | G-6 | Rediscover "New shelf" saves a saved filter (chip) rather than a separate shelf type | `src/pages/Rediscover.tsx` | No shelf entity in the contract; saved filter covers it for now | M8 candidate |
-| G-7 | Recent plays: no "album" suffix next to an album's rating (board shows it) | `src/pages/Plays.tsx` | `Play.item` is the track; album rating not in the payload (contract) | M4 |
-| G-8 | Insights "Unfinished albums" lacks the "N other albums can't be checked" count | `src/pages/Insights.tsx` | `TakeInsights` has no count of albums without a track list (contract) | M4 |
 | G-9 | Playlist Studio `conflict` error ("playlist changed on Spotify, reload draft") never seen on screen | `src/pages/Playlists.tsx` | The mock never returns `conflict`; add a dev-switcher trigger or test it against the real API | M5 |
 | G-10 | Quick add prefills a title only for the sample links | `src/mocks/index.ts` | Mock oEmbed is a fixed table; Rust `prefill_title` (oEmbed, M3) is built, check it with a real link when Quick add switches to it | M6 |
 | G-11 | Embeds in mock data show Spotify's "page not found" | mock data | Mock Spotify IDs are random by rule (no real IDs committed); a real pasted link renders fine | won't fix (by design) |
