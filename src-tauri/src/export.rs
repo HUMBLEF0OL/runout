@@ -75,12 +75,6 @@ mod tests {
     use super::*;
     use crate::db;
 
-    fn keys(v: &Value) -> Vec<String> {
-        let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
-        k.sort();
-        k
-    }
-
     /// The library behind `docs/EXPORT_FORMAT.md`'s example, built through the real commands: an
     /// album pasted with its artist, tagged, explored and reviewed, plus a saved filter.
     fn example_library() -> Connection {
