@@ -143,10 +143,10 @@ Work items
 
 Acceptance
 - [ ] SMTC spike logs 3 consecutive real Spotify tracks with plausible `ms_played` (pause excluded). *(open: live spike ran one track only, 55.2 s over 55 s ([KB](kb/windows-tauri.md)); track change and pause not yet run live)*
-- [ ] Real lifetime history imports; second import adds 0 rows. *(open: importer handles the real layout (WI 4 done); the run against the real export needs your OK to read it. Re-import adds 0 is proven on the synthetic export)*
+- [x] Real lifetime history imports; second import adds 0 rows. *(19 Oct 2026, `examples/real_import.rs` on a temp copy of the library (deleted afterwards): 180,149 plays added, 48 duplicates merged, 18.7 s; second import added 0; forbidden-field check over every column and TEXT value: 0 hits)*
 - [x] No IP/user agent/username anywhere in `library.db` (query check). *(`importer::run` test `forbidden_fields_never_reach_the_db` walks every TEXT column)*
 - [x] Overlap test: no double counts, incl. featured-artist, compilation and back-to-back repeat fixtures. *(`importer::run` `overlap_has_no_double_counts`; logger `same_track_replayed_back_to_back_is_two_plays`)*
-- [ ] Matching: spot-check 20 matched plays, all correct (FR-030). *(open: needs the real history imported)*
+- [ ] Matching: spot-check 20 matched plays, all correct (FR-030). *(open: the real library has 0 records until the UI switches off mocks (M6), so the real import matched 0 plays; re-run `examples/real_import.rs` once the library has records — owner M7)*
 - [x] NFR-04: 10-year import < 60 s; over 500k events filter results < 200 ms and screen navigation < 500 ms (BRD NFR-04 wording). *(met in `tests/perf_listening.rs`, release, worst of 5, 19 Oct: import 21.4 s; screen loads 7d/30d/12m/all 38/67/362/58 ms, collection ≤ 28 ms, take 433 ms, year review 139 ms, record panel 100/100 ms (< 500 ms); `list_plays` 7d/30d/all 2–6 ms, `list_unmatched` 17 ms (< 200 ms); all-time reads via the 0005 rollup, G-17. [KB](kb/perf-integrity.md))*
 - [ ] Logger runs 24 h within NFR-17; paused time logs nothing. *(open: 24 h run not done; pause/off writing nothing is unit-tested)*
 - [x] Three insights hand-verified against raw data; year in review matches a manual total (FR-034). *(`listening_week_matches_hand_totals`, `collection_matches_hand_counts`, `take_matches_hand_counts`, `year_review_equals_manual_sum` on the hand-built `insights::fixture`)*
