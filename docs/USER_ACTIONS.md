@@ -12,8 +12,8 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 
 | # | Action | When | Takes | Blocks |
 |---|---|---|---|---|
-| U-1 | Request your two Spotify data exports | **Now (M0)** | 2 min | M4 import |
-| U-2 | Download the exports and tell me where they are | When Spotify's emails arrive | 5 min | M4 import |
+| U-1 | Request your two Spotify data exports | **Now (M0)** | 2 min | M4 import · **done** (Extended Streaming History arrived 19 Oct 2026; Account data not seen yet) |
+| U-2 | Download the exports and tell me where they are | When Spotify's emails arrive | 5 min | M4 import · **done 19 Oct 2026** (`Downloads\my_spotify_data.zip`) |
 | U-9 | Approve the screen designs | End of M1 | ~30 min | UI build (M2) · **done 18 Oct 2026** |
 | U-3 | Create the iPhone Shortcut | M6 | 5 min | Phone capture |
 | U-4 | Allow the app through Windows Firewall | M6 | 10 s | Phone capture |

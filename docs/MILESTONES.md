@@ -22,10 +22,10 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 - **M2** done and closed: all 13 screens + design-system page on mock data, Tailwind v4, `src/api.ts` = full API.md contract behind mocks, input sanitization, T4 verified in the real window. Proof: `python scripts/check.py` (92 Vitest tests) and `node scripts/journeys.mjs` (30/30 keyboard-only steps, journeys A–H). Commits `9cd6c2e`, `df6b155`, `fc12844`.
 - **Contract additions made in M2** (backend must implement): `create_playlist_from_items`; dashboard tile fields; `Unmatched.candidates`; `CollectionInsights` stat fields; `NewItem.artist_name/notes/promoted_fields`; `ItemPatch.artist_name`; `ItemSummary.album_name/added_via/recommended_by`; `ItemDetail.track_list` (all in API.md).
 - **Known gaps:** see [Known gaps](#known-gaps) below (G-2 to G-5 closed in M3).
-- **Your open hard stops:** U-1 (request Spotify exports) not recorded as done; U-2 needed by M4; U-6/U-7 by M5; U-3/U-4/U-5 by M6.
+- **Your open hard stops:** U-1/U-2 done 19 Oct 2026 (Extended Streaming History only; Account data export not yet received, needed for M4 WI 7); U-6/U-7 by M5; U-3/U-4/U-5 by M6.
 - **M3 closed** 18 Oct 2026: all 8 acceptance lines ticked with evidence; four external spec reviews, every finding fixed. Contract changes in M3: `ItemSummary.notes`, `NewItem.album_id`, `ItemPatch.type`, `search` `type`, `recent_activity` dropped.
 - **M3 post-close audit** 19 Oct 2026: 3 rounds of parallel spec reviews + 2 verification passes, 36 findings fixed (FTS secure-delete migration `0002`, restore/move safety copies, capture off mid-request, link-retry races, settings load, input clamps); check.py + journeys 30/30 green.
-- **Next:** M4 work item 1 (SMTC spike) per `docs/plans/M4-listening-insights.md`; M4 WI 4 waits on **U-2**. M5 starts at its U-6 gate.
+- **Next:** M4 work item 1 (SMTC spike) per `docs/plans/M4-listening-insights.md`; M4 WI 4 unblocked (U-2 done 19 Oct 2026). M5 starts at its U-6 gate.
 
 ### Known gaps
 Found while building and closing M2 (18 Oct 2026). None blocks a release criterion. "Contract" = needs an API.md change first (API.md §7), then `api.ts`, the mock and Rust together. Remove a row when it's fixed; say in the commit which G-n it closes.
