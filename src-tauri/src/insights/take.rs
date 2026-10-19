@@ -1,9 +1,9 @@
 //! `get_take_insights`: your ratings and backlog set against what you play (TSD §4.9, §4.13).
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
-use rusqlite::{Connection, ToSql};
+use rusqlite::{Connection, params};
 use serde::Serialize;
 
-use super::{ATTR, Sourced, base, sourced, utc};
+use super::{SRC, Sourced, base, sourced, utc};
 use crate::error::Result;
 use crate::library::items::{ItemSummary, summary};
 use crate::library::rediscover::TOP_RATED_MIN;
@@ -45,32 +45,11 @@ fn day(ts: &str) -> String {
         .unwrap_or_default()
 }
 
-/// `sql` (after the `stats` CTE) selects (id, number, text) rows; `line` turns one into the sentence shown.
-fn takes(
-    conn: &Connection,
-    stats: &str,
-    sql: &str,
-    args: &[&dyn ToSql],
-    line: impl Fn(f64, &str) -> String,
-) -> Result<Vec<Take>> {
-    let mut st = conn.prepare(&format!("{stats} {sql} LIMIT {LIMIT}"))?;
-    let rows = st
-        .query_map(args, |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, f64>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    rows.into_iter()
-        .map(|(id, n, s)| {
-            Ok(Take {
-                item: summary(conn, id)?,
-                line: line(n, &s),
-            })
-        })
-        .collect()
+fn take_line(conn: &Connection, id: i64, line: String) -> Result<Take> {
+    Ok(Take {
+        item: summary(conn, id)?,
+        line,
+    })
 }
 
 pub fn take(
@@ -78,64 +57,71 @@ pub fn take(
     include_private: bool,
     now: DateTime<Utc>,
 ) -> Result<Sourced<TakeInsights>> {
-    // stats(item_id, plays, last): counted plays per record and the local time of the latest.
-    let stats = format!(
-        "{}{ATTR}, stats AS (SELECT a.item_id, SUM(b.counts_as_play) AS plays,
-                     MAX(CASE WHEN b.counts_as_play THEN b.local END) AS last
-                   FROM attr a JOIN base b ON b.id = a.event_id GROUP BY a.item_id)",
+    // One statement, so the events are scanned once (NFR-04): `per` = counted plays and latest
+    // local time per linked record, `stats` = the same per record it counts for (`SRC`).
+    // Rows: (list, id, number, text); list 3 = unfinished albums (played, total as text).
+    // TSD §4.9: unfinished only for albums whose track list is in the library (`on_album` links).
+    let sql = format!(
+        "{}{SRC}, per AS (SELECT item_id AS s, SUM(counts_as_play) AS plays,
+                     MAX(CASE WHEN counts_as_play THEN local END) AS last
+                   FROM base WHERE +item_id IS NOT NULL GROUP BY +item_id),
+           stats AS (SELECT src.t AS item_id, SUM(per.plays) AS plays, MAX(per.last) AS last
+                     FROM src JOIN per ON per.s = src.s GROUP BY src.t)
+         SELECT * FROM (SELECT 0, i.id, s.plays, '' FROM item i JOIN stats s ON s.item_id = i.id
+           WHERE i.rating IS NULL AND s.plays >= ?1 ORDER BY s.plays DESC, i.id LIMIT {LIMIT})
+         UNION ALL SELECT * FROM (SELECT 1, i.id, 0, i.added_at FROM item i
+           LEFT JOIN stats s ON s.item_id = i.id
+           WHERE i.in_backlog = 1 AND i.status = 'planned' AND i.type IN ('album', 'track')
+             AND COALESCE(s.plays, 0) = 0 ORDER BY i.added_at, i.id LIMIT {LIMIT})
+         UNION ALL SELECT * FROM (SELECT 2, i.id, i.rating, s.last FROM item i
+           JOIN stats s ON s.item_id = i.id
+           WHERE i.rating >= ?2 AND s.last IS NOT NULL AND s.last < ?3 ORDER BY s.last, i.id LIMIT {LIMIT})
+         UNION ALL SELECT * FROM (SELECT 3, l.to_id, COUNT(p.s), CAST(COUNT(*) AS TEXT)
+           FROM item_link l JOIN item a ON a.id = l.to_id AND a.type = 'album'
+           LEFT JOIN per p ON p.s = l.from_id AND p.plays > 0
+           WHERE l.kind = 'on_album' GROUP BY l.to_id HAVING COUNT(p.s) < COUNT(*)
+           ORDER BY COUNT(p.s) DESC, l.to_id)",
         base(include_private)
     );
-    let rated_vs_played = takes(
-        conn,
-        &stats,
-        "SELECT i.id, s.plays, '' FROM item i JOIN stats s ON s.item_id = i.id
-         WHERE i.rating IS NULL AND s.plays >= ?1 ORDER BY s.plays DESC, i.id",
-        &[&PLAYED_OFTEN],
-        |n, _| format!("Played {n} times. Not rated yet."),
-    )?;
-    let never_played_backlog = takes(
-        conn,
-        &stats,
-        "SELECT i.id, 0, i.added_at FROM item i LEFT JOIN stats s ON s.item_id = i.id
-         WHERE i.in_backlog = 1 AND i.status = 'planned' AND i.type IN ('album', 'track')
-           AND COALESCE(s.plays, 0) = 0 ORDER BY i.added_at, i.id",
-        &[],
-        |_, added| format!("In your backlog since {}. Never played.", day(added)),
-    )?;
-    let loved_but_forgotten = takes(
-        conn,
-        &stats,
-        "SELECT i.id, i.rating, s.last FROM item i JOIN stats s ON s.item_id = i.id
-         WHERE i.rating >= ?1 AND s.last IS NOT NULL AND s.last < ?2 ORDER BY s.last, i.id",
-        &[&TOP_RATED_MIN, &utc(now - TimeDelta::days(FORGOTTEN_DAYS))],
-        |r, last| format!("You rated it {r}. Last played {}.", day(last)),
-    )?;
-
-    // TSD §4.9: only albums whose track list is in the library (tracks linked `on_album`).
-    let mut st = conn.prepare(&format!(
-        "{}, played AS (SELECT DISTINCT item_id FROM base WHERE counts_as_play AND item_id IS NOT NULL)
-         SELECT l.to_id, COUNT(*), COUNT(p.item_id) FROM item_link l
-           JOIN item a ON a.id = l.to_id AND a.type = 'album'
-           LEFT JOIN played p ON p.item_id = l.from_id
-         WHERE l.kind = 'on_album' GROUP BY l.to_id HAVING COUNT(p.item_id) < COUNT(*)
-         ORDER BY COUNT(p.item_id) DESC, l.to_id",
-        base(include_private)
-    ))?;
+    let forgotten = utc(now - TimeDelta::days(FORGOTTEN_DAYS));
+    let mut st = conn.prepare(&sql)?;
     let rows = st
-        .query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get(2)?))
+        .query_map(params![PLAYED_OFTEN, TOP_RATED_MIN, forgotten], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, f64>(2)?,
+                r.get::<_, String>(3)?,
+            ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    let unfinished_albums = rows
-        .into_iter()
-        .map(|(id, total, played)| {
-            Ok(Unfinished {
+    let (mut rated_vs_played, mut never_played_backlog, mut loved_but_forgotten) =
+        (Vec::new(), Vec::new(), Vec::new());
+    let mut unfinished_albums = Vec::new();
+    for (list, id, n, text) in rows {
+        match list {
+            0 => rated_vs_played.push(take_line(
+                conn,
+                id,
+                format!("Played {n} times. Not rated yet."),
+            )?),
+            1 => never_played_backlog.push(take_line(
+                conn,
+                id,
+                format!("In your backlog since {}. Never played.", day(&text)),
+            )?),
+            2 => loved_but_forgotten.push(take_line(
+                conn,
+                id,
+                format!("You rated it {n}. Last played {}.", day(&text)),
+            )?),
+            _ => unfinished_albums.push(Unfinished {
                 item: summary(conn, id)?,
-                played,
-                total,
-            })
-        })
-        .collect::<Result<_>>()?;
+                played: n as i64,
+                total: text.parse().unwrap_or_default(),
+            }),
+        }
+    }
     let unfinished_unknown = conn.query_row(
         "SELECT COUNT(*) FROM item a WHERE a.type = 'album'
            AND NOT EXISTS (SELECT 1 FROM item_link l WHERE l.to_id = a.id AND l.kind = 'on_album')",

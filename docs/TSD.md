@@ -105,6 +105,10 @@ listening_event(id PK, source CHECK(source IN('logger','export')),
      item_id, reconciled_with INT, import_batch_id,
      dedupe_hash TEXT UNIQUE)                              -- idempotent import
 CREATE UNIQUE INDEX one_to_one_reconcile ON listening_event(reconciled_with) WHERE reconciled_with IS NOT NULL;
+-- Indexes (0003): ended_at_utc, norm_key, item_id, spotify_track_uri.
+-- 0004 (NFR-04, M4 WI 9): listening_event(lower(artist_name), ended_at_utc) for "new artists in range".
+-- Query rules from the 500k perf run: `base` CTE is NOT MATERIALIZED; range `all` filters on
+-- +ended_at_utc (table scan beats the time index); attribution joins records via links (insights SRC), not per event.
 import_batch(id PK, kind CHECK(kind IN('streaming_history','account_data')), imported_at,
      record_count, latest_event_utc, checksum UNIQUE)
 exported_playlist(id PK, import_batch_id, name, last_modified)   -- matched across exports by name (no ID in export)

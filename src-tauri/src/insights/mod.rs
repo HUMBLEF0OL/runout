@@ -73,21 +73,27 @@ pub(crate) fn base(include_private: bool) -> String {
         " AND e.private_session = 0"
     };
     format!(
-        "WITH base AS (SELECT e.*, COALESCE(e.ended_at_local, substr(e.ended_at_utc, 1, 19)) AS local
+        "WITH base AS NOT MATERIALIZED (SELECT e.*, COALESCE(e.ended_at_local, substr(e.ended_at_utc, 1, 19)) AS local
            FROM listening_event e WHERE e.reconciled_with IS NULL{private})"
     )
 }
 
-/// Appended to `base(..)`: `attr(item_id, event_id)` pairs each event with the records it counts
-/// for: its track (`item_id`), that track's album (`on_album`) and artists (`by_artist`, direct or
-/// through the album). An event linked to an album counts for the album and its artists.
-pub(crate) const ATTR: &str = ", attr(item_id, event_id) AS (
-    SELECT item_id, id FROM base WHERE item_id IS NOT NULL
-    UNION SELECT l.to_id, b.id FROM base b
-      JOIN item_link l ON l.from_id = b.item_id AND l.kind IN ('on_album', 'by_artist')
-    UNION SELECT l2.to_id, b.id FROM base b
-      JOIN item_link l ON l.from_id = b.item_id AND l.kind = 'on_album'
-      JOIN item_link l2 ON l2.from_id = l.to_id AND l2.kind = 'by_artist')";
+/// Appended to `base(..)`: `src(s, t)` says plays of record `s` count for record `t`: itself, its
+/// album (`on_album`) and artists (`by_artist`, direct or through the album). A play linked to an
+/// album counts for the album and its artists. Built from links, not events (NFR-04): an
+/// insight joins it to events by `item_id`, so each event counts once per record.
+pub(crate) const SRC: &str = ", src(s, t) AS (
+    SELECT id, id FROM item
+    UNION SELECT from_id, to_id FROM item_link WHERE kind IN ('on_album', 'by_artist')
+    UNION SELECT l.from_id, l2.to_id FROM item_link l
+      JOIN item_link l2 ON l2.from_id = l.to_id AND l2.kind = 'by_artist' WHERE l.kind = 'on_album')";
+
+/// `{col} >= {param}` on an `ended_at_utc` column; for `all` (`start` empty) the `+` keeps SQLite off the time
+/// index, whose row-by-row lookups are far slower than one table scan (NFR-04, TSD §3).
+pub(crate) fn since(start: &str, col: &str, param: &str) -> String {
+    let plus = if start.is_empty() { "+" } else { "" };
+    format!("{plus}{col} >= {param}")
+}
 
 /// `ms` → hours, one decimal.
 pub(crate) fn hours(ms: i64) -> f64 {

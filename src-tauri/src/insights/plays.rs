@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use super::{ATTR, Range, Sourced, base, last_months, sourced};
+use super::{Range, SRC, Sourced, base, last_months, since, sourced};
 use crate::error::{AppError, Result};
 use crate::importer::normalize::norm;
 use crate::library::ItemType;
@@ -84,27 +84,34 @@ pub fn list_plays(
     include_private: bool,
     now: DateTime<Utc>,
 ) -> Result<crate::library::Page<Play>> {
+    let start = q.range.start(now);
     let tab = match q.tab {
         Tab::All => "",
         Tab::Unrated => " AND e.counts_as_play AND t.id IS NOT NULL AND t.rating IS NULL",
         Tab::Missing => " AND t.id IS NULL",
     };
+    // {cols}, {album}: the count skips the album join (NFR-04).
     let from = format!(
-        "{} SELECT {{}} FROM base e
-           LEFT JOIN item t ON t.id = e.item_id AND t.type = 'track'
+        "{} SELECT {{cols}} FROM base e
+           LEFT JOIN item t ON t.id = e.item_id AND t.type = 'track'{{album}}
+         WHERE {}{tab}",
+        base(include_private),
+        since(&start, "e.ended_at_utc", "?1")
+    );
+    let count = from.replace("{cols}", "COUNT(*)").replace("{album}", "");
+    let total: i64 = conn.query_row(&count, [&start], |r| r.get(0))?;
+    let from = from.replace(
+        "{album}",
+        "
            LEFT JOIN item a ON a.id = COALESCE(
              (SELECT l.to_id FROM item_link l WHERE l.from_id = t.id AND l.kind = 'on_album' LIMIT 1),
-             (SELECT x.id FROM item x WHERE x.id = e.item_id AND x.type = 'album'))
-         WHERE e.ended_at_utc >= ?1{tab}",
-        base(include_private)
+             (SELECT x.id FROM item x WHERE x.id = e.item_id AND x.type = 'album'))",
     );
-    let start = q.range.start(now);
-    let total: i64 = conn.query_row(&from.replace("{}", "COUNT(*)"), [&start], |r| r.get(0))?;
     let offset = q.offset.max(0);
     let mut st = conn.prepare(&format!(
         "{} ORDER BY e.ended_at_utc DESC, e.id DESC LIMIT ?2 OFFSET ?3",
         from.replace(
-            "{}",
+            "{cols}",
             "e.id, e.local, e.ms_played, e.counts_as_play, COALESCE(e.skipped, 0),
              COALESCE(e.track_name, ''), COALESCE(e.artist_name, ''), COALESCE(e.album_name, ''),
              e.source, e.spotify_track_uri, t.id, a.rating"
@@ -258,7 +265,7 @@ pub fn link_play(conn: &Connection, event_id: i64, item_id: i64) -> Result<usize
     )?)
 }
 
-/// SC-05 listening panel: plays of the record (an album or artist counts its tracks, `ATTR`).
+/// SC-05 listening panel: plays of the record (an album or artist counts its tracks, `SRC`).
 pub fn item_listening(
     conn: &Connection,
     id: i64,
@@ -267,7 +274,7 @@ pub fn item_listening(
 ) -> Result<Sourced<ItemListening>> {
     summary(conn, id)?; // not_found for a gone record
     let mine = format!(
-        "{}{ATTR}, mine AS (SELECT b.* FROM attr a JOIN base b ON b.id = a.event_id WHERE a.item_id = ?1)",
+        "{}{SRC}, mine AS (SELECT * FROM base WHERE item_id IN (SELECT s FROM src WHERE t = ?1))",
         base(include_private)
     );
     let (plays, ms_total, last_played_local) = conn.query_row(

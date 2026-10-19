@@ -42,6 +42,7 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 | G-14 | Tray menu and uninstall dialog have no React screens | native (Rust tray, NSIS) | They aren't WebView UI (DESIGN §6 reference only) | M6 |
 | G-15 | Spotify credential must be created with target exactly `Runout/spotify` (`keyring` `Entry::new_with_target`) or `--uninstall-cleanup` won't find it | `src-tauri/src/spotify/`, `cleanup.rs` | Credential is written in M5; cleanup (M3) deletes by that target ([KB](kb/windows-tauri.md)) | M5 |
 | G-16 | Success metric "moved after 14 days" can't see items that left the backlog while planned | `src-tauri/src/usage.rs` | Nothing records when an item entered or left the backlog; exact needs a backlog-history migration | M8 candidate |
+| G-17 | All-time insight reads over the 500k reference set miss NFR-04: listening `all` 3.9 s, `list_plays` range `all` 0.30–0.35 s, `list_unmatched` 0.25–1.1 s (targets 500 / 200 ms). Bounded ranges, take, year review, record panel pass | `src-tauri/src/insights/` | Each is 3–8 full scans of `listening_event`; indexes can't remove a scan. Fix: per-month rollup (month × record/artist/norm_key) kept by `events::insert`, or results cached on `PRAGMA data_version`. Numbers in [KB](kb/perf-integrity.md); `tests/perf_listening.rs` prints them | M4 (decide before close) |
 
 ---
 

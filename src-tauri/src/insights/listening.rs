@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, ToSql};
 use serde::Serialize;
 
-use super::{Range, Sourced, base, hours, last_months, pct, sourced};
+use super::{Range, Sourced, base, hours, last_months, pct, since, sourced};
 use crate::error::Result;
 use crate::library::Status;
 
@@ -87,19 +87,19 @@ fn rank(
     // (group key, name, by, record lookup); names are fixed SQL, never user input.
     let (group, name, by, item) = match kind {
         Kind::Artist => (
-            "lower(artist_name)",
+            "+lower(artist_name)",
             "MAX(artist_name)",
             "''",
             "(SELECT id FROM item WHERE type = 'artist' AND display_name = g.name COLLATE NOCASE ORDER BY id LIMIT 1)",
         ),
         Kind::Album => (
-            "lower(album_name)",
+            "+lower(album_name)",
             "MAX(album_name)",
             "MAX(artist_name)",
             "(SELECT id FROM item WHERE type = 'album' AND display_name = g.name COLLATE NOCASE ORDER BY id LIMIT 1)",
         ),
         Kind::Track => (
-            "norm_key",
+            "+norm_key",
             "MAX(track_name)",
             "MAX(artist_name)",
             "(SELECT id FROM item WHERE id = g.iid AND type = 'track')",
@@ -138,8 +138,8 @@ pub fn listening(
 ) -> Result<Sourced<ListeningInsights>> {
     let (start, prev) = range.bounds(now).unwrap_or_default();
     let b = base(include_private);
-    let in_range = "ended_at_utc >= ?1";
-    let top = |k| rank(conn, include_private, k, in_range, &start, TOP);
+    let in_range = since(&start, "ended_at_utc", "?1");
+    let top = |k| rank(conn, include_private, k, &in_range, &start, TOP);
 
     let (plays, plays_prev, ms, ms_prev, skipped, events, phone, exported, artists_total): (
         i64,
@@ -164,7 +164,8 @@ pub fn listening(
                            AND (lower(platform) LIKE '%ios%' OR lower(platform) LIKE '%android%') THEN 1 END),
                COUNT(CASE WHEN ended_at_utc >= ?1 AND source = 'export' AND counts_as_play THEN 1 END),
                COUNT(DISTINCT CASE WHEN ended_at_utc >= ?1 AND artist_name <> '' THEN lower(artist_name) END)
-             FROM base"
+             FROM base WHERE {}",
+            since(&prev, "ended_at_utc", "?2")
         ),
         [&start, &prev],
         |r| {
@@ -182,18 +183,26 @@ pub fn listening(
         },
     )?;
     let count = |sql: &str| -> Result<i64> { Ok(conn.query_row(sql, [&start], |r| r.get(0))?) };
-    let new_artists = count(&format!(
-        "{b}, f AS (SELECT MIN(ended_at_utc) AS first FROM base WHERE artist_name <> ''
-                   GROUP BY lower(artist_name))
-         SELECT COUNT(*) FROM f WHERE first >= ?1"
-    ))?;
+    // Artists heard in the range and never before it; for `all` that is every artist.
+    let new_artists = if start.is_empty() {
+        artists_total
+    } else {
+        count(&format!(
+            // `+` keeps the range on the time index; 0004's index answers NOT EXISTS per artist.
+            "{b}, r AS (SELECT DISTINCT +lower(artist_name) AS a FROM base
+                        WHERE ended_at_utc >= ?1 AND artist_name <> '')
+             SELECT COUNT(*) FROM r WHERE NOT EXISTS (SELECT 1 FROM base o
+               WHERE lower(o.artist_name) = r.a AND o.ended_at_utc < ?1)"
+        ))?
+    };
     // ponytail: no rated_at column; an item rated and last changed in the range counts.
     let rated_this_period =
         count("SELECT COUNT(*) FROM item WHERE rating IS NOT NULL AND modified_at >= ?1")?;
     // Same rule as the `unrated` tab of `list_plays`.
     let unrated_plays = count(&format!(
-        "{b} SELECT COUNT(*) FROM base e JOIN item i ON i.id = e.item_id AND i.type = 'track'
-         WHERE e.ended_at_utc >= ?1 AND e.counts_as_play AND i.rating IS NULL"
+        "{b} SELECT COUNT(*) FROM base e CROSS JOIN item i ON i.id = e.item_id AND i.type = 'track'
+         WHERE {} AND e.counts_as_play AND i.rating IS NULL",
+        since(&start, "e.ended_at_utc", "?1")
     ))?;
     let private_excluded = if include_private {
         0
@@ -206,7 +215,8 @@ pub fn listening(
 
     let months = last_months(now, 12);
     let mut st = conn.prepare(&format!(
-        "{b} SELECT substr(local, 1, 7), SUM(ms_played) FROM base WHERE local >= ?1 GROUP BY 1"
+        "{b} SELECT substr(local, 1, 7), SUM(ms_played) FROM base
+         WHERE local >= ?1 AND ended_at_utc >= date(?1 || '-01', '-1 day') GROUP BY 1"
     ))?;
     let by_month = st
         .query_map([&months[0]], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))?
@@ -274,7 +284,12 @@ pub fn year_review(
 ) -> Result<Sourced<YearReview>> {
     let y = format!("{year:04}");
     let b = base(include_private);
-    let in_year = "substr(local, 1, 4) = ?1";
+    // The utc bounds (local is at most a day off) let SQLite use the time index.
+    let in_year = format!(
+        "substr(local, 1, 4) = ?1 AND ended_at_utc >= '{:04}-12-31' AND ended_at_utc < '{:04}-01-02'",
+        year - 1,
+        year + 1
+    );
     let (plays, ms): (i64, i64) = conn.query_row(
         &format!(
             "{b} SELECT COALESCE(SUM(counts_as_play), 0), COALESCE(SUM(ms_played), 0)
@@ -302,7 +317,7 @@ pub fn year_review(
         )?)
     };
     let first = |k| -> Result<RankRow> {
-        Ok(rank(conn, include_private, k, in_year, &y, 1)?
+        Ok(rank(conn, include_private, k, &in_year, &y, 1)?
             .pop()
             .unwrap_or_default())
     };

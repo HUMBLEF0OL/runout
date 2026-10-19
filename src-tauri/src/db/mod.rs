@@ -11,6 +11,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0001_init.sql"),
     include_str!("../../migrations/0002_fts_secure_delete.sql"),
     include_str!("../../migrations/0003_listening.sql"),
+    include_str!("../../migrations/0004_listening_perf.sql"),
 ];
 
 /// Schema version a fully migrated library has.
@@ -44,6 +45,9 @@ fn configure(conn: &mut Connection) -> Result<(), AppError> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
     // Deleted notes/reviews are zeroed on disk, not left in freed pages (FR-022).
     conn.pragma_update(None, "secure_delete", "ON")?;
+    // 64 MB page cache (default 2 MB): random dedupe_hash index inserts at 500k events ran ~3x
+    // slower without it (NFR-04 import, M4 WI 9). A ceiling, filled only as pages are read.
+    conn.pragma_update(None, "cache_size", -65536)?;
     conn.busy_timeout(Duration::from_secs(5))?;
     migrate(conn)
 }
@@ -213,7 +217,7 @@ mod tests {
             .map(|t| count(&c, t))
             .collect();
         migrate(&mut c).unwrap();
-        assert_eq!(version(&c), 3);
+        assert_eq!(version(&c), MIGRATIONS.len() as i64); // latest, whatever comes after 0003
         let after: Vec<i64> = ["item", "item_link", "tag", "item_fts"]
             .iter()
             .map(|t| count(&c, t))

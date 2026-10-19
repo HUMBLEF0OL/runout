@@ -66,13 +66,16 @@ impl Event {
 
 /// Insert `e`; `Some(id)` when new, `None` when its `dedupe_hash` already exists.
 pub fn insert(conn: &Connection, e: &Event) -> Result<Option<i64>> {
+    // Cached: an import inserts ~100k rows through this one statement (NFR-04).
     Ok(conn
-        .query_row(
+        .prepare_cached(
             "INSERT INTO listening_event(source, ended_at_utc, ended_at_local, ms_played, track_name,
                artist_name, album_name, norm_key, spotify_track_uri, platform, reason_start, reason_end,
                shuffle, skipped, offline, private_session, item_id, import_batch_id, dedupe_hash)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
              ON CONFLICT(dedupe_hash) DO NOTHING RETURNING id",
+        )?
+        .query_row(
             params![
                 e.source.as_str(),
                 e.ended_at_utc,
