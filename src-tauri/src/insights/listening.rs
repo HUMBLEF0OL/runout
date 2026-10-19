@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, ToSql};
 use serde::Serialize;
 
-use super::{Range, Sourced, base, hours, last_months, pct, since, sourced};
+use super::{Range, Sourced, base, hours, last_months, pct, rollup, since, sourced};
 use crate::error::Result;
 use crate::library::Status;
 
@@ -75,10 +75,11 @@ enum Kind {
     Track,
 }
 
-/// Top rows by listening time where `filter` (fixed SQL, one bound param `?1`) holds.
+/// Top rows by listening time over `cte` (`base` or `rollup`) where `filter` (fixed SQL, one
+/// bound param `?1`) holds.
 fn rank(
     conn: &Connection,
-    private: bool,
+    cte: &str,
     kind: Kind,
     filter: &str,
     arg: &dyn ToSql,
@@ -113,7 +114,7 @@ fn rank(
               h AS (SELECT g.*, {item} AS item_id FROM g)
          SELECT h.name, h.by_, h.p, h.ms, h.item_id, i.rating, i.status
          FROM h LEFT JOIN item i ON i.id = h.item_id ORDER BY h.ms DESC, h.name",
-        base(private)
+        cte
     );
     let mut st = conn.prepare(&sql)?;
     let rows = st.query_map([arg], |r| {
@@ -138,8 +139,14 @@ pub fn listening(
 ) -> Result<Sourced<ListeningInsights>> {
     let (start, prev) = range.bounds(now).unwrap_or_default();
     let b = base(include_private);
-    let in_range = since(&start, "ended_at_utc", "?1");
-    let top = |k| rank(conn, include_private, k, &in_range, &start, TOP);
+    // Range `all` reads the rollup (G-17): every event is in range, there is no period before.
+    let all = super::use_rollup(&start);
+    let (src, in_range) = if all {
+        (rollup(include_private), "?1 = ''".to_owned())
+    } else {
+        (b.clone(), since(&start, "ended_at_utc", "?1"))
+    };
+    let top = |k| rank(conn, &src, k, &in_range, &start, TOP);
 
     let (plays, plays_prev, ms, ms_prev, skipped, events, phone, exported, artists_total): (
         i64,
@@ -152,7 +159,16 @@ pub fn listening(
         i64,
         i64,
     ) = conn.query_row(
-        &format!(
+        &if all {
+            format!(
+                "{src} SELECT COALESCE(SUM(counts_as_play), 0), 0, COALESCE(SUM(ms_played), 0), 0,
+                   COALESCE(SUM(skips), 0), COALESCE(SUM(events), 0), COALESCE(SUM(phone), 0),
+                   COALESCE(SUM(exported), 0),
+                   COUNT(DISTINCT CASE WHEN artist_name <> '' THEN lower(artist_name) END)
+                 FROM base WHERE ?1 = ?2"
+            )
+        } else {
+            format!(
             "{b} SELECT
                COALESCE(SUM(CASE WHEN ended_at_utc >= ?1 THEN counts_as_play END), 0),
                COALESCE(SUM(CASE WHEN ended_at_utc >= ?2 AND ended_at_utc < ?1 THEN counts_as_play END), 0),
@@ -166,7 +182,8 @@ pub fn listening(
                COUNT(DISTINCT CASE WHEN ended_at_utc >= ?1 AND artist_name <> '' THEN lower(artist_name) END)
              FROM base WHERE {}",
             since(&prev, "ended_at_utc", "?2")
-        ),
+        )
+        },
         [&start, &prev],
         |r| {
             Ok((
@@ -200,13 +217,27 @@ pub fn listening(
         count("SELECT COUNT(*) FROM item WHERE rating IS NOT NULL AND modified_at >= ?1")?;
     // Same rule as the `unrated` tab of `list_plays`.
     let unrated_plays = count(&format!(
-        "{b} SELECT COUNT(*) FROM base e CROSS JOIN item i ON i.id = e.item_id AND i.type = 'track'
+        "{src} SELECT {} FROM base e CROSS JOIN item i ON i.id = e.item_id AND i.type = 'track'
          WHERE {} AND e.counts_as_play AND i.rating IS NULL",
-        since(&start, "e.ended_at_utc", "?1")
+        if all {
+            "COALESCE(SUM(e.counts_as_play), 0)"
+        } else {
+            "COUNT(*)"
+        },
+        if all {
+            "?1 = ''".to_owned()
+        } else {
+            since(&start, "e.ended_at_utc", "?1")
+        }
     ))?;
     let private_excluded = if include_private {
         0
+    } else if all {
+        count(
+            "SELECT COALESCE(SUM(counts_as_play), 0) FROM listening_rollup WHERE private_session = 1 AND ?1 = ''",
+        )?
     } else {
+        // unfiltered: counts exactly the private plays base hides (same reconciled rule)
         count(
             "SELECT COUNT(*) FROM listening_event WHERE private_session = 1
                AND reconciled_with IS NULL AND counts_as_play AND ended_at_utc >= ?1",
@@ -230,11 +261,18 @@ pub fn listening(
         .collect();
 
     let mut heat = vec![vec![0i64; 24]; 7];
-    let mut st = conn.prepare(&format!(
+    let mut st = conn.prepare(&if all {
+        format!(
+            "SELECT dow, hour, SUM(ms_played) FROM listening_heat WHERE ?1 = ''{} GROUP BY 1, 2",
+            if include_private { "" } else { " AND private_session = 0" }
+        )
+    } else {
+        format!(
         "{b} SELECT (CAST(strftime('%w', local) AS INT) + 6) % 7, CAST(strftime('%H', local) AS INT),
                     SUM(ms_played)
              FROM base WHERE {in_range} GROUP BY 1, 2"
-    ))?;
+    )
+    })?;
     for r in st.query_map([&start], |r| {
         Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get(2)?))
     })? {
@@ -317,7 +355,7 @@ pub fn year_review(
         )?)
     };
     let first = |k| -> Result<RankRow> {
-        Ok(rank(conn, include_private, k, &in_year, &y, 1)?
+        Ok(rank(conn, &b, k, &in_year, &y, 1)?
             .pop()
             .unwrap_or_default())
     };
@@ -410,6 +448,7 @@ mod tests {
         // manual sum over the raw rows: 2026, not reconciled, not private
         let (plays, ms): (i64, i64) = c
             .query_row(
+                // unfiltered: test oracle, applies base's filters by hand
                 "SELECT SUM(ms_played >= 30000), SUM(ms_played) FROM listening_event
                  WHERE ended_at_utc LIKE '2026%' AND reconciled_with IS NULL AND private_session = 0",
                 [],

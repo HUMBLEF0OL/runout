@@ -78,6 +78,34 @@ pub(crate) fn base(include_private: bool) -> String {
     )
 }
 
+#[cfg(test)]
+thread_local!(static NO_ROLLUP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) });
+
+/// True for range `all` (`start` empty): read the rollup. Tests turn it off to compare with `base`.
+pub(crate) fn use_rollup(start: &str) -> bool {
+    #[cfg(test)]
+    if NO_ROLLUP.get() {
+        return false;
+    }
+    start.is_empty()
+}
+
+/// Range `all` as a `base` CTE over the 0005 rollup (NFR-04, G-17): one row per record and name,
+/// same filters as `base`; `counts_as_play`, `ms_played` are sums, plus `events`, `skips`,
+/// `exported`, `phone`. NULL keys are stored as 0 / '' and mapped back here.
+pub(crate) fn rollup(include_private: bool) -> String {
+    let private = if include_private {
+        ""
+    } else {
+        " AND private_session = 0"
+    };
+    format!(
+        "WITH base AS NOT MATERIALIZED (SELECT private_session, NULLIF(item_id, 0) AS item_id,
+           NULLIF(norm_key, '') AS norm_key, track_name, artist_name, album_name, events, counts_as_play,
+           ms_played, skips, exported, phone FROM listening_rollup WHERE events > 0{private})"
+    )
+}
+
 /// Appended to `base(..)`: `src(s, t)` says plays of record `s` count for record `t`: itself, its
 /// album (`on_album`) and artists (`by_artist`, direct or through the album). A play linked to an
 /// album counts for the album and its artists. Built from links, not events (NFR-04): an
@@ -111,6 +139,7 @@ pub(crate) fn pct(part: i64, whole: i64) -> f64 {
 
 pub fn freshness(conn: &Connection) -> Result<Freshness> {
     Ok(conn.query_row(
+        // unfiltered: freshness is the newest stored row per source, whatever the filters
         "SELECT (SELECT MAX(ended_at_utc) FROM listening_event WHERE source = 'logger'),
                 (SELECT MAX(ended_at_utc) FROM listening_event WHERE source = 'export')",
         [],
@@ -361,5 +390,70 @@ mod tests {
             Some(("2026-10-12T12:00:00Z".into(), "2026-10-05T12:00:00Z".into()))
         );
         assert_eq!(Range::All.start(fixture::now()), "");
+    }
+
+    /// G-17: every all-time read gives the same answer from the rollup as from the base view,
+    /// with private sessions on and off, after each kind of write the triggers must follow.
+    #[test]
+    fn rollup_equals_base_view() {
+        use plays::{PlayQuery, Tab, list_plays, list_unmatched};
+        let (c, ids) = fixture::build();
+        let now = fixture::now();
+        let check = |step: &str| {
+            for p in [false, true] {
+                let read = |off: bool| {
+                    NO_ROLLUP.set(off);
+                    let tabs: Vec<_> = [Tab::All, Tab::Unrated, Tab::Missing]
+                        .map(|tab| {
+                            let q = PlayQuery {
+                                tab,
+                                range: Range::All,
+                                offset: 0,
+                                limit: 50,
+                            };
+                            list_plays(&c, &q, p, now).unwrap()
+                        })
+                        .into();
+                    let r = (
+                        listening::listening(&c, Range::All, p, now).unwrap(),
+                        tabs,
+                        list_unmatched(&c, p).unwrap(),
+                    );
+                    NO_ROLLUP.set(false);
+                    r
+                };
+                assert_eq!(read(false), read(true), "{step}, include_private {p}");
+            }
+        };
+        check("fixture");
+        plays::link_play(&c, ids[7], fixture::TWIN_A).unwrap();
+        check("link_play");
+        c.execute(
+            "UPDATE listening_event SET reconciled_with = NULL WHERE id = ?1",
+            [ids[3]],
+        )
+        .unwrap();
+        check("unreconcile");
+        c.execute(
+            "UPDATE listening_event SET private_session = 1 WHERE id = ?1",
+            [ids[5]],
+        )
+        .unwrap();
+        check("private flip");
+        c.execute("DELETE FROM item WHERE id = ?1", [fixture::T1])
+            .unwrap();
+        check("record deleted (FK SET NULL)");
+        // unfiltered: a delete, testing the rollup triggers
+        c.execute("DELETE FROM listening_event WHERE id = ?1", [ids[0]])
+            .unwrap();
+        check("event deleted (reconciled partner set NULL)");
+        let n: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM listening_rollup WHERE events < 0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0);
     }
 }

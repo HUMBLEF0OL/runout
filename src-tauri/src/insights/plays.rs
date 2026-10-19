@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use super::{Range, SRC, Sourced, base, last_months, since, sourced};
+use super::{Range, SRC, Sourced, base, last_months, rollup, sourced};
 use crate::error::{AppError, Result};
 use crate::importer::normalize::norm;
 use crate::library::ItemType;
@@ -90,16 +90,36 @@ pub fn list_plays(
         Tab::Unrated => " AND e.counts_as_play AND t.id IS NOT NULL AND t.rating IS NULL",
         Tab::Missing => " AND t.id IS NULL",
     };
-    // {cols}, {album}: the count skips the album join (NFR-04).
+    let track = "LEFT JOIN item t ON t.id = e.item_id AND t.type = 'track'";
+    // Range `all` counts from the rollup (NFR-04, G-17); the page walks the time index newest first.
+    let total: i64 = if super::use_rollup(&start) {
+        let n = if q.tab == Tab::Unrated {
+            "e.counts_as_play"
+        } else {
+            "e.events"
+        };
+        conn.query_row(
+            &format!(
+                "{} SELECT COALESCE(SUM({n}), 0) FROM base e {track} WHERE 1{tab}",
+                rollup(include_private)
+            ),
+            [],
+            |r| r.get(0),
+        )?
+    } else {
+        conn.query_row(
+            &format!(
+                "{} SELECT COUNT(*) FROM base e {track} WHERE e.ended_at_utc >= ?1{tab}",
+                base(include_private)
+            ),
+            [&start],
+            |r| r.get(0),
+        )?
+    };
     let from = format!(
-        "{} SELECT {{cols}} FROM base e
-           LEFT JOIN item t ON t.id = e.item_id AND t.type = 'track'{{album}}
-         WHERE {}{tab}",
-        base(include_private),
-        since(&start, "e.ended_at_utc", "?1")
+        "{} SELECT {{cols}} FROM base e {track}{{album}} WHERE e.ended_at_utc >= ?1{tab}",
+        base(include_private)
     );
-    let count = from.replace("{cols}", "COUNT(*)").replace("{album}", "");
-    let total: i64 = conn.query_row(&count, [&start], |r| r.get(0))?;
     let from = from.replace(
         "{album}",
         "
@@ -176,9 +196,18 @@ pub fn list_unmatched(conn: &Connection, include_private: bool) -> Result<Vec<Un
     }
     let mut st = conn.prepare(&format!(
         "{} SELECT norm_key, MAX(track_name), MAX(artist_name), MAX(album_name),
-                   SUM(counts_as_play), MAX(id)
+                   SUM(counts_as_play), 0
             FROM base WHERE item_id IS NULL AND norm_key IS NOT NULL
             GROUP BY norm_key ORDER BY SUM(counts_as_play) DESC, norm_key",
+        if super::use_rollup("") {
+            rollup(include_private)
+        } else {
+            base(include_private)
+        }
+    ))?;
+    // The rollup has no event ids: the newest play of each listed group, by the norm_key index.
+    let mut newest = conn.prepare(&format!(
+        "{} SELECT MAX(id) FROM base WHERE norm_key = ?1 AND item_id IS NULL",
         base(include_private)
     ))?;
     let groups = st
@@ -194,7 +223,7 @@ pub fn list_unmatched(conn: &Connection, include_private: bool) -> Result<Vec<Un
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut out = vec![];
-    for (norm_key, track_name, artist_name, album, plays, event_id) in groups {
+    for (norm_key, track_name, artist_name, album, plays, _) in groups {
         // norm_key = norm(artist) | norm(track)
         let track = norm_key.split_once('|').map_or("", |(_, t)| t).to_owned();
         let none = vec![];
@@ -224,6 +253,7 @@ pub fn list_unmatched(conn: &Connection, include_private: bool) -> Result<Vec<Un
             [],
         )?;
         candidates.sort_by_key(|c| ids.iter().position(|id| *id == c.id));
+        let event_id = newest.query_row([&norm_key], |r| r.get(0))?;
         out.push(Unmatched {
             norm_key,
             track_name,
@@ -242,6 +272,7 @@ pub fn list_unmatched(conn: &Connection, include_private: bool) -> Result<Vec<Un
 /// `item_id` (a track, or an album when the track isn't in the library). Returns rows changed.
 pub fn link_play(conn: &Connection, event_id: i64, item_id: i64) -> Result<usize> {
     let key: Option<String> = conn
+        // unfiltered: looks up the one event the user picked, by id
         .query_row(
             "SELECT norm_key FROM listening_event WHERE id = ?1",
             [event_id],

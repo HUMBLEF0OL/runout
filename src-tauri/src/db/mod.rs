@@ -12,6 +12,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0002_fts_secure_delete.sql"),
     include_str!("../../migrations/0003_listening.sql"),
     include_str!("../../migrations/0004_listening_perf.sql"),
+    include_str!("../../migrations/0005_listening_rollup.sql"),
 ];
 
 /// Schema version a fully migrated library has.

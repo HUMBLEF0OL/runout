@@ -20,14 +20,6 @@ const EVENTS: usize = 300_000;
 const EXPORT_YEARS: i32 = 10;
 const EXPORT_PER_YEAR: usize = 20_000; // a heavy listener: ~55 plays a day
 const RUNS: usize = 5;
-/// All-time reads over 500k events still over target; measured, not asserted (MILESTONES G-17).
-const G17: &[&str] = &[
-    "listening All",
-    "list_plays All All",
-    "list_plays Unrated All",
-    "list_plays Missing All",
-    "list_unmatched",
-];
 
 /// Slowest of `RUNS` runs after one warm-up.
 fn worst<T>(mut f: impl FnMut() -> T) -> Duration {
@@ -268,7 +260,7 @@ fn perf_listening() {
         let filter = name.starts_with("list_");
         let limit = Duration::from_millis(if filter { 200 } else { 500 });
         println!("{name}: worst {d:?} (target {limit:?})");
-        if *d >= limit && !G17.contains(&name.as_str()) {
+        if *d >= limit {
             slow.push(name);
         }
     }

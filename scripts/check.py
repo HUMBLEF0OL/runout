@@ -125,8 +125,7 @@ def check_insights_no_cache():
 def check_listening_event_reads():
     # G-20 / audit 4f53129: listening_event reads go through insights::base (reconciled rows out,
     # private sessions per setting). A direct read needs `// unfiltered: <reason>` on the line or up to 2 lines above.
-    # ponytail: files another agent is annotating are skipped for now; drop them from SKIP once annotated.
-    skip = {"insights/listening.rs", "insights/plays.rs", "insights/mod.rs"}
+    skip = set()
     src = TAURI / "src"
     files = [p for d in ("insights", "library") if (src / d).exists() for p in (src / d).rglob("*.rs")]
     files += [p for p in [src / "importer/playlists.rs"] if p.exists()]
