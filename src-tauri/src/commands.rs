@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
 use crate::backup::{self, Backup, RestoreCheck};
@@ -23,6 +23,7 @@ use crate::library::search::{self, SearchHit};
 use crate::library::tags::{self, Tag};
 use crate::library::{ItemType, LinkKind, Page, Status, backlog, links as item_links, status};
 use crate::links::{self, CaptureSource, Parsed, Unresolved};
+use crate::logger::{self, Logger, LoggerPatch, LoggerStatus};
 use crate::net;
 use crate::settings::{self, Settings};
 use crate::state::AppState;
@@ -77,6 +78,10 @@ pub fn handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + 
         delete_library,
         record_page_visit,
         get_success_metrics,
+        get_logger_status,
+        set_logger,
+        pause_logger,
+        resume_logger,
     ]
 }
 
@@ -432,6 +437,87 @@ pub fn get_success_metrics(st: St<'_>) -> Result<SuccessMetrics> {
     usage::get_success_metrics(&st.db.lock().unwrap())
 }
 
+/* ------------------------------------------------------------------ logger (API.md §4) */
+
+type Lg<'a> = State<'a, std::sync::Mutex<Logger>>;
+
+#[tauri::command(async)]
+pub fn get_logger_status(st: St<'_>, lg: Lg<'_>) -> Result<LoggerStatus> {
+    let lg = lg.lock().unwrap(); // lock order logger → db → settings (logger::Logger)
+    let db = st.db.lock().unwrap();
+    lg.status(&db, &settings_now(&st), chrono::Utc::now())
+}
+
+/// Apply `f` to the settings; when that stops logging, the current play is closed first (written
+/// if ≥ 1 s), so paused or off time writes nothing. Emits `play-logged` / `logger-status`.
+fn change_logger<R: Runtime>(
+    app: &AppHandle<R>,
+    st: &AppState,
+    lg: &std::sync::Mutex<Logger>,
+    f: impl FnOnce(&mut Settings) -> Result<()>,
+) -> Result<LoggerStatus> {
+    let mut lg = lg.lock().unwrap();
+    let db = st.db.lock().unwrap();
+    let now = chrono::Utc::now();
+    let mut s = settings_now(st);
+    f(&mut s)?;
+    if !logger::active(&s, now)
+        && let Some(id) = lg.close(&db, now)?
+    {
+        let _ = app.emit("play-logged", logger::play(&db, id)?);
+    }
+    settings::save(&st.paths.settings_file(), &s)?;
+    *st.settings.lock().unwrap() = s.clone();
+    let status = lg.status(&db, &s, now)?;
+    let _ = app.emit("logger-status", &status);
+    Ok(status)
+}
+
+#[tauri::command(async)]
+pub fn set_logger<R: Runtime>(
+    app: AppHandle<R>,
+    st: St<'_>,
+    lg: Lg<'_>,
+    patch: LoggerPatch,
+) -> Result<LoggerStatus> {
+    if let Some(on) = patch.autostart {
+        // absent only in the mock-runtime tests, which don't register the plugin
+        if let Some(a) = app.try_state::<tauri_plugin_autostart::AutoLaunchManager>() {
+            if on { a.enable() } else { a.disable() }.map_err(|e| {
+                AppError::new(crate::error::Code::Io, "Couldn't change start with Windows.")
+                    .with_detail(e.to_string())
+            })?;
+        }
+    }
+    change_logger(&app, &st, &lg, |s| {
+        s.logger_on = patch.on.unwrap_or(s.logger_on);
+        s.autostart = patch.autostart.unwrap_or(s.autostart);
+        s.include_private = patch.include_private.unwrap_or(s.include_private);
+        Ok(())
+    })
+}
+
+/// `minutes`: 1 minute to 7 days, or `null` = until resumed (`logger::pause`).
+#[tauri::command(async)]
+pub fn pause_logger<R: Runtime>(
+    app: AppHandle<R>,
+    st: St<'_>,
+    lg: Lg<'_>,
+    minutes: Option<i64>,
+) -> Result<LoggerStatus> {
+    change_logger(&app, &st, &lg, |s| {
+        logger::pause(s, minutes, chrono::Utc::now())
+    })
+}
+
+#[tauri::command(async)]
+pub fn resume_logger<R: Runtime>(app: AppHandle<R>, st: St<'_>, lg: Lg<'_>) -> Result<LoggerStatus> {
+    change_logger(&app, &st, &lg, |s| {
+        logger::resume(s);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,6 +549,7 @@ mod tests {
             .build(mock_context(noop_assets()))
             .unwrap();
         app.manage(st);
+        app.manage(Mutex::new(Logger::default()));
         (app, d)
     }
 
@@ -539,6 +626,20 @@ mod tests {
             let e = call(&w, "update_settings", json!({"patch": { key: "x" }})).unwrap_err();
             assert_eq!(e["code"], json!("validation"), "{key}");
         }
+        // logger: single-word keys `minutes` / `patch`; nothing in this test runs SMTC → idle
+        let lg = call(&w, "pause_logger", json!({"minutes": 60})).unwrap();
+        assert_eq!(lg["state"], json!("paused"));
+        assert!(lg["paused_until"].is_string());
+        let lg = call(&w, "set_logger", json!({"patch": {"include_private": true}})).unwrap();
+        assert_eq!(lg["include_private"], json!(true));
+        let lg = call(&w, "resume_logger", json!({})).unwrap();
+        assert_eq!((&lg["state"], &lg["paused_until"]), (&json!("idle"), &Value::Null));
+        let e = call(&w, "set_logger", json!({"patch": {"nope": true}})).unwrap_err();
+        assert_eq!(e["code"], json!("validation"), "unknown patch key");
+        let e = call(&w, "pause_logger", json!({"minutes": 0})).unwrap_err();
+        assert_eq!(e["code"], json!("validation"));
+        let lg = call(&w, "get_logger_status", json!({})).unwrap();
+        assert_eq!((&lg["autostart"], &lg["now_playing"]), (&json!(false), &Value::Null));
         let e = call(&w, "check_backup", json!({"path": "C:\\nope.txt"})).unwrap_err();
         assert_eq!(e["code"], json!("validation"));
         drop(w);
