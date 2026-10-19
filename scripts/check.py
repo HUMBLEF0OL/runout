@@ -125,20 +125,20 @@ def check_insights_no_cache():
 def check_listening_event_reads():
     # G-20 / audit 4f53129: listening_event reads go through insights::base (reconciled rows out,
     # private sessions per setting). A direct read needs `// unfiltered: <reason>` on the line or up to 2 lines above.
-    skip = set()
+    # Every reader is scanned; importer/ (except playlists.rs) and db/ are the writers and migrations.
     src = TAURI / "src"
-    files = [p for d in ("insights", "library") if (src / d).exists() for p in (src / d).rglob("*.rs")]
-    files += [p for p in [src / "importer/playlists.rs"] if p.exists()]
+    read_pat = re.compile(r"\b(?:FROM|JOIN)\s+listening_event\b", re.S)
     bad = []
-    for p in files:
+    for p in src.rglob("*.rs"):
         rel = p.relative_to(src).as_posix()
-        if rel in skip:
+        if rel.startswith("db/") or (rel.startswith("importer/") and rel != "importer/playlists.rs"):
             continue
-        lines, fn = p.read_text(encoding="utf-8").splitlines(), None
-        for i, line in enumerate(lines):
-            if m := re.search(r"\bfn (\w+)", line):
-                fn = m.group(1)
-            if "FROM listening_event" not in line or (rel == "insights/mod.rs" and fn == "base"):
+        text = p.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        for m in read_pat.finditer(text):
+            i = text.count("\n", 0, m.start())
+            fn = next((f.group(1) for l in reversed(lines[:i + 1]) if (f := re.search(r"\bfn (\w+)", l))), None)
+            if rel == "insights/mod.rs" and fn == "base":
                 continue
             if not any(re.search(r"// unfiltered: \S", l) for l in lines[max(i - 2, 0):i + 1]):
                 bad.append(f"src-tauri/src/{rel}:{i + 1}: read insights::base, or add `// unfiltered: <reason>`")
@@ -156,7 +156,10 @@ def check_settings_clone_then_assign():
     for p in (TAURI / "src").rglob("*.rs"):
         for body in re.split(r"\n\s*(?:pub(?:\(crate\))? )?fn ", p.read_text(encoding="utf-8")):
             c = clone.search(body)
-            if c and assign.search(body, c.end()):
+            # also `let mut g = …settings.lock().unwrap(); … *g = s;`
+            guards = [g.group(1) for g in re.finditer(r"let mut (\w+) = [^;]*settings\.lock\(\)\.unwrap\(\);", body)]
+            via_guard = c and any(re.search(rf"\*{g}\s*=[^=]", body[c.end():]) for g in guards)
+            if c and (assign.search(body, c.end()) or via_guard):
                 bad.append(f"{p.relative_to(ROOT)}: fn {body.split('(')[0].split()[-1]} clones settings then assigns; use edit_settings")
     if bad:
         failures.append("settings clone-then-assign")

@@ -170,6 +170,7 @@ impl Logger {
         } else {
             "idle"
         };
+        // unfiltered: logger status shows its own last write, not a listening figure
         let last_event_at = conn.query_row(
             "SELECT max(ended_at_utc) FROM listening_event WHERE source = 'logger'",
             [],
@@ -236,7 +237,7 @@ pub fn play(conn: &Connection, id: i64) -> Result<Play> {
                     coalesce(e.album_name, ''), e.source, e.spotify_track_uri, e.item_id,
                     (SELECT a.rating FROM item_link l JOIN item a ON a.id = l.to_id
                       WHERE l.from_id = e.item_id AND l.kind = 'on_album')
-             FROM listening_event e WHERE e.id = ?1",
+             FROM listening_event e WHERE e.id = ?1", // unfiltered: the row just written, for play-logged
             [id],
             |r| {
                 Ok((
@@ -293,6 +294,7 @@ mod tests {
 
     fn rows(c: &Connection) -> Vec<(String, i64, bool, Option<i64>)> {
         let mut st = c
+            // unfiltered: test reads every row the logger wrote
             .prepare("SELECT track_name, ms_played, counts_as_play, item_id FROM listening_event ORDER BY id")
             .unwrap();
         st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
