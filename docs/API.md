@@ -90,7 +90,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `get_item` | `id` | `ItemDetail` | SC-05 |
 | `create_item` | `input: NewItem` | `ItemDetail` | `duplicate` error with `existing_id` (FR-004); `capture` usage event |
 | `update_item` | `id, patch: ItemPatch` | `ItemDetail` | `promoted_fields` sets provenance `promoted` for those fields. A `type` change drops links that no longer fit (e.g. `on_album` when it is no longer a track) |
-| `set_status` | `id, status, note?` | `ItemDetail` | Writes `status_history`; sets `explored_at` (FR-005/006) |
+| `set_status` | `id, status, note?` | `ItemDetail` | Writes `status_history` (FR-005/006). Into `explored`/`not_for_me`: sets `explored_at`, leaves the backlog. Out of them: clears `explored_at`; back to `planned` rejoins the backlog at the end. `create_item` with a `status` gets the same effects |
 | `delete_item` | `id` | `void` | FR-022 |
 | `link_items` / `unlink_items` | `from_id, to_id, kind` | `void` | FR-003/004 versions. Direction: track → album (`on_album`), item → artist (`by_artist`), version → original (`version_of`) |
 | `reorder_backlog` | `ids: number[]` | `void` | Whole visible order; FR-012 |
@@ -100,7 +100,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `list_unresolved` / `retry_unresolved` / `discard_unresolved` | — / — / `id` | `Unresolved[]` / `{resolved: number}` / `void` | `Unresolved = {id, raw_link, received_at, source, state, error}` |
 | `search` | `q, limit?, type?` | `{item: ItemSummary, snippet: string, field: string}[]` | FTS5, < 200 ms (NFR-04). `type` limits hits to one record type (edit-mode link picker, M3) |
 | `list_tags` / `rename_tag` / `merge_tags` / `delete_tag` | — / `id, name` / `from_id, into_id` / `id` | `Tag[]` / `Tag` / `Tag` / `void` | SC-13b |
-| `list_saved_filters` / `save_filter` / `delete_saved_filter` | — / `name, definition` / `id` | `SavedFilter[]` / `SavedFilter` / `void` | FR-013 |
+| `list_saved_filters` / `save_filter` / `delete_saved_filter` | — / `name, definition` / `id` | `SavedFilter[]` / `SavedFilter` / `void` | FR-013. `save_filter` trims `definition.tags` and drops empties and case-insensitive duplicates; `rename_tag`/`merge_tags` rewrite saved filters' tags |
 | `get_rediscover` | — | `{revisit, top_rated, stale_backlog, incomplete_reviews: ItemSummary[]}` | SC-07, FR-013 |
 | `get_online` | — | `boolean` | `net::online()`, cached 30 s (TSD §4.3) |
 | `get_settings` / `update_settings` | — / `patch` | `Settings` | `{library_path, backup_dir, backup_weekly, size_warn_mb, artwork_default}` |

@@ -73,6 +73,22 @@ const savedInSpotify = new Set<string>();
 const lastApply = new Map<string, { undo_id: number; applied_at: string; expires_at: string }>();
 
 /** artist_name → find or create the artist item and link by_artist (API.md NewItem/ItemPatch). */
+/** Mirrors Rust `status::apply_side_effects`: into explored/not_for_me sets explored_at and leaves the backlog;
+ *  out of them clears explored_at, and back to planned rejoins the backlog at the end. */
+function statusEffects(it: MItem, from: Status | null, to: Status) {
+  const done = (s: Status | null) => s === "explored" || s === "not_for_me";
+  if (done(to)) { it.explored_at = TODAY; it.in_backlog = false; it.backlog_order = null; }
+  else if (done(from)) {
+    it.explored_at = null;
+    if (to === "planned") { it.in_backlog = true; it.backlog_order = Math.max(0, ...items.map((i) => i.backlog_order ?? 0)) + 1; }
+  }
+}
+/** Mirrors Rust `tags::rewrite_saved_filters`: saved filters naming `from` (ignoring case) now name `to`, deduped. */
+function rewriteFilters(from: string, to: string) {
+  const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  savedFilters = savedFilters.map((f) => !f.definition.tags?.some((t) => eq(t, from)) ? f : { ...f, definition: { ...f.definition,
+    tags: f.definition.tags.map((t) => (eq(t, from) ? to : t)).filter((t, n, a) => a.findIndex((x) => eq(x, t)) === n) } });
+}
 function setArtist(it: MItem, name: string | null | undefined) {
   const n = name?.trim();
   if (it.type === "artist") return;
@@ -235,6 +251,7 @@ const H: Record<string, Handler> = {
       provenance: {},
     };
     items.push(it);
+    statusEffects(it, null, it.status);
     setArtist(it, input.artist_name);
     if (input.album_id != null && it.type === "track") link(it.id, input.album_id, "on_album");
     const set = { display_name: !!it.display_name, artist: !!it.artist, notes: !!it.notes, recommended_by: !!it.recommended_by, priority: !!it.priority };
@@ -263,8 +280,8 @@ const H: Record<string, Handler> = {
     const it = need(id);
     if (it.status !== status) {
       history.push({ item_id: it.id, from: it.status, to: status, at: TODAY, note: note ?? null });
+      statusEffects(it, it.status, status);
       it.status = status;
-      if (status === "explored" || status === "not_for_me") { it.explored_at = TODAY; it.in_backlog = false; it.backlog_order = null; }
       it.modified_at = TODAY;
     }
     return detail(it);
@@ -305,15 +322,18 @@ const H: Record<string, Handler> = {
     return hits.slice(0, limit ?? 50);
   },
   list_tags: () => tags.map((t) => ({ ...t, item_count: items.filter((i) => i.tags.includes(t.name)).length })),
-  rename_tag: ({ id, name }) => { const t = tags.find((x) => x.id === id) ?? fail("not_found", "Tag not found."); items.forEach((i) => (i.tags = i.tags.map((x) => (x === t.name ? name : x)))); t.name = name; return { ...t }; },
+  rename_tag: ({ id, name }) => { const t = tags.find((x) => x.id === id) ?? fail("not_found", "Tag not found."); items.forEach((i) => (i.tags = i.tags.map((x) => (x === t.name ? name : x)))); rewriteFilters(t.name, name); t.name = name; return { ...t }; },
   merge_tags: ({ fromId, intoId }) => {
     const a = tags.find((x) => x.id === fromId) ?? fail("not_found", "Tag not found."); const b = tags.find((x) => x.id === intoId) ?? fail("not_found", "Tag not found.");
     items.forEach((i) => { if (i.tags.includes(a.name)) i.tags = [...new Set(i.tags.map((x) => (x === a.name ? b.name : x)))]; });
-    tags.splice(tags.indexOf(a), 1); return { ...b };
+    rewriteFilters(a.name, b.name); tags.splice(tags.indexOf(a), 1); return { ...b };
   },
   delete_tag: ({ id }) => { const t = tags.find((x) => x.id === id); if (t) { items.forEach((i) => (i.tags = i.tags.filter((x) => x !== t.name))); tags.splice(tags.indexOf(t), 1); } },
   list_saved_filters: () => savedFilters,
-  save_filter: ({ name, definition }) => { const f = { id: Math.max(0, ...savedFilters.map((x) => x.id)) + 1, name, definition }; savedFilters = [...savedFilters, f]; return f; },
+  save_filter: ({ name, definition }) => {
+    // Like Rust: tags trimmed, empties and case-insensitive duplicates dropped, so rename/merge can rewrite them.
+    if (definition.tags) definition = { ...definition, tags: definition.tags.map((t: string) => t.trim()).filter((t: string, n: number, a: string[]) => t && a.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === n) };
+    const f = { id: Math.max(0, ...savedFilters.map((x) => x.id)) + 1, name, definition }; savedFilters = [...savedFilters, f]; return f; },
   delete_saved_filter: ({ id }) => { savedFilters = savedFilters.filter((f) => f.id !== id); },
   get_rediscover: () => ({
     revisit: items.filter((i) => i.revisit).map(summary),

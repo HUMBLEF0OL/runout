@@ -182,9 +182,20 @@ pub fn save_filter(conn: &Connection, name: &str, definition: ItemFilter) -> Res
     if name.is_empty() {
         return Err(AppError::validation("Give the filter a name."));
     }
+    // Tags as `tag.name` stores them, so rename/merge (matching ignoring case) can rewrite them.
+    let tags = definition.tags.clone().map(|ts| {
+        let mut out: Vec<String> = vec![];
+        for t in ts.iter().map(|t| clean_line(t, limit::TAG)) {
+            if !t.is_empty() && !out.iter().any(|o| o.eq_ignore_ascii_case(&t)) {
+                out.push(t);
+            }
+        }
+        out
+    });
     let definition = ItemFilter {
         offset: None,
         limit: None,
+        tags,
         ..definition
     };
     conn.execute(
@@ -291,5 +302,28 @@ mod tests {
         assert!(save_filter(&c, "  ", ItemFilter::default()).is_err());
         delete_saved_filter(&c, f.id).unwrap();
         assert!(list_saved_filters(&c).unwrap().is_empty());
+    }
+
+    #[test]
+    fn saved_filter_tags_are_cleaned_so_rename_rewrites_them() {
+        use crate::library::tags::{list_tags, rename_tag};
+        let mut c = open_in_memory().unwrap();
+        let mut n = new(ItemType::Album, "A");
+        n.tags = vec!["chill".into()];
+        create(&mut c, n).unwrap();
+        let def = filter(serde_json::json!({"tags": [" chill", "CHILL", " ", "jazz "]}));
+        let f = save_filter(&c, "Chill", def).unwrap();
+        assert_eq!(f.definition.tags, Some(vec!["chill".into(), "jazz".into()]));
+        let tag = list_tags(&c)
+            .unwrap()
+            .into_iter()
+            .find(|t| t.name == "chill")
+            .unwrap();
+        rename_tag(&mut c, tag.id, "mellow").unwrap();
+        let saved = &list_saved_filters(&c).unwrap()[0];
+        assert_eq!(
+            saved.definition.tags,
+            Some(vec!["mellow".into(), "jazz".into()])
+        );
     }
 }

@@ -2,6 +2,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
+use super::backlog;
 use super::items::{self, ItemDetail};
 use super::{NOW, Status};
 use crate::error::{AppError, Result};
@@ -47,8 +48,37 @@ pub fn history(conn: &Connection, id: i64) -> Result<Vec<HistoryEntry>> {
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-/// `set_status`. Same status → no-op. Explored / not for me: sets `explored_at` and leaves the
-/// backlog (the mock's behaviour; `not_for_me_this_month` counts by `explored_at`).
+fn is_done(s: Status) -> bool {
+    matches!(s, Status::Explored | Status::NotForMe)
+}
+
+/// What a status change does besides the `status` column (shared by `set_status` and `create`).
+/// Into explored / not for me: sets `explored_at` and leaves the backlog (`not_for_me_this_month`
+/// counts by `explored_at`). Out of them: clears `explored_at`; back to planned also rejoins the
+/// backlog at the end.
+pub(crate) fn apply_side_effects(
+    conn: &Connection,
+    id: i64,
+    from: Option<Status>,
+    to: Status,
+) -> Result<()> {
+    if is_done(to) {
+        conn.execute(
+            &format!(
+                "UPDATE item SET explored_at = {NOW}, in_backlog = 0, backlog_order = NULL WHERE id = ?1"
+            ),
+            [id],
+        )?;
+    } else if from.is_some_and(is_done) {
+        conn.execute("UPDATE item SET explored_at = NULL WHERE id = ?1", [id])?;
+        if to == Status::Planned {
+            backlog::set_in_backlog(conn, id, true)?;
+        }
+    }
+    Ok(())
+}
+
+/// `set_status`. Same status → no-op; otherwise a history row plus `apply_side_effects`.
 pub fn set_status(
     conn: &mut Connection,
     id: i64,
@@ -67,14 +97,7 @@ pub fn set_status(
             "UPDATE item SET status = ?2 WHERE id = ?1",
             params![id, status],
         )?;
-        if matches!(status, Status::Explored | Status::NotForMe) {
-            tx.execute(
-                &format!(
-                    "UPDATE item SET explored_at = {NOW}, in_backlog = 0, backlog_order = NULL WHERE id = ?1"
-                ),
-                [id],
-            )?;
-        }
+        apply_side_effects(&tx, id, Some(cur), status)?;
         items::touch(&tx, id)?;
     }
     tx.commit()?;
@@ -115,5 +138,33 @@ mod tests {
                 .code,
             crate::error::Code::NotFound
         );
+    }
+
+    #[test]
+    fn leaving_explored_clears_explored_at_and_planned_rejoins_backlog_at_end() {
+        let mut c = open_in_memory().unwrap();
+        let a = add(&mut c, ItemType::Album, "A");
+        let b = add(&mut c, ItemType::Album, "B");
+        let last = items::get(&c, b).unwrap().summary.backlog_order.unwrap();
+        set_status(&mut c, a, Status::Explored, None).unwrap();
+        let d = set_status(&mut c, a, Status::Planned, None).unwrap();
+        assert!(d.explored_at.is_none());
+        assert!(d.summary.in_backlog);
+        assert!(d.summary.backlog_order.unwrap() > last);
+        // not_for_me → in_progress: explored_at cleared, stays out of the backlog
+        set_status(&mut c, b, Status::NotForMe, None).unwrap();
+        let d = set_status(&mut c, b, Status::InProgress, None).unwrap();
+        assert!(d.explored_at.is_none());
+        assert!(!d.summary.in_backlog && d.summary.backlog_order.is_none());
+    }
+
+    #[test]
+    fn create_with_explored_status_gets_the_same_side_effects() {
+        let mut c = open_in_memory().unwrap();
+        let mut n = crate::library::testutil::new(ItemType::Album, "Done");
+        n.status = Some(Status::NotForMe);
+        let d = items::create(&mut c, n).unwrap();
+        assert!(d.explored_at.is_some());
+        assert!(!d.summary.in_backlog && d.summary.backlog_order.is_none());
     }
 }

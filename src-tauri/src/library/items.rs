@@ -363,6 +363,7 @@ pub fn create(conn: &mut Connection, input: NewItem) -> Result<ItemDetail> {
         provenance::record(&tx, id, &["spotify_uri"], Prov::Promoted, &[])?;
     }
     status::insert(&tx, id, None, status, None)?;
+    status::apply_side_effects(&tx, id, None, status)?;
     if let Some(ms) = input.capture_ms {
         tx.execute(
             "INSERT INTO usage_event(kind, duration_ms) VALUES ('capture', ?1)",
