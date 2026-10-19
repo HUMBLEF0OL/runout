@@ -38,7 +38,8 @@ tauri = { version = "2", features = ["test"] }
 
 [target.'cfg(windows)'.dependencies]
 # Credential Manager delete for --uninstall-cleanup (TSD §4.11); start-up error box (TSD §6); M4 adds Media_Control (SMTC).
-windows = { version = "0.62.2", features = ["Win32_Security_Credentials", "Win32_UI_WindowsAndMessaging"] }
+# Win32_System_Time: export UTC → local with the zone's rules for that year (TSD §4.8, importer/streaming.rs).
+windows = { version = "0.62.2", features = ["Win32_Security_Credentials", "Win32_UI_WindowsAndMessaging", "Win32_System_Time"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

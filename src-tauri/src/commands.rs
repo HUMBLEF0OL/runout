@@ -15,6 +15,9 @@ use crate::capture::{CaptureInfo, Listener};
 use crate::cleanup;
 use crate::error::{AppError, Result};
 use crate::export;
+use crate::importer::playlists::{self, ExportedPlaylist, PlaylistCheckup};
+use crate::importer::preview::{self, ImportPreview};
+use crate::importer::run::{self, ImportRecord, ImportResult};
 use crate::library::dashboard::{self, Counts, Dashboard};
 use crate::library::filters::{self, ItemFilter, SavedFilter};
 use crate::library::items::{self, ItemDetail, ItemPatch, ItemSummary, NewItem};
@@ -77,6 +80,12 @@ pub fn handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + 
         delete_library,
         record_page_visit,
         get_success_metrics,
+        pick_import_source,
+        preview_import,
+        run_import,
+        list_imports,
+        list_exported_playlists,
+        get_playlist_checkup,
     ]
 }
 
@@ -432,6 +441,54 @@ pub fn get_success_metrics(st: St<'_>) -> Result<SuccessMetrics> {
     usage::get_success_metrics(&st.db.lock().unwrap())
 }
 
+/* ------------------------------------------------------------------ import (API.md §4) */
+
+/// One picker for both forms: the export .zip, or any .json inside the unzipped folder (→ that folder).
+#[tauri::command(async)]
+pub fn pick_import_source<R: Runtime>(app: AppHandle<R>) -> Result<Option<String>> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose the Spotify export (.zip) or any file in its folder")
+        .add_filter("Spotify export", &["zip", "json"])
+        .blocking_pick_file();
+    Ok(path_of(picked).map(|p| {
+        let is_zip = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+        let p = match p.parent() {
+            Some(dir) if !is_zip => dir.to_path_buf(),
+            _ => p,
+        };
+        p.to_string_lossy().into_owned()
+    }))
+}
+
+#[tauri::command(async)]
+pub fn preview_import(st: St<'_>, path: String) -> Result<ImportPreview> {
+    let l = run::load(Path::new(&path))?; // files read before the lock
+    preview::preview(&mut st.db.lock().unwrap(), &l)
+}
+
+#[tauri::command(async)]
+pub fn run_import(st: St<'_>, path: String) -> Result<ImportResult> {
+    let l = run::load(Path::new(&path))?;
+    run::run(&mut st.db.lock().unwrap(), &l)
+}
+
+#[tauri::command(async)]
+pub fn list_imports(st: St<'_>) -> Result<Vec<ImportRecord>> {
+    run::list_imports(&st.db.lock().unwrap())
+}
+
+#[tauri::command(async)]
+pub fn list_exported_playlists(st: St<'_>) -> Result<Vec<ExportedPlaylist>> {
+    playlists::list(&st.db.lock().unwrap())
+}
+
+#[tauri::command(async)]
+pub fn get_playlist_checkup(st: St<'_>, id: i64) -> Result<PlaylistCheckup> {
+    playlists::checkup(&st.db.lock().unwrap(), id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -540,6 +597,26 @@ mod tests {
             assert_eq!(e["code"], json!("validation"), "{key}");
         }
         let e = call(&w, "check_backup", json!({"path": "C:\\nope.txt"})).unwrap_err();
+        assert_eq!(e["code"], json!("validation"));
+
+        // import (API.md §4) with the synthetic export
+        let path = json!(crate::importer::source::fixture().to_string_lossy());
+        let p = call(&w, "preview_import", json!({ "path": path })).unwrap();
+        assert_eq!(
+            (p["music"].clone(), p["playlists"].clone()),
+            (json!(15), json!(2))
+        );
+        let r = call(&w, "run_import", json!({ "path": path })).unwrap();
+        assert_eq!(r["added"], json!(14));
+        assert_eq!(
+            call(&w, "list_imports", json!({})).unwrap()[0]["kind"],
+            json!("extended")
+        );
+        let lists = call(&w, "list_exported_playlists", json!({})).unwrap();
+        let id = lists[0]["id"].clone();
+        let t = call(&w, "get_playlist_checkup", json!({ "id": id })).unwrap();
+        assert!(t["tracks"].is_array());
+        let e = call(&w, "preview_import", json!({"path": "C:\\nope.txt"})).unwrap_err();
         assert_eq!(e["code"], json!("validation"));
         drop(w);
         drop(app);

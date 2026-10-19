@@ -1,0 +1,89 @@
+{
+ "playlists": [
+  {
+   "name": "Fixture Mix",
+   "lastModifiedDate": "2026-09-01",
+   "collaborators": [],
+   "description": null,
+   "numberOfFollowers": 0,
+   "items": [
+    {
+     "track": {
+      "trackName": "Glass Harbor",
+      "artistName": "Fixture Lanterns",
+      "albumName": "Paper Tides",
+      "trackUri": "spotify:track:ptgUzEjfebzJ6sZWdoHIxr"
+     },
+     "episode": null,
+     "audiobook": null,
+     "localTrack": null,
+     "addedDate": "2026-08-01"
+    },
+    {
+     "track": {
+      "trackName": "Quiet Engine",
+      "artistName": "Fixture Lanterns",
+      "albumName": "Paper Tides",
+      "trackUri": "spotify:track:Xl0gqn87b1PZqZrmktsO3U"
+     },
+     "episode": null,
+     "audiobook": null,
+     "localTrack": null,
+     "addedDate": "2026-08-01"
+    },
+    {
+     "track": {
+      "trackName": "Glass Harbor",
+      "artistName": "Fixture Lanterns",
+      "albumName": "Paper Tides",
+      "trackUri": "spotify:track:ptgUzEjfebzJ6sZWdoHIxr"
+     },
+     "episode": null,
+     "audiobook": null,
+     "localTrack": null,
+     "addedDate": "2026-08-01"
+    },
+    {
+     "track": null,
+     "episode": {
+      "episodeName": "Fixture Talk 12",
+      "showName": "Fixture Talk",
+      "episodeUri": "spotify:episode:5CsiqyM9kvKaxcDkxYZxsK"
+     },
+     "audiobook": null,
+     "localTrack": null,
+     "addedDate": "2026-08-02"
+    },
+    {
+     "track": null,
+     "episode": null,
+     "audiobook": null,
+     "localTrack": {
+      "uri": "spotify:local:Fixture:Local:Song:200"
+     },
+     "addedDate": "2026-08-03"
+    },
+    {
+     "track": {
+      "trackName": "Copper Lines (feat. Mira Vale)",
+      "artistName": "Odd Meridian",
+      "albumName": "Copper",
+      "trackUri": "spotify:track:9224xf2MvQyGplpErf8703"
+     },
+     "episode": null,
+     "audiobook": null,
+     "localTrack": null,
+     "addedDate": "2026-08-01"
+    }
+   ]
+  },
+  {
+   "name": "Empty One",
+   "lastModifiedDate": "2026-08-01",
+   "collaborators": [],
+   "description": null,
+   "numberOfFollowers": 0,
+   "items": []
+  }
+ ]
+}
