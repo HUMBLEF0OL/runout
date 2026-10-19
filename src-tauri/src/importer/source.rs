@@ -9,6 +9,12 @@ use crate::error::{AppError, Code, Result};
 
 /// A single export file above this is refused (largest real ones are ~15 MB; guards zip bombs).
 const MAX_FILE: u64 = 256 * 1024 * 1024;
+/// All recognized files together (a real lifetime export is ~200 MB unzipped); held in memory.
+const MAX_TOTAL: u64 = 2 * 1024 * 1024 * 1024;
+/// Zip entries scanned at most (a real export has a few dozen).
+const MAX_ENTRIES: usize = 10_000;
+/// Folder levels walked below the chosen folder (the real layout is one level deep).
+const MAX_DEPTH: usize = 4;
 
 pub struct File {
     /// Base name, e.g. `Streaming_History_Audio_2024_3.json`.
@@ -54,6 +60,15 @@ fn push(out: &mut Export, name: String, r: impl Read) -> Result<()> {
     if bytes.len() as u64 > MAX_FILE {
         return Err(unrecognized("An export file is far larger than expected.").with_detail(name));
     }
+    let total: u64 = [&out.streaming, &out.playlists]
+        .iter()
+        .flat_map(|v| v.iter())
+        .map(|f| f.bytes.len() as u64)
+        .sum::<u64>()
+        + bytes.len() as u64;
+    if total > MAX_TOTAL {
+        return Err(unrecognized("The export is far larger than expected.").with_detail(name));
+    }
     let f = File { name, bytes };
     match k {
         Kind::Streaming => out.streaming.push(f),
@@ -62,11 +77,23 @@ fn push(out: &mut Export, name: String, r: impl Read) -> Result<()> {
     Ok(())
 }
 
-fn walk(dir: &Path, out: &mut Export) -> Result<()> {
-    for e in std::fs::read_dir(dir)? {
-        let p = e?.path();
-        if p.is_dir() {
-            walk(&p, out)?;
+/// Subfolders that can't be read are skipped; links and junctions are never followed.
+fn walk(dir: &Path, depth: usize, out: &mut Export) -> Result<()> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(it) => it,
+        Err(_) if depth > 0 => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        let Ok(t) = e.file_type() else { continue };
+        if t.is_symlink() {
+            continue; // std reports Windows junctions as symlinks too
+        }
+        if t.is_dir() {
+            if depth < MAX_DEPTH {
+                walk(&p, depth + 1, out)?;
+            }
         } else if let Some(name) = p.file_name().and_then(|n| n.to_str())
             && kind(name).is_some()
         {
@@ -80,7 +107,7 @@ fn walk(dir: &Path, out: &mut Export) -> Result<()> {
 pub fn read(path: &Path) -> Result<Export> {
     let mut out = Export::default();
     if path.is_dir() {
-        walk(path, &mut out)?;
+        walk(path, 0, &mut out)?;
     } else if path.is_file()
         && path
             .extension()
@@ -90,6 +117,11 @@ pub fn read(path: &Path) -> Result<Export> {
             unrecognized("That .zip couldn't be read.").with_detail(e.to_string())
         };
         let mut z = zip::ZipArchive::new(FsFile::open(path)?).map_err(bad)?;
+        if z.len() > MAX_ENTRIES {
+            return Err(unrecognized(
+                "That .zip holds far more files than an export.",
+            ));
+        }
         for i in 0..z.len() {
             let f = z.by_index(i).map_err(bad)?;
             let name = f
@@ -185,5 +217,25 @@ mod tests {
             Code::Validation
         );
         let _ = std::fs::remove_dir_all(empty);
+    }
+}
+
+#[cfg(test)]
+mod walk_tests {
+    use super::*;
+
+    #[test]
+    fn folder_walk_stops_at_max_depth() {
+        let root = std::env::temp_dir().join(format!("runout-walk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ok = root.join("Spotify Extended Streaming History");
+        let deep = (0..=MAX_DEPTH).fold(root.clone(), |p, i| p.join(format!("d{i}")));
+        for d in [&ok, &deep] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("Streaming_History_Audio_2020.json"), "[]").unwrap();
+        }
+        let e = read(&root).unwrap();
+        assert_eq!(e.streaming.len(), 1, "only the shallow file is read");
+        let _ = std::fs::remove_dir_all(root);
     }
 }

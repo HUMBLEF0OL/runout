@@ -26,7 +26,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 - **M3 closed** 18 Oct 2026: all 8 acceptance lines ticked with evidence; four external spec reviews, every finding fixed. Contract changes in M3: `ItemSummary.notes`, `NewItem.album_id`, `ItemPatch.type`, `search` `type`, `recent_activity` dropped.
 - **M3 post-close audit** 19 Oct 2026: 3 rounds of parallel spec reviews + 2 verification passes, 36 findings fixed (FTS secure-delete migration `0002`, restore/move safety copies, capture off mid-request, link-retry races, settings load, input clamps); check.py + journeys 30/30 green.
 - **M4 in progress** 19 Oct 2026: logger, importer and insights merged on `dev` (`d0ea598`), check.py green; WI 9 perf `4ad5a14`; external audit fixes `4f53129`. Acceptance: 4/9 ticked with evidence (minimization query, overlap, hand-verified insights + year review, insights-no-cache). Open: SMTC 3 live tracks, real lifetime import + re-import 0, 20-play spot-check, NFR-04 all-time reads (G-17), 24 h logger run.
-- **Next:** parallel session finishes WI 4 (real layout, G-18/G-19) → real import + spot-check (reading the export needs your OK) → decide G-17 → live SMTC run (3 tracks, pause, repeat: G-21) and 24 h logger run → G-20 → `close-milestone`. M5 starts at its U-6 gate.
+- **Next:** real import + spot-check (reading the export needs your OK) → decide G-17 → live SMTC run (3 tracks, pause, repeat: G-21) and 24 h logger run → G-20 → BRD O2 text (export took ~1 day; `change-spec`) → `close-milestone`. M5 starts at its U-6 gate.
 
 ### Known gaps
 Found while building and closing M2 (18 Oct 2026). None blocks a release criterion. "Contract" = needs an API.md change first (API.md §7), then `api.ts`, the mock and Rust together. Remove a row when it's fixed; say in the commit which G-n it closes.
@@ -43,8 +43,6 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 | G-15 | Spotify credential must be created with target exactly `Runout/spotify` (`keyring` `Entry::new_with_target`) or `--uninstall-cleanup` won't find it | `src-tauri/src/spotify/`, `cleanup.rs` | Credential is written in M5; cleanup (M3) deletes by that target ([KB](kb/windows-tauri.md)) | M5 |
 | G-16 | Success metric "moved after 14 days" can't see items that left the backlog while planned | `src-tauri/src/usage.rs` | Nothing records when an item entered or left the backlog; exact needs a backlog-history migration | M8 candidate |
 | G-17 | All-time insight reads over the 500k reference set miss NFR-04: listening `all` 3.9 s, `list_plays` range `all` 0.30–0.35 s, `list_unmatched` 0.25–1.1 s (targets 500 / 200 ms). Bounded ranges, take, year review, record panel pass | `src-tauri/src/insights/` | Each is 3–8 full scans of `listening_event`; indexes can't remove a scan. Fix: per-month rollup (month × record/artist/norm_key) kept by `events::insert`, or results cached on `PRAGMA data_version`. Numbers in [KB](kb/perf-integrity.md); `tests/perf_listening.rs` prints them | M4 (decide before close) |
-| G-18 | Zip import has no total-size or entry-count cap and holds every matching entry in memory | `src-tauri/src/importer/source.rs` | M4 external audit 19 Oct 2026; file owned by the parallel WI 4 session | M4 (WI 4) |
-| G-19 | Folder import walks the tree with no depth limit, follows junctions, and fails the whole import on the first unreadable subfolder | `src-tauri/src/importer/source.rs` | Same audit, same owner | M4 (WI 4) |
 | G-20 | Settings lock fix (audit `4f53129`) has no automated test; no `check.py` rules yet for direct `listening_event` reads outside the shared `base` filter or for settings clone-then-assign | `src-tauri/src/state.rs`, `scripts/check.py` | Race is hard to reproduce in a test; rules deferred for quota | M4 (before close) |
 | G-21 | Logger replay detection relies on Spotify moving the SMTC timeline position on repeat; if it doesn't, a repeat is one long play (old behaviour) | `src-tauri/src/logger/accumulator.rs` | Not yet exercised in the running app | M4 (SMTC live check) |
 
@@ -138,7 +136,7 @@ Work items
 1. SMTC watcher spike, then `logger/` (TSD §4.5): allow-list, accumulation, 5 s fallback poll, autostart option, **Pause logging**. — **done** (spike covered one live track; see acceptance)
 2. `0003_listening.sql`. — **done**
 3. `importer/`: folder/zip → detect file types → preview counts → import in one transaction. — **done**
-4. Verify real export format (**T1**, needs **U-2**) and adjust parser; anonymized fixture from its *structure* only. — **in progress** (layout + Video files verified `af65b58`/`44c4ef5`; parallel session finishing)
+4. Verify real export format (**T1**, needs **U-2**) and adjust parser; anonymized fixture from its *structure* only. *(done: streaming history verified and importer adjusted `af65b58`/`44c4ef5`; `Playlist*.json` still unverified until the Account data export arrives)*
 5. Minimization (drop IP/user agent/username), skip non-music rows, UTC→local, private-session flag. — **done**
 6. Dedupe hash; one-to-one reconciliation (TSD §4.7); matching to items (TSD §4.6) and the unmatched list. — **done**
 7. Account-data import (playlists only) and read-only playlist check-up queries. — **done** on a synthetic fixture (real Account data export not yet received, U-1)
@@ -147,7 +145,7 @@ Work items
 
 Acceptance
 - [ ] SMTC spike logs 3 consecutive real Spotify tracks with plausible `ms_played` (pause excluded). *(open: live spike ran one track only, 55.2 s over 55 s ([KB](kb/windows-tauri.md)); track change and pause not yet run live)*
-- [ ] Real lifetime history imports; second import adds 0 rows. *(open: WI 4 real layout being finished in a parallel session; re-import adds 0 is proven on the synthetic export)*
+- [ ] Real lifetime history imports; second import adds 0 rows. *(open: importer handles the real layout (WI 4 done); the run against the real export needs your OK to read it. Re-import adds 0 is proven on the synthetic export)*
 - [x] No IP/user agent/username anywhere in `library.db` (query check). *(`importer::run` test `forbidden_fields_never_reach_the_db` walks every TEXT column)*
 - [x] Overlap test: no double counts, incl. featured-artist, compilation and back-to-back repeat fixtures. *(`importer::run` `overlap_has_no_double_counts`; logger `same_track_replayed_back_to_back_is_two_plays`)*
 - [ ] Matching: spot-check 20 matched plays, all correct (FR-030). *(open: needs the real history imported)*
