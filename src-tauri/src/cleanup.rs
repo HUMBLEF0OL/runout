@@ -38,6 +38,8 @@ pub fn delete_library(conn: &mut Connection, library_path: &Path, confirm: &str)
         tx.execute(&format!("DELETE FROM \"{t}\""), [])?;
     }
     tx.commit()?;
+    // merge FTS segments so no pre-secure-delete tombstoned text survives VACUUM (migration 0002)
+    conn.execute("INSERT INTO item_fts(item_fts) VALUES('optimize')", [])?;
     conn.execute_batch("VACUUM")?;
     conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
     crate::backup::remove_pre_restore(library_path)?;
@@ -164,6 +166,53 @@ mod tests {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
         assert_eq!(v, db::SCHEMA_VERSION);
+        drop(c);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Deleted review text must not survive in the file: FTS5 deletes only add tombstones unless
+    /// secure-delete is on, and VACUUM copies the old segments (TSD §4.11, FR-022).
+    fn file_has(dir: &Path, needle: &[u8]) -> bool {
+        ["library.db", "library.db-wal"].iter().any(|f| {
+            std::fs::read(dir.join(f)).is_ok_and(|b| b.windows(needle.len()).any(|w| w == needle))
+        })
+    }
+
+    fn lib_with_review(tag: &str) -> (std::path::PathBuf, Connection, i64) {
+        let d = std::env::temp_dir().join(format!("runout-fts-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let c = db::open(&d.join("library.db")).unwrap();
+        let id = c
+            .query_row(
+                "INSERT INTO item(type, display_name, review) VALUES ('album', 'Kept', 'qzxvwsecret') RETURNING id",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        db::fixture(&c, 300); // later writes: the token sits in an old FTS segment
+        c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .unwrap();
+        assert!(file_has(&d, b"qzxvwsecret"), "precondition: token on disk");
+        (d, c, id)
+    }
+
+    #[test]
+    fn delete_library_leaves_no_review_tokens_on_disk() {
+        let (d, mut c, _) = lib_with_review("lib");
+        delete_library(&mut c, &d.join("library.db"), CONFIRM).unwrap();
+        assert!(!file_has(&d, b"qzxvwsecret"));
+        drop(c);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn delete_item_then_vacuum_leaves_no_review_tokens_on_disk() {
+        let (d, c, id) = lib_with_review("item");
+        crate::library::items::delete_item(&c, id).unwrap();
+        c.execute_batch("VACUUM").unwrap();
+        c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .unwrap();
+        assert!(!file_has(&d, b"qzxvwsecret"));
         drop(c);
         let _ = std::fs::remove_dir_all(d);
     }

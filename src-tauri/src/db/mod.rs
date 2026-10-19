@@ -7,7 +7,10 @@ use rusqlite::Connection;
 use crate::error::AppError;
 
 /// Embedded migrations; index + 1 = the `user_version` after it runs. Append only.
-const MIGRATIONS: &[&str] = &[include_str!("../../migrations/0001_init.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../../migrations/0001_init.sql"),
+    include_str!("../../migrations/0002_fts_secure_delete.sql"),
+];
 
 /// Schema version a fully migrated library has.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
@@ -119,16 +122,16 @@ mod tests {
     }
 
     #[test]
-    fn fresh_db_migrates_to_v1_and_rerun_is_noop() {
+    fn fresh_db_migrates_to_latest_and_rerun_is_noop() {
         let mut c = open_in_memory().unwrap();
-        assert_eq!(version(&c), 1);
+        assert_eq!(version(&c), SCHEMA_VERSION);
         c.execute(
             "INSERT INTO item(type, display_name) VALUES ('album', 'A')",
             [],
         )
         .unwrap();
         migrate(&mut c).unwrap();
-        assert_eq!(version(&c), 1);
+        assert_eq!(version(&c), SCHEMA_VERSION);
         let n: i64 = c
             .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
             .unwrap();
@@ -148,7 +151,7 @@ mod tests {
             .unwrap();
         assert_eq!((mode.as_str(), fk), ("wal", 1));
         drop(c);
-        let c = open(&path).unwrap(); // reopen: already at v1
+        let c = open(&path).unwrap(); // reopen: already migrated
         assert_eq!(version(&c), SCHEMA_VERSION);
         drop(c);
         let _ = std::fs::remove_dir_all(dir);

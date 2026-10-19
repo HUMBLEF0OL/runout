@@ -46,7 +46,7 @@ impl AppState {
         let settings = settings::load(
             &paths.settings_file(),
             Settings::defaults(&paths.data_dir, &docs),
-        );
+        )?;
         recover_library(std::path::Path::new(&settings.library_path));
         let db = crate::db::open(std::path::Path::new(&settings.library_path))?;
         Ok(Self {
@@ -134,9 +134,11 @@ impl AppState {
         // TSD §4.10 keeps pre-restore until the next successful start: it travels with the library.
         let pre = backup::pre_restore(&from);
         if pre.exists() && backup::move_db(&pre, &backup::pre_restore(&to)).is_err() {
-            // rename fails across drives: copy it over, then never leave a library copy behind at the old place
-            let _ = std::fs::copy(&pre, backup::pre_restore(&to));
-            let _ = backup::remove_pre_restore(&from);
+            // rename fails across drives: copy it over and remove the old one only once the copy exists
+            // (a failed copy leaves it at the old place rather than losing the only safety copy)
+            if std::fs::copy(&pre, backup::pre_restore(&to)).is_ok() {
+                let _ = backup::remove_pre_restore(&from);
+            }
         }
         Ok(to.to_string_lossy().into_owned())
     }
@@ -247,7 +249,7 @@ mod tests {
         assert_eq!(PathBuf::from(&new), d.join("b").join(LIBRARY_FILE));
         assert_eq!(n(&st), before, "live connection is the moved file");
         assert!(!old.exists(), "old file removed after success");
-        let saved = settings::load(&st.paths.settings_file(), Settings::defaults(&d, &d));
+        let saved = settings::load(&st.paths.settings_file(), Settings::defaults(&d, &d)).unwrap();
         assert_eq!(saved.library_path, new);
         // occupied target → validation, nothing changes
         std::fs::create_dir_all(d.join("c")).unwrap();

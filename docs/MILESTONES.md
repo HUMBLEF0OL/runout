@@ -132,7 +132,7 @@ Acceptance
 
 Work items
 1. SMTC watcher spike, then `logger/` (TSD §4.5): allow-list, accumulation, 5 s fallback poll, autostart option, **Pause logging**.
-2. `0002_listening.sql`.
+2. `0003_listening.sql`.
 3. `importer/`: folder/zip → detect file types → preview counts → import in one transaction.
 4. Verify real export format (**T1**, needs **U-2**) and adjust parser; anonymized fixture from its *structure* only.
 5. Minimization (drop IP/user agent/username), skip non-music rows, UTC→local, private-session flag.

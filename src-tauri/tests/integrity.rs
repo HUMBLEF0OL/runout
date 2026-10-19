@@ -126,14 +126,12 @@ fn kill_mid_write_three_offsets() {
     write_kill(&[400, 1300, 2700]);
 }
 
-#[test]
-#[ignore]
-fn kill_mid_backup_three_offsets() {
-    let dir = common::temp_dir("kill-backup");
+fn backup_kill(name: &str, items: usize, offsets: &[u64]) {
+    let dir = common::temp_dir(name);
     let path = dir.join("library.db");
     let backups = dir.join("backups");
-    common::library(&mut db::open(&path).unwrap(), 10_000);
-    for ms in [30, 250, 700] {
+    common::library(&mut db::open(&path).unwrap(), items);
+    for &ms in offsets {
         kill_at("backup", &path, ms);
         assert_intact(&path);
         // Whatever was half-written is never listed, and every listed backup verifies.
@@ -169,4 +167,16 @@ fn kill_mid_backup_three_offsets() {
     assert!(stray.is_empty(), "leftovers: {stray:?}");
     drop(conn);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Quick variant (debug build, a few seconds): runs in check.py, so mid-backup NFR-05 is always proven.
+#[test]
+fn kill_mid_backup_keeps_library_intact() {
+    backup_kill("kill-backup-quick", 1_000, &[100]);
+}
+
+#[test]
+#[ignore]
+fn kill_mid_backup_three_offsets() {
+    backup_kill("kill-backup", 10_000, &[30, 250, 700]);
 }
