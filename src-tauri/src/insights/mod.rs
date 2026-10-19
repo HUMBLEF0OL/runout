@@ -226,6 +226,7 @@ pub(crate) mod fixture {
     }
 
     /// Ids of the events, in the order listed (`e1`..`e9`).
+    #[allow(clippy::vec_init_then_push)] // one commented push per fixture event reads better
     pub fn build() -> (Connection, Vec<i64>) {
         let c = db::open_in_memory().unwrap();
         c.execute_batch(
