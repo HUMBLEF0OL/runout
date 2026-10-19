@@ -23,7 +23,6 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 - **Contract additions made in M2** (backend must implement): `create_playlist_from_items`; dashboard tile fields; `Unmatched.candidates`; `CollectionInsights` stat fields; `NewItem.artist_name/notes/promoted_fields`; `ItemPatch.artist_name`; `ItemSummary.album_name/added_via/recommended_by`; `ItemDetail.track_list` (all in API.md).
 - **Known gaps:** see [Known gaps](#known-gaps) below (G-2 to G-5 closed in M3).
 - **Your open hard stops:** U-1 (request Spotify exports) not recorded as done; U-2 needed by M4; U-6/U-7 by M5; U-3/U-4/U-5 by M6.
-- **M3** steps 1–12 built and through three external spec reviews (all findings fixed); 43 §3 commands registered and checked by `check.py`.
 - **M3 closed** 18 Oct 2026: all 8 acceptance lines ticked with evidence; four external spec reviews, every finding fixed. Contract changes in M3: `ItemSummary.notes`, `NewItem.album_id`, `ItemPatch.type`, `search` `type`, `recent_activity` dropped.
 - **Next:** M4 work item 1 (SMTC spike) per `docs/plans/M4-listening-insights.md`; M4 WI 4 waits on **U-2**. M5 starts at its U-6 gate.
 
