@@ -6,10 +6,10 @@
 
 | Attribute | Value |
 |---|---|
-| Document version | 0.6 |
+| Document version | 0.7 |
 | Status | Scope finalized; one accepted compliance risk documented (section 11.1); ready for technical design |
-| Date | 18 October 2026 |
-| Supersedes | Version 0.5 |
+| Date | 19 October 2026 |
+| Supersedes | Version 0.6 |
 | Product type | Personal productivity / media management application |
 | Primary user | Individual music listener (single user; Spotify Development Mode allows up to 5) |
 | Platform | Windows desktop; iOS quick-capture via Shortcuts |
@@ -19,7 +19,13 @@
 
 ## 0. Change History
 
-### 0.1 Changes in Version 0.6 (design-first delivery)
+### 0.1 Changes in Version 0.7 (agentic delivery)
+
+| Ref | Change |
+|---|---|
+| P1 | Milestone efforts re-estimated for agentic development (D31): Claude Code agents build and review in parallel. M3 took about 3 hours against a 3–4 week estimate. Section 14 now gives build hours plus the real-world waits (user actions, daily use, soak runs) that agents cannot shorten. |
+
+### 0.2 Changes in Version 0.6 (design-first delivery)
 
 | Ref | Change |
 |---|---|
@@ -27,7 +33,7 @@
 | P2 | Delivery order changed to design, then UI on mock data, then backend, then integration (D30). Milestones renumbered M0–M8 (section 14); dates in sections 11, 12, 15 and 18 follow. |
 | P3 | New hard stop: the user approves all screen designs before UI build (end of M1). |
 
-### 0.2 Changes in Version 0.5 (document review fixes)
+### 0.3 Changes in Version 0.5 (document review fixes)
 
 | Ref | Change |
 |---|---|
@@ -40,13 +46,13 @@
 | R7 | “Unfinished albums” defined from user-entered track lists; logger private-session limitation and pause toggle; reconciliation by track name with artist tie-breaker, one-to-one. |
 | R8 | Priorities aligned (FR-018 P0, FR-042 P1); O3 and O6 resolved by the technical design; NFR-12/13/14 made testable; S6 and S14 bases clarified. |
 
-### 0.3 Changes in Version 0.4
+### 0.4 Changes in Version 0.4
 
 | Ref | Change |
 |---|---|
 | N1 | Product named Runout (was the working title “Personal Music Manager”). Versions 0.1–0.3 merged into this single document. |
 
-### 0.4 Changes in Version 0.3 (audit fixes)
+### 0.5 Changes in Version 0.3 (audit fixes)
 
 | Ref | Change |
 |---|---|
@@ -66,7 +72,7 @@
 | L1 | Read-only playlist analysis from the Account Data export added to Release 2. |
 | L2–L6 | Other-service links constraint; embed-playback claim removed; proposed retention values; milestone dependency noted; references hyperlinked. |
 
-### 0.5 Changes in Version 0.2
+### 0.6 Changes in Version 0.2
 
 | Area | Change |
 |---|---|
@@ -628,16 +634,16 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 - Spotify design guidelines are met wherever Spotify data appears.
 ## 14. Milestones
 
-| Milestone | Contents | Exit criterion | Indicative effort |
+| Milestone | Contents | Exit criterion | Indicative effort (agentic) |
 |---|---|---|---|
 | M0 Foundations | Scaffold, proof script; user requests both Spotify data exports | Documents reviewed and consistent; app runs; exports requested | Done |
-| M1 Design | Design spec (docs/DESIGN.md) and every screen designed in direction D, with empty, offline and error states | All screens designed; user approves the designs | ~1 week |
-| M2 UI build | All screens in React on typed mock data: tokens, components, embeds, keyboard, accessibility | Journeys A–H clickable on mock data | 3–4 weeks |
-| M3 Backend: MVP core | Database, link parsing, library, Promotion Rule, search, capture listener, export, backup, delete, usage counters | Core tests and MVP performance checks pass | 3–4 weeks |
-| M4 Backend: listening and insights | Desktop logger, export import, play rule, reconciliation, matching, playlist check-up, insight queries | Lifetime history imported; no double counts; insights hand-verified | 3–4 weeks |
-| M5 Backend: Spotify connected | Gate: O1 (Premium plan) and optional O7; login; R3-1 to R3-7 logic | Test-playlist round-trip passes | 3–4 weeks |
-| M6 Integration: MVP release | MVP screens on real data, installer, phone capture | MVP criteria pass; 2 weeks of daily use measured against section 15 | 1–2 weeks |
-| M7 Integration: R2 and R3 | Listening, insights and Spotify screens on real data | R2 and R3 criteria pass | ~2 weeks |
+| M1 Design | Design spec (docs/DESIGN.md) and every screen designed in direction D, with empty, offline and error states | All screens designed; user approves the designs | Done |
+| M2 UI build | All screens in React on typed mock data: tokens, components, embeds, keyboard, accessibility | Journeys A–H clickable on mock data | Done |
+| M3 Backend: MVP core | Database, link parsing, library, Promotion Rule, search, capture listener, export, backup, delete, usage counters | Core tests and MVP performance checks pass | Done (about 3 h agentic) |
+| M4 Backend: listening and insights | Desktop logger, export import, play rule, reconciliation, matching, playlist check-up, insight queries | Lifetime history imported; no double counts; insights hand-verified | 4–6 h agentic, plus export download (U-2) and a 24 h logger run |
+| M5 Backend: Spotify connected | Gate: O1 (Premium plan) and optional O7; login; R3-1 to R3-7 logic | Test-playlist round-trip passes | 4–6 h agentic, after the O1 gate (U-6) |
+| M6 Integration: MVP release | MVP screens on real data, installer, phone capture | MVP criteria pass; 2 weeks of daily use measured against section 15 | 4–6 h agentic, plus U-3/U-4 and 2 weeks of daily use (U-5) |
+| M7 Integration: R2 and R3 | Listening, insights and Spotify screens on real data | R2 and R3 criteria pass | 3–4 h agentic |
 | M8 Future candidates | Selected items from 4.4 | Per item | As needed |
 
 ## 15. Business Success Metrics
@@ -700,6 +706,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | D28 | Default backup folder? | Documents\Runout\Backups, outside application data, so uninstall never removes it |
 | D29 | Which UI direction? | D · Pulse: listening story plus the user’s opinions; Spotify-compatible dark theme, amber accent, never Spotify’s look (docs/DESIGN.md) |
 | D30 | Delivery order? | Design, then UI on mock data, then backend, then integration; each milestone starts from current specs and a written plan |
+| D31 | How is effort estimated? | Agentic development: build and review hours per milestone, plus the real-world waits agents cannot shorten (user actions, 24 h logger run, 2 weeks of daily use). Calibrated on M3: about 3 hours against a 3–4 week estimate |
 
 ## 18. Remaining Open Items
 

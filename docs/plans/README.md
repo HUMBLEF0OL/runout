@@ -5,7 +5,7 @@ One plan per milestone, written before it starts (MILESTONES spec-driven rule). 
 2. **Backend** — M3, M4, M5 implement the whole contract in Rust. Starts only when M2 is done.
 3. **Integration** — M6, M7 switch the UI to the real commands. Starts only when M3, M4 and M5 are all done (or a backend milestone is formally stopped, e.g. R3 after a failed O1 gate).
 
-No phase overlaps the next. Inside the backend phase, M4 and M5 may run in parallel once M3 is done.
+Work is agentic (BRD D31): each milestone is hours of parallel agent build and external review, gated by the user actions and real-use periods it names. No phase overlaps the next. Inside the backend phase, M4 and M5 may run in parallel once M3 is done.
 
 | # | Plan | Builds | Starts when | Unblocks |
 |---|---|---|---|---|

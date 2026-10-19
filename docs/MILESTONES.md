@@ -2,18 +2,18 @@
 
 Delivery order (BRD D30): **design → UI on mock data → backend → integration**, as strict phases: the backend phase (M3–M5) starts only when M2 is done; the integration phase (M6–M7) starts only when M3, M4 and M5 are all done. See [plans/README.md](plans/README.md).
 
-Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](TSD.md), [DESIGN](DESIGN.md), [CAPABILITIES](CAPABILITIES.md)) and its plan exists at `docs/plans/M<n>-<slug>.md` (M1–M7 written 18 Oct 2026). The UI ↔ Rust command surface is fixed in [API.md](API.md). A milestone is **done** only when every acceptance check passes. `U-n` = a hard stop that needs you ([USER_ACTIONS.md](USER_ACTIONS.md)). `CAP-n` = [capability](CAPABILITIES.md). `SC-n` = [screen](DESIGN.md#6-screen-inventory-m1-designs-all-of-these).
+Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](TSD.md), [DESIGN](DESIGN.md), [CAPABILITIES](CAPABILITIES.md)) and its plan exists at `docs/plans/M<n>-<slug>.md` (M1–M7 written 18 Oct 2026). The UI ↔ Rust command surface is fixed in [API.md](API.md). Efforts assume agentic development (BRD D31): build-and-review hours, plus real-world waits agents can't shorten. A milestone is **done** only when every acceptance check passes. `U-n` = a hard stop that needs you ([USER_ACTIONS.md](USER_ACTIONS.md)). `CAP-n` = [capability](CAPABILITIES.md). `SC-n` = [screen](DESIGN.md#6-screen-inventory-m1-designs-all-of-these).
 
-| Milestone | Phase | Releases | Capabilities | Your hard stops | Effort |
+| Milestone | Phase | Releases | Capabilities | Your hard stops | Effort (agentic, BRD D31) |
 |---|---|---|---|---|---|
 | M0 Foundations | setup | — | — | U-1 | done |
 | M1 Design | design | MVP, R2, R3 | all (SC-01–13) | U-9 | approved 18 Oct 2026 |
 | M2 UI build | UI | MVP, R2, R3 | all, on mock data | — | done 18 Oct 2026 |
-| M3 Backend: MVP core | backend | MVP | CAP-01–17, 35 | — | done 18 Oct 2026 |
-| M4 Backend: listening and insights | backend | R2 | CAP-18–27 | U-2 | 3–4 weeks |
-| M5 Backend: Spotify connected | backend | R3 | CAP-28–34 | U-6, U-7, U-8 (opt.) | 3–4 weeks |
-| M6 Integration: MVP release | integration | MVP | CAP-01–17, 35 | U-3, U-4, U-5 | 1–2 weeks + 2 weeks daily use |
-| M7 Integration: R2 and R3 | integration | R2, R3 | CAP-18–34 | — | ~2 weeks |
+| M3 Backend: MVP core | backend | MVP | CAP-01–17, 35 | — | done 18 Oct 2026 (about 3 h; was estimated 3–4 weeks) |
+| M4 Backend: listening and insights | backend | R2 | CAP-18–27 | U-2 | 4–6 h + export download (U-2) + 24 h logger run |
+| M5 Backend: Spotify connected | backend | R3 | CAP-28–34 | U-6, U-7, U-8 (opt.) | 4–6 h after the O1 gate |
+| M6 Integration: MVP release | integration | MVP | CAP-01–17, 35 | U-3, U-4, U-5 | 4–6 h + 2 weeks daily use (U-5) |
+| M7 Integration: R2 and R3 | integration | R2, R3 | CAP-18–34 | — | 3–4 h |
 | M8 Future candidates | — | — | per item | per item | as needed |
 
 ### Status (18 Oct 2026)
