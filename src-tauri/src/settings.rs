@@ -47,13 +47,7 @@ pub fn merge(base: &Settings, patch: &Value) -> Result<Settings> {
             return Err(AppError::validation(what));
         }
     }
-    let s = overlay(base, patch)?;
-    if s.size_warn_mb == 0 {
-        return Err(AppError::validation(
-            "The size warning must be at least 1 MB.",
-        ));
-    }
-    Ok(s)
+    overlay(base, patch)
 }
 
 /// `base` with the keys of `patch` laid over it; unknown keys or wrong types → `validation`.
