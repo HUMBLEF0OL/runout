@@ -64,6 +64,26 @@ fn fatal_box(text: &str) {
     };
 }
 
+/// The box really shows: opened on a thread, found by its title, closed. `#[ignore]`: it flashes a
+/// window on the desktop (`cargo test --lib -- --ignored fatal_box`).
+#[cfg(all(test, windows))]
+#[test]
+#[ignore]
+fn fatal_box_shows_a_window() {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW, WM_CLOSE};
+    use windows::core::w;
+    let t = std::thread::spawn(|| fatal_box("test: settings file is damaged"));
+    let hwnd = (0..50)
+        .find_map(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            unsafe { FindWindowW(None, w!("Runout can't start")) }.ok()
+        })
+        .expect("error box appeared");
+    unsafe { PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0)) }.unwrap();
+    t.join().unwrap(); // returns once closed: no hang, no panic
+}
+
 #[cfg(not(windows))]
 fn fatal_box(text: &str) {
     eprintln!("{text}");

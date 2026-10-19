@@ -140,17 +140,47 @@ impl AppState {
         );
         for f in backup::pre_restore_files(&from) {
             let t = PathBuf::from(f.to_string_lossy().replacen(&old_prefix, &new_prefix, 1));
-            if std::fs::rename(&f, &t).is_err() && std::fs::copy(&f, &t).is_ok() {
-                let _ = std::fs::remove_file(&f);
-            }
+            relocate(&f, &t, |a, b| std::fs::rename(a, b));
         }
         Ok(to.to_string_lossy().into_owned())
+    }
+}
+
+/// Rename `f` to `t`; when that fails (another drive) copy it and remove `f` only once the copy
+/// exists. A failed copy leaves `f` where it was, never lost.
+fn relocate(
+    f: &std::path::Path,
+    t: &std::path::Path,
+    rename: impl Fn(&std::path::Path, &std::path::Path) -> std::io::Result<()>,
+) {
+    if rename(f, t).is_err() && std::fs::copy(f, t).is_ok() {
+        let _ = std::fs::remove_file(f);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relocate_across_drives_copies_and_never_loses_the_file() {
+        let d = std::env::temp_dir().join(format!("runout-relocate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let cross_drive = |_: &std::path::Path, _: &std::path::Path| {
+            Err(std::io::Error::other("not same device"))
+        };
+        let (f, t) = (d.join("pre"), d.join("moved"));
+        std::fs::write(&f, b"safety").unwrap();
+        relocate(&f, &t, cross_drive);
+        assert!(!f.exists(), "removed after its copy exists");
+        assert_eq!(std::fs::read(&t).unwrap(), b"safety");
+        // copy fails too (target folder gone): the only copy stays put
+        let missing = d.join("no-such-dir").join("moved");
+        relocate(&t, &missing, cross_drive);
+        assert_eq!(std::fs::read(&t).unwrap(), b"safety", "never lost");
+        let _ = std::fs::remove_dir_all(d);
+    }
 
     #[test]
     fn recover_library_puts_pre_restore_back_only_after_a_failed_restore() {

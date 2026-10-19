@@ -384,10 +384,21 @@ pub async fn resolve_or_queue(
     source: CaptureSource,
 ) -> Result<(String, ItemType)> {
     let out = resolve_short(raw).await;
-    if note_offline(&out) {
+    queue_if_offline(db, raw, source, &out)?;
+    out
+}
+
+/// After a resolve: an offline answer queues the link and flags a retry (TSD §4.1).
+fn queue_if_offline<T>(
+    db: &Mutex<Connection>,
+    raw: &str,
+    source: CaptureSource,
+    out: &Result<T>,
+) -> Result<()> {
+    if note_offline(out) {
         queue_unresolved(&db.lock().unwrap(), raw, source)?;
     }
-    out
+    Ok(())
 }
 
 /// Queued rows wait for a retry. spotify.link can time out while open.spotify.com (the `online()`
@@ -643,6 +654,16 @@ mod tests {
         let db = Mutex::new(db::open_in_memory().unwrap());
         tauri::async_runtime::block_on(retry_unresolved(&db)).unwrap();
         assert!(!take_retry_pending(), "a retry run clears it");
+        // resolve_or_queue's offline path: queued + flagged; other errors queue nothing
+        let raw = "https://spotify.link/aXk3P9q";
+        let bad = Err::<(), _>(AppError::new(Code::InvalidLink, "x"));
+        queue_if_offline(&db, raw, CaptureSource::Paste, &bad).unwrap();
+        assert!(list_unresolved(&db.lock().unwrap()).unwrap().is_empty());
+        let off = Err::<(), _>(AppError::offline());
+        queue_if_offline(&db, raw, CaptureSource::Shortcut, &off).unwrap();
+        let rows = list_unresolved(&db.lock().unwrap()).unwrap();
+        assert_eq!((rows.len(), rows[0].raw_link.as_str()), (1, raw));
+        assert!(take_retry_pending(), "the poll loop will retry it");
     }
 
     #[test]
