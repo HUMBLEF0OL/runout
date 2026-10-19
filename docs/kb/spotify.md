@@ -22,7 +22,9 @@ Constraints table with sources: [BRD §11](../../BRD.md) (S1–S17). This file h
 - Gotcha: the SVGs use a generic `.cls-1` class in an inline `<style>` — use them via `<img src>` (not inlined into the DOM) so the class can't collide.
 
 ## Web API (Release 3)
-- Development Mode: owner needs active Premium; max 5 users; Student plan eligibility unknown — **Documented / Unverified (O1)**, BRD S1–S2.
+- Development Mode: owner needs active Premium; max 5 users — **Documented**, BRD S1–S2. Student Premium works: PKCE login + `GET /me` → 200, `product=premium` — **Verified (O1)**, 2026-10-19, user's own app (gate script, PKCE S256, scope `user-read-private`; refresh token returned).
+- Redirect URI (T3): the dashboard rejects `http://127.0.0.1/callback` (no port) as "not secure", although the redirect-URI docs allow a port-less loopback. Registered `http://127.0.0.1:8888/callback`; a login with `http://127.0.0.1:<random>/callback` (58163) was accepted, so the loopback port is dynamic at authorization time — **Verified (T3)**, 2026-10-19.
+- Client ID handling (user rule, 2026-10-19): keep it out of the repo. The app reads it at run time (settings/env), never hard-coded, never logged — **Decision**.
 - Refresh tokens expire 6 months after authorization; refreshing does not extend — **Documented**, BRD S7.
 - Removed for new apps: audio features/analysis, recommendations, related artists, previews, popularity — **Documented**, BRD S6.
 - Playlist items readable only for owned/collaborative playlists; Top items 50 × 3 ranges; Recently played max 50 — **Documented**, BRD S3–S5.

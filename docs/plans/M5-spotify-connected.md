@@ -8,7 +8,7 @@ Agents: `spotify-researcher` (gate + T3), `rust-core`, `spec-reviewer` after ste
 **Known gaps owned here:** G-9. See [MILESTONES Known gaps](../MILESTONES.md#known-gaps); remove each row when fixed.
 
 ## Steps
-0. **Gate.** `spotify-researcher` re-checks T3 (redirect rules, `/me/library` scope); U-6 + U-7; minimal PKCE script in `src-tauri/examples/spotify_gate.rs` calls `GET /me`. Record O1 result in KB + BRD §18 via `change-spec`.
+0. **Gate.** `spotify-researcher` re-checks T3 (redirect rules, `/me/library` scope); U-6 + U-7; minimal PKCE script in `src-tauri/examples/spotify_gate.rs` calls `GET /me`. Record O1 result in KB + BRD §18 via `change-spec`. **Done 19 Oct 2026:** O1 passed (`GET /me` 200, premium), T3 dynamic loopback port verified ([KB](../kb/spotify.md#web-api-release-3)). **Client ID rule (user):** never in the repo, never logged; read at run time (settings or env) — a `check.py` secret scan must cover it.
 1. **Auth (WI 1).** `spotify/auth.rs`: PKCE (S256 verifier), bind free loopback port, open browser, receive `/callback`, exchange code; `keyring` entry `Runout/spotify` holds `{access, refresh, expires_at}`; refresh on 401 and **store rotated refresh token**; `invalid_grant` → delete tokens, status `reconnect`, `spotify-status` event. `client.rs` wraps `net` with auth header, 429 `Retry-After` backoff, max 1 in-flight write.
    - Tests: PKCE challenge vector; token store round-trip with a test credential target; refresh-rotation handler with a stubbed response.
 2. **Cache DB (WI 2).** `spotify/cache.rs`: separate `spotify_cache.db` (`cache_entry`, `playlist_snapshot`), own tiny migration; sweeper at startup + daily (cache 7 d, snapshots 30 d); `disconnect_spotify` closes the connection and deletes the file + tokens.

@@ -18,8 +18,8 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 | U-3 | Create the iPhone Shortcut | M6 | 5 min | Phone capture |
 | U-4 | Allow the app through Windows Firewall | M6 | 10 s | Phone capture |
 | U-5 | Use the app daily for 2 weeks, then say go/no-go | End of M6 | 2 weeks | M7 integration |
-| U-6 | Create the Spotify developer app | Start of M5 | 5 min | Release 3 |
-| U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 |
+| U-6 | Create the Spotify developer app | Start of M5 | 5 min | Release 3 · **done 19 Oct 2026** (redirect `http://127.0.0.1:8888/callback`; client ID kept out of the repo) |
+| U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 · **done 19 Oct 2026** (gate login) |
 | U-8 | *(Optional)* Ask Spotify developer support one question | Before M5 | 5 min | Nothing |
 
 ---
@@ -117,7 +117,7 @@ Steps:
 3. **Create app**:
    - Name: `Runout`
    - Description: `Personal local music organizer`
-   - Redirect URI: `http://127.0.0.1/callback`, exactly as written, with no port. The app adds a free port at login, which Spotify allows for `127.0.0.1`.
+   - Redirect URI: `http://127.0.0.1:8888/callback`. The dashboard rejects it without a port; the app still uses a free port at login, which Spotify allows for `127.0.0.1` (T3, verified 19 Oct 2026).
    - APIs used: tick **Web API**
    - Save.
 4. Open the app → **Settings** → copy the **Client ID**.
