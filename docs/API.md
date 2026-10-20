@@ -185,6 +185,8 @@ interface PlaylistCheckup { tracks: { position: number; name: string; artist: st
 
 “Add to backlog” from SC-12 is `create_item` with `provenance: 'promoted'` (FR-041) — no separate command.
 
+**Planned, M7 WI 4 (BRD D33, FR-046):** Runout Inbox commands `get_inbox`, `create_inbox`, `check_inbox`, `set_inbox_options` and event `inbox-imported`, as drafted in TSD §5.3. Not part of the contract yet: they are added to this table, `src/api.ts`, `src/mocks/` and Rust in one change when M7 builds them (§7).
+
 ## 6. Events (Rust → UI)
 | Event | Payload | Release |
 |---|---|---|

@@ -14,13 +14,13 @@ Work is agentic (BRD D31): each milestone is hours of parallel agent build and e
 | 3 | [M3-backend-mvp.md](M3-backend-mvp.md) | Backend phase: Rust core for API.md §3 | M2 done | M4, M5 |
 | 4 | [M4-listening-insights.md](M4-listening-insights.md) | Backend phase: Rust for API.md §4 | M3 done (WI 4 needs U-2) | integration phase |
 | 5 | [M5-spotify-connected.md](M5-spotify-connected.md) | Backend phase: Rust for API.md §5 | M3 done + O1 gate | integration phase |
-| 6 | [M6-integration-mvp.md](M6-integration-mvp.md) | Integration phase: MVP screens on real commands, installer | M3, M4, M5 all done | M7 (after U-3/U-4; U-5 in parallel, D32) |
-| 7 | [M7-integration-r2-r3.md](M7-integration-r2-r3.md) | Integration phase: R2/R3 screens on real commands | M6 done, go decision | M8 |
+| 6 | [M6-integration-mvp.md](M6-integration-mvp.md) | Integration phase: MVP screens on real commands, installer | M3, M4, M5 all done | M7 (U-5 in parallel, D32; U-3/U-4 optional, D33) |
+| 7 | [M7-integration-r2-r3.md](M7-integration-r2-r3.md) | Integration phase: R2/R3 screens on real commands **+ Runout Inbox** (phone capture, D33) | M6 done (apart from U-5) | M8 |
 
 ```
  FRONTEND            BACKEND                      INTEGRATION
  M1 ─U-9─► M2 ─────► M3 ─┬─► M4 ─┐               
- (all screens,           └─► M5 ─┴─(all done)──► M6 ─U-3/U-4─► M7   (U-5 daily use in parallel, D32)
+ (all screens,           └─► M5 ─┴─(all done)──► M6 ───────► M7 (+ Runout Inbox, D33)   (U-5 daily use in parallel, D32)
   mock data)              (M4 ∥ M5)
 ```
 

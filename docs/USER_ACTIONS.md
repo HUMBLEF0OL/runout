@@ -21,6 +21,7 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 | U-6 | Create the Spotify developer app | Start of M5 | 5 min | Release 3 · **done 19 Oct 2026** (redirect `http://127.0.0.1:8888/callback`; client ID kept out of the repo) |
 | U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 · **done 19 Oct 2026** (gate login); live Studio check on a test playlist still open |
 | U-8 | *(Optional)* Ask Spotify developer support one question | Before M5 | 5 min | Nothing |
+| U-10 | Test the Runout Inbox from your phone (on mobile data) | M7 (WI 4) | 5 min | M7 Inbox acceptance |
 
 ---
 
@@ -148,6 +149,19 @@ This repeats **every 6 months**, which is Spotify's rule (BRD S7).
 2. Set `RUNOUT_SPOTIFY_CLIENT_ID` to your Client ID in your environment (it stays out of the repo).
 3. Run `cargo run --example studio_roundtrip -- spotify:playlist:<id>` in `src-tauri`, approve the login in the browser, check the cut in Spotify, press Enter, check it's restored.
 4. Run it again with `--conflict` at the end: when it pauses, remove or move any track in Spotify, press Enter; it should print `PASS: apply blocked with conflict`.
+
+## U-10 — Test the Runout Inbox from your phone (M7)
+
+**Why only you:** it needs your phone and your Spotify account.
+
+When M7 has built the Inbox, Runout creates a private playlist **Runout Inbox** in your Spotify account as soon as Spotify is connected. Then, with your phone on **mobile data** (not your home Wi-Fi):
+1. In Spotify, add one song to **Runout Inbox** (song → ⋯ → Add to playlist).
+2. Add one whole album to **Runout Inbox** (album → ⋯ → Add to playlist).
+3. On the PC, press **Check now** in Settings (or wait up to 15 minutes).
+
+Expected: the song and the album appear in the backlog marked “name needed”, and the Inbox is empty again. If you turn on “import artists I follow”, Spotify asks you to approve the login once more (one extra permission).
+
+**Send back:** "U-10 done", or what you saw instead.
 
 ## U-8 — *(Optional)* Ask Spotify developer support (before M5)
 

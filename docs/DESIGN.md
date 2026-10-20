@@ -101,7 +101,7 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | Embed slot | Spotify iframe when online; neutral placeholder when offline (TSD §4.3); never cropped or overlaid |
 | Attribution | Spotify logo + “Open Spotify” wherever Spotify-sourced content appears outside the embed |
 | Freshness note | sources + dates, on every listening-data screen |
-| Name-needed badge | for phone captures without a confirmed name |
+| Name-needed badge | for phone captures (Runout Inbox or Wi-Fi Shortcut) without a confirmed name |
 | Empty state | one sentence + one action |
 | Toast | transient confirmations only, with Undo where the action can be undone; errors stay inline |
 | Skeleton | shapes of the final layout, one shimmer pass; no spinners |
@@ -120,7 +120,7 @@ Source of truth: the clickable prototype in [design/prototype/](design/README.md
 |---|---|---|---|---|
 | SC-01 | Home, full (listening + opinions) | R2 | CAP-12, 18, 23, 25, 26 | `#/home` (release R2/R3) |
 | SC-02 | Home, MVP state and first run | MVP | CAP-01, 09, 11, 12, 13 | `#/home` (release MVP), `#/first-run` |
-| SC-03 | Backlog (incl. phone captures waiting for a name) | MVP | CAP-06, 07, 09, 13 | `#/backlog` |
+| SC-03 | Backlog (incl. phone captures waiting for a name) | MVP | CAP-06, 07, 09, 13, 36 | `#/backlog` |
 | SC-04 | Library and search results | MVP | CAP-02, 10, 17 | `#/library/{album,track,artist}`, `#/search/<q>` |
 | SC-05 | Item detail: album, track, artist; edit mode | MVP | CAP-02, 04, 05, 06, 07, 08, 34 | `#/item/<id>`, `?edit=1` |
 | SC-06 | Quick add: link, manual, naming, duplicate, unsupported, offline, R3 autofill | MVP | CAP-01, 03, 13, 31 | dialog (`Ctrl+N`) |
@@ -130,7 +130,7 @@ Source of truth: the clickable prototype in [design/prototype/](design/README.md
 | SC-10 | Import Spotify export (3 steps) | R2 | CAP-19 | `#/import/{1,2,3}` |
 | SC-11 | Playlists: check-up (R2) and Studio with apply and undo (R3) | R2/R3 | CAP-22, 29, 30 | `#/playlists/{checkup,studio}` |
 | SC-12 | From Spotify: Top items and recent plays | R3 | CAP-32, 33, 34 | `#/spotify/{tracks,artists}` |
-| SC-13 | Settings and data, tags, connect, restore, delete, Shortcut steps | MVP–R3 | CAP-14, 15, 16, 28, 35 | `#/settings`, `#/settings/tags` |
+| SC-13 | Settings and data, tags, connect, restore, delete, **Runout Inbox (R3, M7)**, Shortcut steps (optional fallback) | MVP–R3 | CAP-13, 14, 15, 16, 28, 35, 36 | `#/settings`, `#/settings/tags` |
 | — | Tray menu, uninstall dialog, design system | R2 / MVP | CAP-16, 18 | `#/tray`, `#/uninstall`, `#/system` |
 
 Every screen renders its **loading**, **empty**, **offline** and **error** states from the prototype controls.
@@ -148,3 +148,4 @@ Every screen renders its **loading**, **empty**, **offline** and **error** state
 |---|---|
 | D29 | Direction D · Pulse; dark only in v1; amber accent; Schibsted Grotesk + JetBrains Mono, self-hosted |
 | D30 | Delivery order: design (M1) → UI on mock data (M2) → backend (M3–M5) → integration (M6–M7) |
+| D33 | Phone capture = Runout Inbox (BRD D33). SC-13 gets an **Inbox** section in the Spotify area, designed and built in M7 with existing components only: state line (“Runout Inbox · ready” / “missing” / “connect Spotify first”), last check + count imported (mono), **Check now** (secondary button), **Create Inbox** (only when missing), two toggles (import saved albums; import followed artists — notes the one-time re-approval), one sentence on how to use it from the phone. The Wi-Fi Shortcut steps move under a collapsed “Optional: instant capture on home Wi-Fi”. Imported items reuse the name-needed badge; no new tokens. |
