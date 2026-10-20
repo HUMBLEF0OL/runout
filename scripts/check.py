@@ -5,6 +5,7 @@ correction is automatable (see CLAUDE.md, "the loop").
 ponytail: runs the full suite on every stop; gate on changed files if cargo gets slow."""
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -14,6 +15,10 @@ ROOT = Path(__file__).resolve().parent.parent
 TAURI = ROOT / "src-tauri"
 ALLOWED_HOSTS = {"open.spotify.com", "spotify.link", "api.spotify.com", "accounts.spotify.com", "127.0.0.1", "localhost"}
 HOOK = "--hook" in sys.argv
+# Parallel sessions/agents building at once hit "paging file is too small" (os error 1455, 20 Oct 2026).
+os.environ.setdefault("CARGO_BUILD_JOBS", "2")
+for _s in (sys.stdout, sys.stderr):
+    _s.reconfigure(encoding="utf-8", errors="replace")  # cp1252 console crashed on test output
 failures = []
 if HOOK and json.load(sys.stdin).get("stop_hook_active"):
     sys.exit(0)  # already continuing because of this hook; don't loop
