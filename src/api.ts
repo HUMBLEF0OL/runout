@@ -268,7 +268,7 @@ export const createPlaylistFromFilter = (filterId: number, name: string, isPubli
 export const createPlaylistFromItems = (itemIds: number[], name: string, isPublic: boolean) =>
   call<{ playlist_uri: string; added: number; skipped_no_uri: number }>("create_playlist_from_items", { itemIds, name: cleanLine(name, LIMITS.playlist), public: isPublic });
 export const autofill = (uri: string) => call<Autofill>("autofill", { uri });
-export const bulkAddAlbumTracks = (albumId: number, tracks: { uri: string; name: string }[]) => call<ItemSummary[]>("bulk_add_album_tracks", { albumId, tracks });
+export const bulkAddAlbumTracks = (albumId: number, tracks: { uri: string; name: string }[]) => call<ItemSummary[]>("bulk_add_album_tracks", { albumId, tracks: tracks.map((t) => ({ uri: t.uri, name: cleanLine(t.name, LIMITS.name) })) });
 export const getTopItems = (kind: "tracks" | "artists", range: "4w" | "6m" | "1y") => call<SpotifyEntry[]>("get_top_items", { kind, range });
 export const getRecentPlaysApi = () => call<(SpotifyEntry & { played_at: string })[]>("get_recent_plays_api");
 export const libraryContains = (uris: string[]) => call<boolean[]>("library_contains", { uris });

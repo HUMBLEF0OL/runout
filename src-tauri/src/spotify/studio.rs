@@ -298,12 +298,20 @@ pub async fn preview_studio_apply(
     Ok(diff(&orig, keep))
 }
 
-/// Re-read `snapshot_id` (Spotify itself ignores it on writes, TSD §5.2): changed → `conflict`.
-/// Otherwise store the current items as the 30-day undo snapshot first, then write. A first write
-/// that definitely didn't land changed nothing, so its snapshot is dropped (no undo is offered);
-/// once anything (maybe) landed, it is the playlist's only undo and older ones are dropped.
+/// Read the current items (the undo snapshot), then re-read `snapshot_id` last (Spotify itself
+/// ignores it on writes, TSD §5.2): changed → `conflict`. Checking after the paginated read keeps
+/// the race window to that one GET before the write, and an edit made while the pages were read
+/// is caught instead of landing half in the undo snapshot (check.py keeps this order). Then the
+/// snapshot is stored first and the write runs. A first write that definitely didn't land changed
+/// nothing, so its snapshot is dropped (no undo is offered); once anything (maybe) landed, it is
+/// the playlist's only undo and older ones are dropped.
 pub async fn apply_studio_draft(sp: &Spotify, draft: &Draft, keep: &[String]) -> Result<Applied> {
     let _one = sp.studio_lock.lock().await;
+    let current: Vec<String> = items(sp, &draft.playlist_uri)
+        .await?
+        .into_iter()
+        .map(|t| t.0)
+        .collect();
     let now_id = snapshot_id(sp, &draft.playlist_uri).await?;
     if now_id != draft.snapshot_id {
         return Err(AppError::new(
@@ -311,11 +319,6 @@ pub async fn apply_studio_draft(sp: &Spotify, draft: &Draft, keep: &[String]) ->
             "This playlist changed on Spotify. Reload the draft.",
         ));
     }
-    let current: Vec<String> = items(sp, &draft.playlist_uri)
-        .await?
-        .into_iter()
-        .map(|t| t.0)
-        .collect();
     let snap = sp.with_cache(|c| {
         cache::put_snapshot(
             c,
@@ -522,11 +525,18 @@ mod tests {
     #[test]
     fn changed_snapshot_is_a_conflict_and_writes_nothing() {
         let d = temp_dir("studio-conflict");
-        let stub = Stub::new(&[(200, r#"{"snapshot_id":"s2"}"#)]);
+        // the items are read first and snapshot_id last, so an edit made while the pages were
+        // read is caught (the race window is that one GET, TSD §5.2)
+        let stub = Stub::new(&[
+            (200, &page(&[(t(b'A'), "n", "a")])),
+            (200, r#"{"snapshot_id":"s2"}"#),
+        ]);
         let sp = connected(&d, &stub);
         let e = block(apply_studio_draft(&sp, &draft("ABC", "s1"), &v("AB"))).unwrap_err();
         assert_eq!(e.code, Code::Conflict);
-        assert_eq!(stub.calls().len(), 1);
+        let calls = stub.calls();
+        assert_eq!(calls.len(), 2, "nothing written");
+        assert!(calls[0].1.contains("/items") && !calls[1].1.contains("/items"));
         assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
@@ -544,8 +554,8 @@ mod tests {
         let orig = many(150);
         let keep: Vec<String> = orig.iter().rev().map(|t| t.0.clone()).collect();
         let stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &page(&orig)),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (200, r#"{"snapshot_id":"s2"}"#), // PUT lands
             (500, ""),                        // POST fails
             (200, r#"{"snapshot_id":"s2"}"#), // re-read: the POST didn't land
@@ -591,8 +601,8 @@ mod tests {
     fn failed_first_write_drops_the_snapshot() {
         let d = temp_dir("studio-first-fail");
         let stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")])),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (500, ""),
             (200, r#"{"snapshot_id":"s1"}"#), // re-read: didn't land
         ]);
@@ -607,8 +617,8 @@ mod tests {
     fn partial_undo_can_be_retried() {
         let d = temp_dir("studio-undo-retry");
         let stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &page(&many(150))),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (200, r#"{"snapshot_id":"s2"}"#), // apply PUT
             (200, r#"{"snapshot_id":"s2"}"#), // undo re-read
             (200, r#"{"snapshot_id":"s5"}"#), // undo PUT lands
@@ -632,8 +642,8 @@ mod tests {
     fn unanswered_first_write_that_landed_keeps_the_undo() {
         let d = temp_dir("studio-lost-answer");
         let stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")])),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (502, ""),                        // PUT: gateway error, but it ran
             (200, r#"{"snapshot_id":"s2"}"#), // re-read: moved
         ]);
@@ -655,8 +665,8 @@ mod tests {
         let orig = many(150);
         let keep: Vec<String> = orig.iter().rev().map(|t| t.0.clone()).collect();
         let stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &page(&orig)),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (502, ""), // PUT: unknown
             (502, ""), // re-read fails too
         ]);
@@ -677,8 +687,8 @@ mod tests {
 
         // someone else's edit (other items) under the same unknown state is still a conflict
         let stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &page(&orig)),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (502, ""),
             (502, ""),
             (200, r#"{"snapshot_id":"s9"}"#),
@@ -700,11 +710,11 @@ mod tests {
         let d = temp_dir("studio-two-applies");
         let two = page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")]);
         let stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &two),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (200, r#"{"snapshot_id":"s2"}"#), // apply 1 PUT
-            (200, r#"{"snapshot_id":"s2"}"#),
             (200, &page(&[(t(b'A'), "n", "a")])),
+            (200, r#"{"snapshot_id":"s2"}"#),
             (200, r#"{"snapshot_id":"s3"}"#), // apply 2 PUT
             (200, r#"{"snapshot_id":"s3"}"#), // undo re-read
             (200, r#"{"snapshot_id":"s4"}"#), // undo PUT
@@ -722,8 +732,8 @@ mod tests {
     fn disconnect_waits_for_a_running_apply() {
         let d = temp_dir("studio-disconnect");
         let mut stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &page(&many(150))),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (200, r#"{"snapshot_id":"s2"}"#), // PUT
             (201, r#"{"snapshot_id":"s3"}"#), // POST
         ]);
@@ -761,8 +771,8 @@ mod tests {
     fn apply_replaces_with_kept_uris() {
         let d = temp_dir("studio-ok");
         let stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")])),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (200, r#"{"snapshot_id":"s2"}"#),
         ]);
         let sp = connected(&d, &stub);
@@ -781,8 +791,8 @@ mod tests {
     fn undo_after_a_later_edit_is_a_conflict() {
         let d = temp_dir("studio-undo-conflict");
         let stub = Stub::new(&[
-            (200, r#"{"snapshot_id":"s1"}"#),
             (200, &page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")])),
+            (200, r#"{"snapshot_id":"s1"}"#),
             (200, r#"{"snapshot_id":"s2"}"#), // PUT answer: the post-apply id
             (200, r#"{"snapshot_id":"s9"}"#), // undo's re-read: someone edited since
         ]);
@@ -802,7 +812,10 @@ mod tests {
     #[test]
     fn apply_waits_for_a_running_apply_or_undo() {
         let d = temp_dir("studio-lock");
-        let stub = Stub::new(&[(200, r#"{"snapshot_id":"other"}"#)]);
+        let stub = Stub::new(&[
+            (200, &page(&[(t(b'A'), "n", "a")])),
+            (200, r#"{"snapshot_id":"other"}"#),
+        ]);
         let sp = std::sync::Arc::new(connected(&d, &stub));
         let held = block(sp.studio_lock.lock());
         let sp2 = sp.clone();

@@ -52,6 +52,12 @@ pub struct Spotify {
     credential: Option<String>,
     /// Reads `credential` (`auth::load_tokens`; tests inject a failing one).
     read_credential: fn(&str) -> Result<Option<Tokens>>,
+    /// Deletes `credential` (`cleanup::delete_credential`; tests inject a failing one).
+    delete_credential: fn(&str) -> Result<()>,
+    /// `cleanup::DISCONNECT_MARKER`: written before the credential is deleted, removed once the
+    /// delete (or a new sign-in's store) succeeds. While it exists the stored tokens count as
+    /// deleted: startup retries the delete instead of signing back in (TSD §5.2 Disconnect).
+    pending_delete: PathBuf,
     /// Test override; production reads [`CLIENT_ID_ENV`] each time.
     client_id: Option<String>,
     /// Outer `None` = not read from Credential Manager yet.
@@ -99,6 +105,8 @@ impl Spotify {
         Self {
             credential,
             read_credential: auth::load_tokens,
+            delete_credential: crate::cleanup::delete_credential,
+            pending_delete: cache_path.with_file_name(crate::cleanup::DISCONNECT_MARKER),
             client_id,
             tokens: Mutex::new(None),
             reconnect: AtomicBool::new(reconnect_marker.exists()),
@@ -158,6 +166,13 @@ impl Spotify {
         let mut t = self.tokens.lock().unwrap();
         if t.is_none() {
             *t = Some(match &self.credential {
+                // A disconnect whose delete failed: still signed out; retry the delete.
+                Some(target) if self.pending_delete.exists() => {
+                    if (self.delete_credential)(target).is_ok() {
+                        let _ = std::fs::remove_file(&self.pending_delete);
+                    }
+                    None
+                }
                 Some(target) => (self.read_credential)(target)?,
                 None => None,
             });
@@ -189,14 +204,22 @@ impl Spotify {
 
     /// Memory always follows, even when Credential Manager fails: a failed delete must not leave
     /// the app signed in, and a rotated token is the only valid one. The store error is returned.
+    /// A delete persists `pending_delete` first, so a failed one stays signed out after a restart.
     fn write_tokens(
         &self,
         slot: &mut Option<Option<Tokens>>,
         tokens: Option<Tokens>,
     ) -> Result<()> {
         let stored = match (&self.credential, &tokens) {
-            (Some(target), Some(t)) => auth::store_tokens(target, t),
-            (Some(target), None) => crate::cleanup::delete_credential(target),
+            (Some(target), Some(t)) => auth::store_tokens(target, t).inspect(|_| {
+                let _ = std::fs::remove_file(&self.pending_delete);
+            }),
+            (Some(target), None) => {
+                let _ = std::fs::write(&self.pending_delete, b"");
+                (self.delete_credential)(target).inspect(|_| {
+                    let _ = std::fs::remove_file(&self.pending_delete);
+                })
+            }
             (None, _) => Ok(()),
         };
         *slot = Some(tokens);
@@ -604,6 +627,59 @@ mod tests {
         );
         assert_eq!(sp.sweep().unwrap(), 0);
         assert!(d.join(crate::cleanup::CACHE_DB).exists());
+    }
+
+    /// Disconnect whose Credential Manager delete fails: the app says `disconnected` and must stay
+    /// so after a restart (the stored refresh token must not sign it back in and re-create the
+    /// cache); each start retries the delete until it succeeds.
+    #[test]
+    fn failed_credential_delete_stays_signed_out_after_restart() {
+        use std::sync::atomic::AtomicBool;
+        static FAIL: AtomicBool = AtomicBool::new(true);
+        fn still_stored(_: &str) -> Result<Option<Tokens>> {
+            Ok(Some(Tokens::synthetic(3600)))
+        }
+        fn flaky_delete(_: &str) -> Result<()> {
+            if FAIL.load(Ordering::SeqCst) {
+                Err(AppError::new(Code::Io, "vault locked"))
+            } else {
+                Ok(())
+            }
+        }
+        let restart = |d: &Path, stub: &Stub| {
+            let mut sp = spotify(d, stub);
+            sp.credential = Some("never-written".into());
+            sp.read_credential = still_stored;
+            sp.delete_credential = flaky_delete;
+            sp
+        };
+        let d = temp_dir("mod-delete-fails");
+        let stub = Stub::new(&[]);
+        let mut sp = connected(&d, &stub);
+        sp.credential = Some("never-written".into());
+        sp.delete_credential = flaky_delete;
+        assert_eq!(block(sp.disconnect()).unwrap_err().code, Code::Io);
+        assert_eq!(sp.status_now().unwrap().state, State::Disconnected);
+        let marker = d.join(crate::cleanup::DISCONNECT_MARKER);
+        assert!(marker.exists(), "pending delete not persisted");
+
+        let sp = restart(&d, &stub);
+        assert_eq!(
+            sp.status_now().unwrap().state,
+            State::Disconnected,
+            "undeleted token signed the app back in"
+        );
+        assert!(sp.with_cache(|_| Ok(())).is_err());
+        assert!(!d.join(crate::cleanup::CACHE_DB).exists());
+        assert!(
+            marker.exists(),
+            "marker dropped before the delete succeeded"
+        );
+
+        FAIL.store(false, Ordering::SeqCst);
+        let sp = restart(&d, &stub);
+        assert_eq!(sp.status_now().unwrap().state, State::Disconnected);
+        assert!(!marker.exists(), "retried delete didn't clear the marker");
     }
 
     /// A sign-in while a refresh is out: the refresh's answer (old grant) is dropped, and an

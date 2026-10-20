@@ -224,6 +224,7 @@ function draftFor(uri: string): Draft {
   };
 }
 const spotifyOn = () => spotify.connected || fail("spotify_auth", "Connect Spotify in Settings first.");
+const noUndo = (uri: string) => lastApply.has(uri) || fail("not_found", "There's no recent change to undo.");
 const plusDays = (iso: string, d: number) => new Date(Date.parse(iso) + d * 86400000).toISOString().slice(0, 16);
 
 /* ------------------------------------------------------------------ commands */
@@ -442,10 +443,10 @@ const H: Record<string, Handler> = {
   disconnect_spotify: () => { spotify = { connected: false }; savedInSpotify.clear(); lastApply.clear(); },
   list_spotify_playlists: () => (spotifyOn(), D.playlists.map((p: any) => ({ uri: playlistUri(p.name), name: p.name, tracks: p.tracks.length, owned: true, collaborative: false }))),
   load_studio_draft: ({ playlistUri: uri }) => (spotifyOn(), draftFor(uri)),
-  preview_studio_apply: ({ draft, keep }: { draft: Draft; keep: string[] }) => ({ removed: draft.tracks.length - keep.length, reordered: 0, added: 0 }),
+  preview_studio_apply: ({ draft, keep }: { draft: Draft; keep: string[] }) => (spotifyOn(), { removed: draft.tracks.length - keep.length, reordered: 0, added: 0 }),
   apply_studio_draft: ({ draft }: { draft: Draft }) => { spotifyOn(); const r = { undo_id: lastApply.size + 1, applied_at: TODAY, expires_at: plusDays(TODAY, 30) }; lastApply.set(draft.playlist_uri, r); return { undo_id: r.undo_id, expires_at: r.expires_at }; },
-  get_last_apply: ({ playlistUri: uri }) => lastApply.get(uri) ?? null,
-  undo_last_apply: ({ playlistUri: uri }) => { lastApply.delete(uri); },
+  get_last_apply: ({ playlistUri: uri }) => (spotifyOn(), lastApply.get(uri) ?? null),
+  undo_last_apply: ({ playlistUri: uri }) => { spotifyOn(); noUndo(uri); lastApply.delete(uri); },
   create_playlist_from_filter: ({ filterId, name }) => {
     spotifyOn();
     const f = savedFilters.find((x) => x.id === filterId) ?? fail("not_found", "Saved filter not found.");
@@ -458,29 +459,35 @@ const H: Record<string, Handler> = {
     return { playlist_uri: playlistUri(name), added: rows.filter((r) => r.spotify_uri).length, skipped_no_uri: rows.filter((r) => !r.spotify_uri).length };
   },
   autofill: ({ uri }) => {
+    spotifyOn();
     const s = SUGGEST[String(uri).split(":")[2]];
     if (!s) return { fields: {} };
     return { fields: { display_name: s.title, artist: s.artist || undefined, year: s.type === "album" ? 2020 : undefined }, track_list: s.tracks?.map((name, n) => ({ uri: `spotify:track:${fakeId(name)}`, name, position: n + 1 })) };
   },
   bulk_add_album_tracks: ({ albumId, tracks: ts }: { albumId: number; tracks: { uri: string; name: string }[] }) => {
+    spotifyOn();
     const al = need(albumId);
-    return ts.map((t) => {
-      const it: MItem = { ...al, id: nextId(), type: "track", display_name: t.name, spotify_uri: t.uri, album: al.display_name, album_id: al.id, tags: [], rating: null, backlog_order: null, in_backlog: false, provenance: { display_name: "promoted" }, added_at: TODAY, modified_at: TODAY, tracklist: null, review: null, notes: null };
-      items.push(it); history.push({ item_id: it.id, from: null, to: it.status, at: TODAY, note: "Added from album" }); return summary(it);
+    if (al.type !== "album") fail("validation", "Tracks can only be added to an album.");
+    // As Rust: a track already in the library (by spotify_uri) is linked to the album, not added or returned.
+    return ts.flatMap((t) => {
+      const have = byId(existingFor(t.uri) ?? -1);
+      if (have) { if (have.type === "track") Object.assign(have, { album: al.display_name, album_id: al.id }); return []; }
+      const it: MItem = { ...al, id: nextId(), type: "track", status: "planned", display_name: t.name, spotify_uri: t.uri, album: al.display_name, album_id: al.id, tags: [], rating: null, favourite: false, revisit: false, backlog_order: null, in_backlog: false, provenance: { display_name: "promoted", spotify_uri: "promoted" }, via_phone: false, added_at: TODAY, modified_at: TODAY, explored_at: null, reviewed_at: null, tracklist: null, review: null, notes: null, recommended_by: null };
+      items.push(it); history.push({ item_id: it.id, from: null, to: it.status, at: TODAY, note: "Added from album" }); return [summary(it)];
     });
   },
   get_top_items: ({ kind, range }) => (spotifyOn(), D.spotify[`top_${kind}`][range].map((e: any) => entry(e.track ?? e.artist, e.artist, kind === "artists" ? "artist" : "track"))),
   get_recent_plays_api: () => (spotifyOn(), D.spotify.recent.map((e: any) => ({ ...entry(e.track, e.artist, "track"), uri: e.spotify_uri, played_at: e.at }))),
-  library_contains: ({ uris }: { uris: string[] }) => uris.map((u) => savedInSpotify.has(u)),
-  save_to_spotify_library: ({ uris }: { uris: string[] }) => { uris.forEach((u) => savedInSpotify.add(u)); },
-  remove_from_spotify_library: ({ uris }: { uris: string[] }) => { uris.forEach((u) => savedInSpotify.delete(u)); },
+  library_contains: ({ uris }: { uris: string[] }) => (spotifyOn(), uris.map((u) => savedInSpotify.has(u))),
+  save_to_spotify_library: ({ uris }: { uris: string[] }) => { spotifyOn(); uris.forEach((u) => savedInSpotify.add(u)); },
+  remove_from_spotify_library: ({ uris }: { uris: string[] }) => { spotifyOn(); uris.forEach((u) => savedInSpotify.delete(u)); },
 };
 
 /* ------------------------------------------------------------------ dev states + transport */
 // Shell commands keep working in every state so the rail and banners still render.
 const SHELL = new Set(["get_counts", "get_freshness", "get_online", "get_logger_status", "get_spotify_status", "record_page_visit", "parse_link"]);
 const NO_EMPTY = new Set([...SHELL, "get_item", "get_settings", "get_capture", "list_backups"]);
-const NETWORK = new Set(["connect_spotify", "list_spotify_playlists", "load_studio_draft", "apply_studio_draft", "undo_last_apply",
+const NETWORK = new Set(["connect_spotify", "list_spotify_playlists", "load_studio_draft", "apply_studio_draft", "undo_last_apply", "autofill",
   "create_playlist_from_filter", "create_playlist_from_items", "get_top_items", "get_recent_plays_api", "library_contains", "save_to_spotify_library", "remove_from_spotify_library"]);
 /** Empty state: same shape, no rows (arrays → [], counts → 0). */
 const emptied = (v: unknown): unknown =>
@@ -502,7 +509,7 @@ export async function mockCall<T>(cmd: string, args: Record<string, unknown>): P
     if (dev.view === "error") throw { code: "io", message: "Runout couldn't read your library file.", detail: "library.db is locked by another process" } as AppError;
     if (dev.view === "offline" && NETWORK.has(cmd)) fail("offline", "You're offline. This needs Spotify.");
     if (dev.view === "conflict" && cmd in CONFLICT) {
-      if (cmd === "undo_last_apply") lastApply.delete(args.playlistUri as string); // Rust drops a dead undo
+      if (cmd === "undo_last_apply") { spotifyOn(); noUndo(args.playlistUri as string); lastApply.delete(args.playlistUri as string); } // Rust drops a dead undo
       fail("conflict", CONFLICT[cmd]);
     }
   }

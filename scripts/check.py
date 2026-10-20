@@ -225,6 +225,34 @@ def check_mock_conflicts():
         print("--- mock conflicts: FAIL\n" + "\n".join(bad))
 
 
+def check_mock_r3_parity():
+    # M5 audit round 4: the R3 mocks behave like Rust at the M7 switch (API.md §7, M2 WI 3).
+    # Every API.md §5 command but status/connect/disconnect answers spotify_auth when disconnected
+    # (Rust require_connected); bulk_add_album_tracks skips tracks already in the library; apply
+    # checks snapshot_id after the paginated items read (TSD §5.2 race window).
+    mock = (ROOT / "src/mocks/index.ts").read_text(encoding="utf-8")
+    sec = re.search(r"^## 5\..*?(?=^## )", (ROOT / "docs/API.md").read_text(encoding="utf-8"), re.S | re.M)
+    bad = []
+    cmds = re.findall(r"`([a-z_]+)`", " ".join(re.findall(r"^\| (`[a-z_]+`(?: / `[a-z_]+`)*) \|", sec.group(0), re.M))) if sec else []
+    for c in cmds:
+        if c in ("get_spotify_status", "connect_spotify", "disconnect_spotify"):
+            continue
+        m = re.search(rf"^  {c}: (.*?)(?=^  \w+: |^}};)", mock, re.S | re.M)
+        if not m or "spotifyOn()" not in m.group(1):
+            bad.append(f"src/mocks/index.ts: {c} handler lacks spotifyOn() (Rust answers spotify_auth when disconnected)")
+    m = re.search(r"^  bulk_add_album_tracks: (.*?)(?=^  \w+: )", mock, re.S | re.M)
+    if not m or "existingFor(" not in m.group(1) or m.group(1).find("existingFor(") > m.group(1).find("items.push"):
+        bad.append("src/mocks/index.ts: bulk_add_album_tracks must look up existingFor( before items.push (API.md §5)")
+    studio = (TAURI / "src/spotify/studio.rs").read_text(encoding="utf-8")
+    m = re.search(r"pub async fn apply_studio_draft.*?\n}\n", studio, re.S)
+    body = m.group(0) if m else ""
+    if not (0 <= body.find("items(sp") < body.find("snapshot_id(sp")):
+        bad.append("src-tauri/src/spotify/studio.rs: apply_studio_draft must read items( before snapshot_id( (TSD §5.2)")
+    if bad:
+        failures.append("mock R3 parity")
+        print("--- mock R3 parity: FAIL\n" + "\n".join(bad))
+
+
 def check_insights_no_cache():
     # M4 acceptance / FR-031: insights read the library DB only, never the Spotify cache (source A).
     d = TAURI / "src" / "insights"
@@ -541,6 +569,7 @@ check_spotify_rules()
 check_boundary_values_kept()
 check_cache_schema_in_tsd()
 check_mock_conflicts()
+check_mock_r3_parity()
 check_no_committed_client_id()
 check_deferrals_tracked()
 check_listening_event_reads()

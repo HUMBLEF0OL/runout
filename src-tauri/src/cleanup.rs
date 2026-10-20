@@ -12,6 +12,8 @@ pub const CREDENTIAL: &str = "Runout/spotify";
 pub const CACHE_DB: &str = "spotify_cache.db";
 /// Empty marker: Spotify revoked the sign-in, so the app shows "Reconnect" after a restart.
 pub const RECONNECT_MARKER: &str = "spotify_reconnect";
+/// Empty file: a disconnect's credential delete hasn't succeeded yet (spotify/mod.rs).
+pub const DISCONNECT_MARKER: &str = "spotify_disconnect_pending";
 pub const WEBVIEW_DIR: &str = "EBWebView";
 
 /// Empty every table in library.db (schema kept), then VACUUM and truncate the WAL so deleted
@@ -60,7 +62,7 @@ fn remove(p: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Always-run uninstall step: `spotify_cache.db` (+ journal files), the reconnect marker, the `EBWebView` folder (all in
+/// Always-run uninstall step: `spotify_cache.db` (+ journal files), the reconnect and pending-disconnect markers, the `EBWebView` folder (all in
 /// `%LOCALAPPDATA%\app.runout.desktop`) and the `Runout/spotify` credential. Missing = fine.
 /// Every step runs; the first error is returned.
 pub fn uninstall_cleanup(local_data_dir: &Path) -> Result<()> {
@@ -76,6 +78,7 @@ fn cleanup(local_data_dir: &Path, credential: &str) -> Result<()> {
         format!("{CACHE_DB}-wal"),
         format!("{CACHE_DB}-shm"),
         RECONNECT_MARKER.to_string(),
+        DISCONNECT_MARKER.to_string(),
         WEBVIEW_DIR.to_string(),
     ] {
         if let Err(e) = remove(&local_data_dir.join(name)) {
