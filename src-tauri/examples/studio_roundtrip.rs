@@ -204,6 +204,30 @@ fn main() {
                 "Now change the playlist in Spotify (remove or move any track), then press Enter."
             );
             wait_enter();
+            // Spotify's app pushes an edit to the server a moment later; apply can only see what
+            // the Web API sees. Show it, and wait (up to 60 s) until the API reports the edit.
+            for t in 0..=20 {
+                let now = studio::current_uris(&sp, &pl).await.unwrap();
+                if now != orig {
+                    println!(
+                        "API sees your edit after ~{} s ({} → {} tracks).",
+                        t * 3,
+                        orig.len(),
+                        now.len()
+                    );
+                    break;
+                }
+                if t == 20 {
+                    println!(
+                        "API still shows the old list after 60 s: was the edit made on this playlist?"
+                    );
+                    return;
+                }
+                if t == 0 {
+                    println!("API doesn't show your edit yet; re-checking every 3 s…");
+                }
+                std::thread::sleep(std::time::Duration::from_secs(3));
+            }
             match studio::apply_studio_draft(&sp, &draft, &keep).await {
                 Err(e) if e.code == Code::Conflict => {
                     println!("PASS: apply blocked with conflict; nothing was written.")
