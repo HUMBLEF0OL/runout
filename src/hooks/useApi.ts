@@ -3,8 +3,10 @@ import { getOnline, onEvent, onInvalidate, type AppError } from "../api";
 
 export interface ApiState<T> { data: T | undefined; error: AppError | undefined; loading: boolean; reload: () => void }
 
-/** Run a read command, refetch whenever data changes (any write command, dev state switch). */
-export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = []): ApiState<T> {
+/** Run a read command, refetch whenever data changes (any write command, dev state switch).
+ *  `live: false` reads once per deps change and on `reload()` only: for data the user is editing (Studio draft),
+ *  where a refetch triggered by an unrelated write would swap it out under them. */
+export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = [], live = true): ApiState<T> {
   const [state, setState] = useState<{ data?: T; error?: AppError; loading: boolean }>({ loading: true });
   const seq = useRef(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -16,7 +18,7 @@ export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = []): ApiState<
       (error: AppError) => { if (n === seq.current) setState({ error, loading: false }); },
     );
   }, deps);
-  useEffect(() => { run(); return onInvalidate(run); }, [run]);
+  useEffect(() => { run(); return live ? onInvalidate(run) : undefined; }, [run, live]);
   return { data: state.data, error: state.error, loading: state.loading && state.data === undefined, reload: run };
 }
 

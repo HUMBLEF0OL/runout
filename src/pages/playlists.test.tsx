@@ -1,0 +1,98 @@
+// Studio (SC-11) write paths: keep/cut edits survive unrelated refetches and failed applies that wrote nothing,
+// and each failure shows its own banner (audit M5 r5).
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import * as api from "../api";
+import { ToastProvider } from "../components/ui";
+import { setDev } from "../mocks/devState";
+import Playlists from "./Playlists";
+
+let names: string[] = [];
+beforeAll(async () => {
+  await api.loadMocks();
+  names = (await api.listSpotifyPlaylists()).map((p) => p.name);
+});
+afterEach(() => { cleanup(); setDev({ view: "normal" }); });
+
+/** Render Studio on the n-th playlist; returns its first row's keep/cut group. */
+async function studio(n: number) {
+  render(<ToastProvider><MemoryRouter initialEntries={[`/playlists/studio?p=${encodeURIComponent(names[n])}`]}>
+    <Routes><Route path="/playlists/:tab" element={<Playlists />} /></Routes></MemoryRouter></ToastProvider>);
+  const groups = await screen.findAllByRole("radiogroup", { name: /^Keep or cut / }, { timeout: 3000 });
+  return groups[0];
+}
+const isCut = (g: HTMLElement) => within(g).getByRole("radio", { name: "Cut" }).getAttribute("aria-checked") === "true";
+async function cutFirst() {
+  const g = await studio(cutFirst.n++);
+  fireEvent.click(within(g).getByRole("radio", { name: "Cut" }));
+  expect(isCut(g)).toBe(true);
+  return g;
+}
+cutFirst.n = 0;
+async function apply() {
+  fireEvent.click(screen.getByRole("button", { name: /^Apply \d+ changes? to Spotify$/ }));
+  const dlg = await screen.findByRole("dialog", { hidden: true });
+  fireEvent.click(within(dlg).getByRole("button", { name: /^Apply \d+ changes?$/, hidden: true }));
+}
+const alert = (re: RegExp) => screen.findByText(re, {}, { timeout: 3000 });
+const settle = () => act(() => new Promise((r) => setTimeout(r, 400)));
+
+describe("Studio keeps the user's draft", () => {
+  it("a write elsewhere in the app (global invalidate) does not refetch the draft or reset keep/cut", async () => {
+    const g = await cutFirst();
+    act(() => api.invalidate());
+    await settle();
+    expect(isCut(screen.getAllByRole("radiogroup", { name: /^Keep or cut / })[0])).toBe(true);
+    expect(g.isConnected).toBe(true);
+  });
+  it("apply answered spotify_busy: wait copy with retry_after_s, draft and choices kept", async () => {
+    await cutFirst();
+    setDev({ view: "busy" });
+    await apply();
+    await alert(/Spotify is still finishing a change; try again in 90 s\./);
+    expect(isCut(screen.getAllByRole("radiogroup", { name: /^Keep or cut / })[0])).toBe(true);
+    expect(screen.queryByRole("button", { name: "Undo last apply" })).toBeNull();
+  });
+  it("apply answered conflict: nothing reloads until asked, choices kept", async () => {
+    await cutFirst();
+    setDev({ view: "conflict" });
+    await apply();
+    await alert(/This playlist changed on Spotify\./);
+    expect(isCut(screen.getAllByRole("radiogroup", { name: /^Keep or cut / })[0])).toBe(true);
+  });
+  it("apply that may have landed: partial warning and Undo banner both stay visible after the reload", async () => {
+    await cutFirst();
+    setDev({ view: "partial" });
+    await apply();
+    await alert(/may have been partly applied/);
+    await screen.findByRole("button", { name: "Undo last apply" });
+    setDev({ view: "error" }); // any later refetch would now fail and could replace the page
+    act(() => api.invalidate());
+    await settle();
+    expect(screen.getByText(/may have been partly applied/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Undo last apply" })).toBeTruthy();
+  });
+});
+
+describe("Studio undo banners", () => {
+  async function applied() {
+    await cutFirst();
+    await apply();
+    return screen.findByRole("button", { name: "Undo last apply" }, { timeout: 3000 });
+  }
+  it("undo answered spotify_busy: wait copy, not 'partly restored', and the undo stays", async () => {
+    const b = await applied();
+    setDev({ view: "busy" });
+    fireEvent.click(b);
+    await alert(/Try Undo again in 90 s\./);
+    expect(screen.queryByText(/partly restored/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Undo last apply" })).toBeTruthy();
+  });
+  it("undo pressed twice: the second gets not_found with its own copy", async () => {
+    const b = await applied();
+    fireEvent.click(b); fireEvent.click(b);
+    await alert(/There's nothing to undo\./);
+    expect(screen.queryByText(/partly restored/)).toBeNull();
+  });
+});
