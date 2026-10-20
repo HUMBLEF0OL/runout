@@ -34,6 +34,7 @@
 | P2 | Delivery order changed to design, then UI on mock data, then backend, then integration (D30). Milestones renumbered M0–M8 (section 14); dates in sections 11, 12, 15 and 18 follow. |
 | P3 | O1 resolved (S1): a Premium Student plan qualifies for Development Mode. Tested 19 Oct 2026 with the user's own developer app: PKCE login and GET /me returned 200 with product = premium. |
 | P3 | New hard stop: the user approves all screen designs before UI build (end of M1). |
+| P4 | O4 and O5 resolved by the technical design and built in M5: playlist snapshots kept 30 days, Spotify cache entries 7 days, both swept at startup and daily; disconnect deletes both at once. |
 
 ### 0.3 Changes in Version 0.5 (document review fixes)
 
@@ -717,8 +718,8 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | O1 | Does a Premium Student plan qualify for Development Mode? (S1). Resolved: yes, PKCE login and GET /me returned 200 with product = premium (19 Oct 2026). | Resolved by the user (developer app created, one call tested) | Done |
 | O2 | Export delivery time and allowed request frequency (S14). Partly resolved: Extended streaming history took about 1 day (one account, 19 Oct 2026); Account data export delivery and allowed frequency still open. | User — request both exports in M0 | M4 |
 | O3 | Technology stack and detailed technical design | Resolved: Tauri 2 + React + SQLite (docs/TSD.md) | Done |
-| O4 | Playlist snapshot retention — proposed 30 days | Technical design to confirm | M5 |
-| O5 | Spotify cache expiry — proposed 7 days | Technical design to confirm | M5 |
+| O4 | Playlist snapshot retention. Resolved: 30 days (TSD §5.2; built in M5, swept at startup and daily). | Resolved by technical design | Done |
+| O5 | Spotify cache expiry. Resolved: 7 days (TSD §5.2; built in M5, swept at startup and daily). | Resolved by technical design | Done |
 | O6 | iOS capture transport: local-network listener or shared file | Resolved: local-network listener (docs/TSD.md §5.1) | Done |
 | O7 | Optional: ask Spotify developer support about export-data analysis in a registered app (11.1) | User | Before M5 |
 
