@@ -1,5 +1,5 @@
 // M2 acceptance evidence: journeys A–H (BRD §8) driven KEYBOARD ONLY against the mock-data UI in headless Edge (CDP).
-// Usage: node scripts/journeys.mjs   (needs Vite on http://localhost:1420; `npx vite --port 1420 --strictPort`)
+// Usage: node scripts/journeys.mjs   (needs Vite on http://127.0.0.1:1420; `npx vite --port 1420 --strictPort`)
 // User actions use Input.dispatchKeyEvent / Input.insertText only. Runtime.evaluate is used for assertions, focus-ring
 // reads and the external iPhone-share event. Exits non-zero on any FAIL. Screenshots → docs/design/screens/m2-journeys/.
 import { spawn } from "node:child_process";
@@ -7,7 +7,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const APP = process.env.APP_URL ?? "http://localhost:1420";
+const APP = process.env.APP_URL ?? "http://127.0.0.1:1420";
 const EDGE = process.env.EDGE ?? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const OUT = new URL("../docs/design/screens/m2-journeys/", import.meta.url);
 const SHOTS = decodeURIComponent(OUT.pathname.replace(/^\/([A-Za-z]:)/, "$1"));
