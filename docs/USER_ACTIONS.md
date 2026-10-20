@@ -145,7 +145,7 @@ This repeats **every 6 months**, which is Spotify's rule (BRD S7).
 1. In Spotify, make a **test playlist** you don't care about: ~15 tracks, with one track added twice.
 2. Set `RUNOUT_SPOTIFY_CLIENT_ID` to your Client ID in your environment (it stays out of the repo).
 3. Run `cargo run --example studio_roundtrip -- spotify:playlist:<id>` in `src-tauri`, approve the login in the browser, check the cut in Spotify, press Enter, check it's restored.
-   The "edited in Spotify after drafting → apply blocked" check needs a pause before apply that the example doesn't have yet; I'll add it before you run it.
+4. Run it again with `--conflict` at the end: when it pauses, remove or move any track in Spotify, press Enter; it should print `PASS: apply blocked with conflict`.
 
 **Send back:** the playlist link, or just "done" with what you saw.
 

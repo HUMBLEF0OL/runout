@@ -4,12 +4,20 @@
 //! refresh can't rotate the refresh token out from under a running app (check.py). Needs
 //! RUNOUT_SPOTIFY_CLIENT_ID set; uses a throwaway cache DB in the temp folder.
 //!
-//! `cargo run --example studio_roundtrip -- spotify:playlist:<22 chars>`
+//! `cargo run --example studio_roundtrip -- spotify:playlist:<22 chars> [--conflict]`
 //!
 //! Loads the draft, cuts 3 tracks and 1 duplicate, prints the diff, applies, waits for Enter, undoes.
+//! `--conflict`: pauses after loading the draft so you edit the playlist in Spotify, then expects
+//! apply to be blocked with `conflict` (nothing written).
 use std::sync::Mutex;
 
+use runout_lib::error::Code;
 use runout_lib::spotify::{self, Spotify, client, studio};
+
+fn wait_enter() {
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).unwrap();
+}
 
 /// Deletes the throwaway cache folder (it holds the playlist's undo snapshot) on every exit,
 /// panics included; a failure is reported, not swallowed. Declared before `sp`, so it drops after
@@ -31,6 +39,7 @@ impl Drop for RemoveOnExit {
 
 fn main() {
     let arg = std::env::args().nth(1).unwrap_or_default();
+    let conflict = std::env::args().any(|a| a == "--conflict");
     let pl = spotify::check_uri(&arg, &["playlist"]).expect("pass a spotify:playlist:… URI");
     let dir = std::env::temp_dir().join("runout-studio-roundtrip");
     let _cleanup = RemoveOnExit(dir.clone());
@@ -80,6 +89,24 @@ fn main() {
             .await
             .unwrap();
         println!("diff: {diff:?}");
+        if conflict {
+            println!(
+                "Now change the playlist in Spotify (remove or move any track), then press Enter."
+            );
+            wait_enter();
+            match studio::apply_studio_draft(&sp, &draft, &keep).await {
+                Err(e) if e.code == Code::Conflict => {
+                    println!("PASS: apply blocked with conflict; nothing was written.")
+                }
+                Err(e) => println!("FAIL: apply failed with another error: {e:?}"),
+                Ok(_) => {
+                    println!("FAIL: apply went through; undoing it.");
+                    let undo = studio::undo_last_apply(&sp, &pl).await;
+                    println!("undo: {undo:?}");
+                }
+            }
+            return;
+        }
         let applied = studio::apply_studio_draft(&sp, &draft, &keep)
             .await
             .unwrap();
@@ -87,8 +114,7 @@ fn main() {
             "applied: undo_id {} (expires {}). Check the playlist in Spotify, then press Enter to undo.",
             applied.undo_id, applied.expires_at
         );
-        let mut line = String::new();
-        std::io::stdin().read_line(&mut line).unwrap();
+        wait_enter();
         studio::undo_last_apply(&sp, &pl).await.unwrap();
         let after = studio::load_studio_draft(&sp, &db, &pl).await.unwrap();
         let same = after
