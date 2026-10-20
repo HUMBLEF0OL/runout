@@ -425,6 +425,23 @@ def check_no_committed_client_id():
         print("--- no client id in repo: FAIL (32-hex value or assigned client ID)\n" + "\n".join(bad))
 
 
+def check_deferrals_tracked():
+    # Nothing deferred may be lost: an unticked acceptance line marked "(open" must name a
+    # G-n row in Known gaps or a U-n hard stop, and every Known gaps row must say where it's fixed.
+    text = (ROOT / "docs" / "MILESTONES.md").read_text(encoding="utf-8")
+    gaps = re.search(r"### Known gaps\n(.*?)\n---", text, re.S)
+    rows = {m.group(1): m.group(2) for m in re.finditer(r"^\| (G-\d+) \|.*\| ([^|]*) \|\s*$", gaps.group(1) if gaps else "", re.M)}
+    bad = [f"Known gaps {g}: empty 'Fix in'" for g, fix in rows.items() if not fix.strip()]
+    for i, line in enumerate(text.splitlines(), 1):
+        if line.startswith("- [ ]") and "(open" in line:
+            refs = re.findall(r"\b([GU]-\d+)\b", line)
+            if not any(r.startswith("U-") or r in rows for r in refs):
+                bad.append(f"docs/MILESTONES.md:{i}: open acceptance line names no Known gaps G-n or U-n")
+    if bad:
+        failures.append("deferrals tracked")
+        print("--- deferrals tracked: FAIL\n" + "\n".join(bad))
+
+
 def check_source_map():
     # docs/SOURCE_MAP.md: every source file is mapped; every `built` row exists.
     rows = [line for line in (ROOT / "docs/SOURCE_MAP.md").read_text(encoding="utf-8").splitlines()
@@ -525,6 +542,7 @@ check_boundary_values_kept()
 check_cache_schema_in_tsd()
 check_mock_conflicts()
 check_no_committed_client_id()
+check_deferrals_tracked()
 check_listening_event_reads()
 check_settings_clone_then_assign()
 check_ui_purity()

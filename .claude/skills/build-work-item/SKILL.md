@@ -12,7 +12,7 @@ description: Implement one Runout milestone work item from docs/MILESTONES.md en
 4. **Implement** the minimum that passes, in the file TSD §9 assigns. Logic and I/O in Rust; UI via typed wrappers in `src/api.ts`.
 5. **Schema change** → new numbered file in `src-tauri/migrations/`; never edit a shipped migration.
 6. **Prove** (below). Fix until green. Then get a `spec-reviewer` pass (`compliance-review`) and fix its findings.
-7. **Record.** New file → its path is in `docs/SOURCE_MAP.md`; first working version → status `built`. Platform surprise → dated entry in `docs/kb/` Gotchas. Spec was wrong → update TSD (`change-spec` if scope moves). Fixed a G-n → delete its Known gaps row and name it in the commit; deferred something → add a G-n row (gap, where, why, fix in). Tick nothing in MILESTONES; ticking is `close-milestone`'s job.
+7. **Record.** New file → its path is in `docs/SOURCE_MAP.md`; first working version → status `built`. Platform surprise → dated entry in `docs/kb/` Gotchas. Spec was wrong → update TSD (`change-spec` if scope moves). Fixed a G-n → delete its Known gaps row and name it in the commit; deferred something (incl. anything proven only on synthetic/stub data) → add a G-n row (gap, where, why, fix in); `check.py` "deferrals tracked" fails an open acceptance line with no G-n/U-n. Tick nothing in MILESTONES; ticking is `close-milestone`'s job.
 8. **Report** in ≤3 lines: what's done, proof result, anything deferred.
 
 ## Toolbox
