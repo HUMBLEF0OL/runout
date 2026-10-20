@@ -40,6 +40,13 @@ ALTER TABLE playlist_snapshot ADD COLUMN applied_snapshot_id TEXT;
     "
 ALTER TABLE playlist_snapshot ADD COLUMN pending_json TEXT;
 ",
+    // 2026-10-20: undo checks track content, not snapshot ids (GET snapshot_id is stale after a
+    // write, TSD §5.2). Older snapshots carry only ids, so they can't be checked and are dropped.
+    "
+DELETE FROM playlist_snapshot;
+ALTER TABLE playlist_snapshot DROP COLUMN applied_snapshot_id;
+ALTER TABLE playlist_snapshot RENAME COLUMN pending_json TO expected_json;
+",
 ];
 
 fn iso(t: DateTime<Utc>) -> String {
@@ -106,7 +113,9 @@ pub struct Snapshot {
     pub expires_at: String,
 }
 
-/// Store the pre-apply playlist (30-day undo, O4); returns its id (`undo_id`).
+/// Store the pre-apply playlist (30-day undo, O4); returns its id (`undo_id`). `spotify_snapshot_id`
+/// is the draft's id, informational only. Until a write lands, the playlist should still hold
+/// `items`, so that is the expected list.
 pub fn put_snapshot(
     c: &Connection,
     playlist_uri: &str,
@@ -116,9 +125,9 @@ pub fn put_snapshot(
 ) -> Result<Snapshot> {
     let (taken, expires) = (iso(now), iso(now + chrono::Duration::days(SNAPSHOT_DAYS)));
     c.execute(
-        "INSERT INTO playlist_snapshot(playlist_uri, spotify_snapshot_id, taken_at, expires_at, items_json)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![playlist_uri, spotify_snapshot_id, taken, expires, items.to_string()],
+        "INSERT INTO playlist_snapshot(playlist_uri, spotify_snapshot_id, taken_at, expires_at, items_json, expected_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![playlist_uri, spotify_snapshot_id, taken, expires, items.to_string(), Value::Array(vec![items.clone()]).to_string()],
     )?;
     Ok(Snapshot {
         undo_id: c.last_insert_rowid(),
@@ -127,66 +136,48 @@ pub fn put_snapshot(
     })
 }
 
-/// Newest unexpired snapshot of `playlist_uri`: `(record, expected_snapshot_id, items)`; the
-/// middle one is the playlist's `snapshot_id` after the app's last landed write to it, or the
-/// pre-apply id when none was recorded (crash before the first write). Undo checks it.
+/// Newest unexpired snapshot of `playlist_uri`: `(record, expected, items)`. `expected` is a JSON
+/// array of the URI lists the playlist may hold after Runout's last write to it (one list, or the
+/// before/after pair of a write with unknown outcome). Undo restores only when it holds one.
 pub fn last_snapshot(
     c: &Connection,
     playlist_uri: &str,
     now: DateTime<Utc>,
-) -> Result<Option<(Snapshot, String, Value)>> {
+) -> Result<Option<(Snapshot, Value, Value)>> {
     let row = c
         .query_row(
-            "SELECT id, taken_at, expires_at, COALESCE(applied_snapshot_id, spotify_snapshot_id), items_json
+            "SELECT id, taken_at, expires_at, COALESCE(expected_json, '[]'), items_json
              FROM playlist_snapshot
              WHERE playlist_uri = ?1 AND expires_at > ?2 ORDER BY taken_at DESC, id DESC LIMIT 1",
             params![playlist_uri, iso(now)],
             |r| {
                 Ok((
-                    Snapshot { undo_id: r.get(0)?, applied_at: r.get(1)?, expires_at: r.get(2)? },
+                    Snapshot {
+                        undo_id: r.get(0)?,
+                        applied_at: r.get(1)?,
+                        expires_at: r.get(2)?,
+                    },
                     r.get::<_, String>(3)?,
                     r.get::<_, String>(4)?,
                 ))
             },
         )
         .optional()?;
-    row.map(|(s, id, j)| Ok((s, id, serde_json::from_str(&j)?)))
+    row.map(|(s, e, j)| Ok((s, serde_json::from_str(&e)?, serde_json::from_str(&j)?)))
         .transpose()
 }
 
-/// Record the playlist's `snapshot_id` after a landed apply/undo write (undo checks it).
-pub fn set_applied(c: &Connection, undo_id: i64, snapshot_id: &str) -> Result<()> {
+/// Record the URI lists the playlist may now hold (see [`last_snapshot`]) after an apply/undo write.
+pub fn set_expected(c: &Connection, undo_id: i64, lists: &Value) -> Result<()> {
     c.execute(
-        "UPDATE playlist_snapshot SET applied_snapshot_id = ?2, pending_json = NULL WHERE id = ?1",
-        params![undo_id, snapshot_id],
+        "UPDATE playlist_snapshot SET expected_json = ?2 WHERE id = ?1",
+        params![undo_id, lists.to_string()],
     )?;
     Ok(())
-}
-
-/// A write whose outcome is unknown (no answer, and the re-read failed too): the URI list the
-/// playlist holds if it landed. Undo accepts a moved `snapshot_id` when the items equal this.
-pub fn set_pending(c: &Connection, undo_id: i64, items: &Value) -> Result<()> {
-    c.execute(
-        "UPDATE playlist_snapshot SET pending_json = ?2 WHERE id = ?1",
-        params![undo_id, items.to_string()],
-    )?;
-    Ok(())
-}
-
-pub fn pending(c: &Connection, undo_id: i64) -> Result<Option<Value>> {
-    let s: Option<String> = c
-        .query_row(
-            "SELECT pending_json FROM playlist_snapshot WHERE id = ?1",
-            [undo_id],
-            |r| r.get(0),
-        )
-        .optional()?
-        .flatten();
-    Ok(s.map(|s| serde_json::from_str(&s)).transpose()?)
 }
 
 /// One undo per playlist (as the mock): once snapshot `keep_id` stands for the playlist's latest
-/// apply, older snapshots of it are dead (their recorded id was overwritten by that apply).
+/// apply, older snapshots of it are dead (their expected list was overwritten by that apply).
 pub fn drop_older_snapshots(c: &Connection, playlist_uri: &str, keep_id: i64) -> Result<()> {
     c.execute(
         "DELETE FROM playlist_snapshot WHERE playlist_uri = ?1 AND id <> ?2",
@@ -285,12 +276,15 @@ mod tests {
             t0 + chrono::Duration::seconds(5),
         )
         .unwrap();
-        set_applied(&c, s2.undo_id, "w2").unwrap();
-        let (rec, sid, items) = last_snapshot(&c, u, t0).unwrap().unwrap();
-        assert_eq!((rec, sid.as_str(), items), (s2.clone(), "w2", json!(["b"])));
+        set_expected(&c, s2.undo_id, &json!([["w"]])).unwrap();
+        let (rec, exp, items) = last_snapshot(&c, u, t0).unwrap().unwrap();
+        assert_eq!(
+            (rec, exp, items),
+            (s2.clone(), json!([["w"]]), json!(["b"]))
+        );
         delete_snapshot(&c, s2.undo_id).unwrap();
-        let (_, sid, items) = last_snapshot(&c, u, t0).unwrap().unwrap();
-        assert_eq!((sid.as_str(), items), ("s1", json!(["a"]))); // none recorded: pre-apply id
+        let (_, exp, items) = last_snapshot(&c, u, t0).unwrap().unwrap();
+        assert_eq!((exp, items), (json!([["a"]]), json!(["a"]))); // nothing written: pre-apply list
         drop(c);
         let c = open(&p).unwrap(); // migration doesn't re-run
         assert_eq!(last_snapshot(&c, u, t0).unwrap().unwrap().2, json!(["a"]));

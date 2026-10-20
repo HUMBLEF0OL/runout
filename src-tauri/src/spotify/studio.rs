@@ -1,6 +1,6 @@
 //! Playlist Studio (M5 WI 3, TSD §5.2): own/collab playlists, draft with `item` ratings/tags only
-//! (D27), diff preview, apply with a `snapshot_id` conflict check and a 30-day undo snapshot in
-//! the cache DB. The command layer has already checked the connection and the URIs.
+//! (D27), diff preview, apply with a track-content conflict check and a 30-day undo snapshot in
+//! the cache DB (never `snapshot_id`: GET serves a stale one after a write, TSD §5.2). The command layer has already checked the connection and the URIs.
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -119,7 +119,7 @@ fn either<'a>(v: &'a Value, new: &str, old: &str) -> &'a Value {
     if v[new].is_null() { &v[old] } else { &v[new] }
 }
 
-/// Current `snapshot_id` of a playlist.
+/// Current `snapshot_id` of a playlist (the draft's, informational: nothing is decided on it).
 async fn snapshot_id(sp: &Spotify, playlist_uri: &str) -> Result<String> {
     let v: Value = sp
         .get_json(&format!(
@@ -172,57 +172,61 @@ async fn items(sp: &Spotify, playlist_uri: &str) -> Result<Vec<(String, String, 
         .collect()
 }
 
-/// Replace the playlist's items with `uris`: PUT replaces with the first chunk, POST appends the
-/// rest. Every write that lands sets `landed` and records its `snapshot_id` on snapshot `undo_id`
-/// at once, so after a write fails partway undo (or a retried undo) compares against the app's
-/// own last write, not an older id. A failed write may still have landed (timeout, reset, 5xx,
-/// unreadable 2xx), so the playlist is re-read: unchanged since `from_id` (the id before this
-/// call) = it didn't land; moved = it did (that id is recorded); re-read failed too = unknown, so
-/// `landed` is set and the list the playlist would hold is kept as `pending` for undo to compare.
+/// The playlist's current track URIs, in order. The one read every Studio check compares against
+/// (`GET /playlists/{id}/items`), so the read path can be swapped here alone.
+async fn current_uris(sp: &Spotify, playlist_uri: &str) -> Result<Vec<String>> {
+    Ok(items(sp, playlist_uri)
+        .await?
+        .into_iter()
+        .map(|t| t.0)
+        .collect())
+}
+
+/// Replace the playlist's items (`from` now) with `uris`: PUT replaces with the first chunk, POST
+/// appends the rest. Every write that lands sets `landed` and records the list the playlist now
+/// holds (the cumulative prefix) as snapshot `undo_id`'s expected list at once, so after a write
+/// fails partway undo (or a retried undo) compares against the app's own last write. A failed
+/// write may still have landed (timeout, reset, 5xx, unreadable 2xx), so the items are re-read:
+/// the list before this chunk = it didn't land; the list after = it did; anything else or a failed
+/// re-read = unknown, so `landed` is set and both lists are expected.
 /// Callers hold `sp.studio_lock` so no other apply/undo's chunks land in between (check.py).
 async fn replace(
     sp: &Spotify,
     playlist_uri: &str,
+    from: &[String],
     uris: &[String],
     undo_id: i64,
-    from_id: &str,
     landed: &mut bool,
 ) -> Result<()> {
     let path = format!("/playlists/{}/items", uri_id(playlist_uri));
     let first = uris.chunks(CHUNK).next().unwrap_or_default();
     let rest = uris.chunks(CHUNK).skip(1).map(|c| (Method::POST, c));
-    let mut last = Some(from_id.to_string());
     for (i, (method, c)) in std::iter::once((Method::PUT, first))
         .chain(rest)
         .enumerate()
     {
+        let before = if i == 0 { from } else { &uris[..i * CHUNK] };
+        let after = &uris[..i * CHUNK + c.len()];
         let sent = sp
             .send_json(method, &path, Some(json!({ "uris": c })))
             .await;
-        let r = match sent {
-            Ok(r) => r,
-            Err(e) => {
-                match snapshot_id(sp, playlist_uri).await {
-                    Ok(now) if last.as_deref() == Some(now.as_str()) => {}
-                    Ok(now) => {
-                        *landed = true;
-                        let _ = sp.with_cache(|db| cache::set_applied(db, undo_id, &now));
-                    }
-                    Err(_) => {
-                        *landed = true;
-                        let end = uris.len().min((i + 1) * CHUNK);
-                        let _ = sp
-                            .with_cache(|db| cache::set_pending(db, undo_id, &json!(uris[..end])));
-                    }
+        if let Err(e) = sent {
+            match current_uris(sp, playlist_uri).await {
+                Ok(now) if now == before => {}
+                Ok(now) if now == after => {
+                    *landed = true;
+                    let _ = sp.with_cache(|db| cache::set_expected(db, undo_id, &json!([after])));
                 }
-                return Err(e);
+                _ => {
+                    *landed = true;
+                    let _ = sp
+                        .with_cache(|db| cache::set_expected(db, undo_id, &json!([before, after])));
+                }
             }
-        };
-        *landed = true;
-        last = r["snapshot_id"].as_str().map(str::to_string);
-        if let Some(id) = &last {
-            sp.with_cache(|db| cache::set_applied(db, undo_id, id))?;
+            return Err(e);
         }
+        *landed = true;
+        sp.with_cache(|db| cache::set_expected(db, undo_id, &json!([after])))?;
     }
     Ok(())
 }
@@ -298,22 +302,16 @@ pub async fn preview_studio_apply(
     Ok(diff(&orig, keep))
 }
 
-/// Read the current items (the undo snapshot), then re-read `snapshot_id` last (Spotify itself
-/// ignores it on writes, TSD §5.2): changed → `conflict`. Checking after the paginated read keeps
-/// the race window to that one GET before the write, and an edit made while the pages were read
-/// is caught instead of landing half in the undo snapshot (check.py keeps this order). Then the
-/// snapshot is stored first and the write runs. A first write that definitely didn't land changed
-/// nothing, so its snapshot is dropped (no undo is offered); once anything (maybe) landed, it is
-/// the playlist's only undo and older ones are dropped.
+/// Read the current items (the undo snapshot) and compare them with the draft's tracks (order and
+/// multiplicity): different → `conflict`, nothing written. Never `snapshot_id`: a stale GET id
+/// would hide an edit and a content-neutral bump would block (TSD §5.2; check.py keeps the order
+/// read → compare → snapshot → write). Then the snapshot is stored first and the write runs. A
+/// first write that definitely didn't land changed nothing, so its snapshot is dropped (no undo is
+/// offered); once anything (maybe) landed, it is the playlist's only undo and older ones are dropped.
 pub async fn apply_studio_draft(sp: &Spotify, draft: &Draft, keep: &[String]) -> Result<Applied> {
     let _one = sp.studio_lock.lock().await;
-    let current: Vec<String> = items(sp, &draft.playlist_uri)
-        .await?
-        .into_iter()
-        .map(|t| t.0)
-        .collect();
-    let now_id = snapshot_id(sp, &draft.playlist_uri).await?;
-    if now_id != draft.snapshot_id {
+    let current = current_uris(sp, &draft.playlist_uri).await?;
+    if !current.iter().eq(draft.tracks.iter().map(|t| &t.uri)) {
         return Err(AppError::new(
             Code::Conflict,
             "This playlist changed on Spotify. Reload the draft.",
@@ -323,7 +321,7 @@ pub async fn apply_studio_draft(sp: &Spotify, draft: &Draft, keep: &[String]) ->
         cache::put_snapshot(
             c,
             &draft.playlist_uri,
-            &now_id,
+            &draft.snapshot_id,
             &json!(current),
             chrono::Utc::now(),
         )
@@ -332,9 +330,9 @@ pub async fn apply_studio_draft(sp: &Spotify, draft: &Draft, keep: &[String]) ->
     let wrote = replace(
         sp,
         &draft.playlist_uri,
+        &current,
         keep,
         snap.undo_id,
-        &now_id,
         &mut landed,
     )
     .await;
@@ -358,17 +356,17 @@ pub async fn get_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<Option<A
 }
 
 /// Put the snapshot's items back, then drop the snapshot (a failed write keeps it for a retry,
-/// which compares against the undo's own last write). Edited on Spotify since the app's last write
-/// (snapshot id moved on, and it isn't an unanswered write of the app's own) → `conflict`, nothing
-/// overwritten, and the snapshot is dropped: Spotify never goes back to an old snapshot id, so
-/// that undo could never go through.
+/// which compares against the undo's own last write). The playlist's tracks aren't what Runout
+/// last wrote (edited on Spotify since) → `conflict`, nothing overwritten, and the snapshot is
+/// dropped: the undo would erase that edit.
 pub async fn undo_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<()> {
     let _one = sp.studio_lock.lock().await;
-    let (snap, expect, items) = sp
+    let (snap, expected, items) = sp
         .with_cache(|c| cache::last_snapshot(c, playlist_uri, chrono::Utc::now()))?
         .ok_or_else(|| AppError::not_found("There's no recent change to undo."))?;
-    let now = snapshot_id(sp, playlist_uri).await?;
-    if now != expect && !own_unanswered_write(sp, playlist_uri, snap.undo_id).await? {
+    let expected: Vec<Vec<String>> = serde_json::from_value(expected)?;
+    let now = current_uris(sp, playlist_uri).await?;
+    if !expected.contains(&now) {
         sp.with_cache(|c| cache::delete_snapshot(c, snap.undo_id))?;
         return Err(AppError::new(
             Code::Conflict,
@@ -376,23 +374,8 @@ pub async fn undo_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<()> {
         ));
     }
     let uris: Vec<String> = serde_json::from_value(items)?;
-    replace(sp, playlist_uri, &uris, snap.undo_id, &now, &mut false).await?;
+    replace(sp, playlist_uri, &now, &uris, snap.undo_id, &mut false).await?;
     sp.with_cache(|c| cache::delete_snapshot(c, snap.undo_id))
-}
-
-/// The snapshot id moved, but the app's last write went unanswered: it's the app's own write if
-/// the playlist holds exactly what that write sent (`pending`).
-async fn own_unanswered_write(sp: &Spotify, playlist_uri: &str, undo_id: i64) -> Result<bool> {
-    let Some(want) = sp.with_cache(|c| cache::pending(c, undo_id))? else {
-        return Ok(false);
-    };
-    let want: Vec<String> = serde_json::from_value(want)?;
-    let have: Vec<String> = items(sp, playlist_uri)
-        .await?
-        .into_iter()
-        .map(|t| t.0)
-        .collect();
-    Ok(have == want)
 }
 
 #[cfg(test)]
@@ -418,12 +401,25 @@ mod tests {
             .collect();
         json!({"items": items, "next": null}).to_string()
     }
+    /// A page holding exactly `uris`.
+    fn pg(uris: &[String]) -> String {
+        page(
+            &uris
+                .iter()
+                .map(|u| (u.clone(), "n", "a"))
+                .collect::<Vec<_>>(),
+        )
+    }
     fn draft(s: &str, snap: &str) -> Draft {
+        draft_of(&v(s), snap)
+    }
+    fn draft_of(uris: &[String], snap: &str) -> Draft {
         Draft {
             playlist_uri: PL.into(),
             snapshot_id: snap.into(),
-            tracks: v(s)
-                .into_iter()
+            tracks: uris
+                .iter()
+                .cloned()
                 .map(|uri| DraftTrack {
                     uri,
                     name: "n".into(),
@@ -522,71 +518,135 @@ mod tests {
         assert_eq!(e.code, Code::Validation);
     }
 
+    fn many(n: u8) -> Vec<String> {
+        (0..n)
+            .map(|i| format!("spotify:track:{:0>22}", i))
+            .collect()
+    }
+    fn body_uris(b: &Option<Body>) -> Vec<String> {
+        match b {
+            Some(Body::Json(b)) => serde_json::from_value(b["uris"].clone()).unwrap(),
+            _ => panic!("json body"),
+        }
+    }
+    fn no_snapshot_get(stub: &Stub) {
+        assert!(
+            stub.calls().iter().all(|c| !c.1.contains("snapshot_id")),
+            "apply/undo must not decide on snapshot_id"
+        );
+    }
+
+    /// Live, 20 Oct 2026: the PUT answered a new snapshot_id but GET kept serving the pre-write
+    /// one for 30 s+. Apply and undo never read snapshot_id; the items equal Runout's write, so
+    /// undo restores instead of a false `conflict`.
     #[test]
-    fn changed_snapshot_is_a_conflict_and_writes_nothing() {
-        let d = temp_dir("studio-conflict");
-        // the items are read first and snapshot_id last, so an edit made while the pages were
-        // read is caught (the race window is that one GET, TSD §5.2)
+    fn stale_snapshot_id_after_the_write_does_not_block_undo() {
+        let d = temp_dir("studio-stale-get");
         let stub = Stub::new(&[
-            (200, &page(&[(t(b'A'), "n", "a")])),
-            (200, r#"{"snapshot_id":"s2"}"#),
+            (200, &pg(&v("AB"))),
+            (200, r#"{"snapshot_id":"AAAACb"}"#), // PUT answer: the new id
+            (200, &pg(&v("B"))),                  // undo's read: holds exactly what Runout wrote
+            (200, r#"{"snapshot_id":"AAAACc"}"#),
         ]);
         let sp = connected(&d, &stub);
-        let e = block(apply_studio_draft(&sp, &draft("ABC", "s1"), &v("AB"))).unwrap_err();
-        assert_eq!(e.code, Code::Conflict);
-        let calls = stub.calls();
-        assert_eq!(calls.len(), 2, "nothing written");
-        assert!(calls[0].1.contains("/items") && !calls[1].1.contains("/items"));
+        block(apply_studio_draft(&sp, &draft("AB", "AAAACJ"), &v("B"))).unwrap();
+        block(undo_last_apply(&sp, PL)).unwrap();
+        no_snapshot_get(&stub);
+        let reqs = stub.requests.lock().unwrap();
+        assert_eq!(reqs[3].method, Method::PUT);
+        assert_eq!(body_uris(&reqs[3].body), v("AB"));
+        drop(reqs);
         assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
-    fn many(n: u8) -> Vec<(String, &'static str, &'static str)> {
-        (0..n)
-            .map(|i| (format!("spotify:track:{:0>22}", i), "n", "a"))
-            .collect()
+    /// Edited on Spotify after the apply (items differ from Runout's write): undo refuses
+    /// instead of erasing the edit, and drops the snapshot.
+    #[test]
+    fn undo_after_a_later_edit_is_a_conflict() {
+        let d = temp_dir("studio-undo-conflict");
+        let stub = Stub::new(&[
+            (200, &pg(&v("AB"))),
+            (200, r#"{"snapshot_id":"s2"}"#),
+            (200, &pg(&v("BC"))), // someone added C since
+        ]);
+        let sp = connected(&d, &stub);
+        block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("B"))).unwrap();
+        let e = block(undo_last_apply(&sp, PL)).unwrap_err();
+        assert_eq!(e.code, Code::Conflict);
+        assert_eq!(stub.calls().len(), 3, "no write after the conflict");
+        assert_eq!(
+            block(get_last_apply(&sp, PL)).unwrap(),
+            None,
+            "dead undo kept"
+        );
     }
 
-    /// A write that fails partway: the snapshot was stored first and records the landed write's
-    /// id, so undo restores everything (PUT 100, POST 50) and then drops the snapshot.
+    /// The draft's snapshot_id still "matches" (a stale GET would say so) but the tracks changed
+    /// since the draft: conflict, nothing written. Order counts too.
+    #[test]
+    fn changed_items_are_a_conflict_whatever_the_snapshot_id() {
+        for (name, have, drafted) in [
+            ("studio-conflict", "AB", "ABC"),
+            ("studio-conflict-order", "BA", "AB"),
+        ] {
+            let stub = Stub::new(&[(200, &pg(&v(have)))]);
+            let sp = connected(&temp_dir(name), &stub);
+            let e = block(apply_studio_draft(&sp, &draft(drafted, "s1"), &v("A"))).unwrap_err();
+            assert_eq!(e.code, Code::Conflict, "{have} vs {drafted}");
+            assert_eq!(stub.calls().len(), 1, "nothing written");
+            assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
+        }
+    }
+
+    /// The snapshot_id moved since the draft (a content-neutral bump) but the tracks are the
+    /// same: apply goes ahead.
+    #[test]
+    fn moved_snapshot_id_with_same_items_applies() {
+        let d = temp_dir("studio-ok");
+        let stub = Stub::new(&[(200, &pg(&v("AB"))), (200, r#"{"snapshot_id":"s9"}"#)]);
+        let sp = connected(&d, &stub);
+        let a = block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("B"))).unwrap();
+        assert_eq!(stub.calls()[1].0, "PUT");
+        no_snapshot_get(&stub);
+        assert_eq!(
+            a.undo_id,
+            block(get_last_apply(&sp, PL)).unwrap().unwrap().undo_id
+        );
+    }
+
+    /// A write that fails partway: the snapshot was stored first and expects the landed prefix,
+    /// so undo restores everything (PUT 100, POST 50) and then drops the snapshot.
     #[test]
     fn snapshot_is_stored_before_the_write_and_undo_restores_it() {
         let d = temp_dir("studio-apply");
         let orig = many(150);
-        let keep: Vec<String> = orig.iter().rev().map(|t| t.0.clone()).collect();
+        let keep: Vec<String> = orig.iter().rev().cloned().collect();
         let stub = Stub::new(&[
-            (200, &page(&orig)),
-            (200, r#"{"snapshot_id":"s1"}"#),
+            (200, &pg(&orig)),
             (200, r#"{"snapshot_id":"s2"}"#), // PUT lands
             (500, ""),                        // POST fails
-            (200, r#"{"snapshot_id":"s2"}"#), // re-read: the POST didn't land
+            (200, &pg(&keep[..100])),         // re-read: the POST didn't land
         ]);
         let sp = connected(&d, &stub);
-        let e = block(apply_studio_draft(&sp, &draft("AB", "s1"), &keep)).unwrap_err();
+        let e = block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).unwrap_err();
         assert_eq!(e.code, Code::Internal);
         let rec = block(get_last_apply(&sp, PL))
             .unwrap()
             .expect("snapshot first");
 
-        stub.push(200, r#"{"snapshot_id":"s2"}"#); // undo's re-read: our own partial write
+        stub.push(200, &pg(&keep[..100])); // undo's read: our own partial write
         stub.push(200, r#"{"snapshot_id":"s3"}"#);
         stub.push(201, r#"{"snapshot_id":"s4"}"#);
         block(undo_last_apply(&sp, PL)).unwrap();
         let reqs = stub.requests.lock().unwrap();
-        let writes: Vec<_> = reqs.iter().skip(6).collect();
+        let writes: Vec<_> = reqs.iter().skip(5).collect();
         assert_eq!(writes.len(), 2);
         assert_eq!(
             (writes[0].method.clone(), writes[1].method.clone()),
             (Method::PUT, Method::POST)
         );
-        let uris = |i: usize| match &writes[i].body {
-            Some(Body::Json(b)) => b["uris"].as_array().unwrap().len(),
-            _ => 0,
-        };
-        assert_eq!((uris(0), uris(1)), (100, 50));
-        match &writes[0].body {
-            Some(Body::Json(b)) => assert_eq!(b["uris"][0], orig[0].0),
-            _ => panic!("json body"),
-        }
+        assert_eq!(body_uris(&writes[0].body), orig[..100]);
+        assert_eq!(body_uris(&writes[1].body), orig[100..]);
         drop(reqs);
         assert!(rec.undo_id > 0);
         assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
@@ -601,128 +661,112 @@ mod tests {
     fn failed_first_write_drops_the_snapshot() {
         let d = temp_dir("studio-first-fail");
         let stub = Stub::new(&[
-            (200, &page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")])),
-            (200, r#"{"snapshot_id":"s1"}"#),
+            (200, &pg(&v("AB"))),
             (500, ""),
-            (200, r#"{"snapshot_id":"s1"}"#), // re-read: didn't land
+            (200, &pg(&v("AB"))), // re-read: didn't land
         ]);
         let sp = connected(&d, &stub);
         assert!(block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("A"))).is_err());
         assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
-    /// An undo that fails after its PUT landed: the retry compares against that PUT's id, not the
+    /// An undo that fails after its PUT landed: the retry expects that PUT's list, not the
     /// apply's, so it goes through instead of a false `conflict`.
     #[test]
     fn partial_undo_can_be_retried() {
         let d = temp_dir("studio-undo-retry");
+        let orig = many(150);
         let stub = Stub::new(&[
-            (200, &page(&many(150))),
-            (200, r#"{"snapshot_id":"s1"}"#),
+            (200, &pg(&orig)),
             (200, r#"{"snapshot_id":"s2"}"#), // apply PUT
-            (200, r#"{"snapshot_id":"s2"}"#), // undo re-read
+            (200, &pg(&v("A"))),              // undo's read
             (200, r#"{"snapshot_id":"s5"}"#), // undo PUT lands
             (500, ""),                        // undo POST fails
-            (200, r#"{"snapshot_id":"s5"}"#), // re-read: the POST didn't land
+            (200, &pg(&orig[..100])),         // re-read: the POST didn't land
         ]);
         let sp = connected(&d, &stub);
-        block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("A"))).unwrap();
+        block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &v("A"))).unwrap();
         assert!(block(undo_last_apply(&sp, PL)).is_err());
         assert!(block(get_last_apply(&sp, PL)).unwrap().is_some());
-        stub.push(200, r#"{"snapshot_id":"s5"}"#); // retry's re-read: the undo's own PUT
+        stub.push(200, &pg(&orig[..100])); // retry's read: the undo's own PUT
         stub.push(200, r#"{"snapshot_id":"s6"}"#);
         stub.push(201, r#"{"snapshot_id":"s7"}"#);
         block(undo_last_apply(&sp, PL)).unwrap();
         assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
-    /// The first write's answer is lost but the re-read shows it landed: the snapshot stays (the
-    /// playlist did change) and records that id, so undo goes through.
+    /// The first write's answer is lost but the re-read shows the written list: the snapshot
+    /// stays (the playlist did change) and expects that list, so undo goes through.
     #[test]
     fn unanswered_first_write_that_landed_keeps_the_undo() {
         let d = temp_dir("studio-lost-answer");
         let stub = Stub::new(&[
-            (200, &page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")])),
-            (200, r#"{"snapshot_id":"s1"}"#),
-            (502, ""),                        // PUT: gateway error, but it ran
-            (200, r#"{"snapshot_id":"s2"}"#), // re-read: moved
+            (200, &pg(&v("AB"))),
+            (502, ""),           // PUT: gateway error, but it ran
+            (200, &pg(&v("A"))), // re-read: landed
         ]);
         let sp = connected(&d, &stub);
         assert!(block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("A"))).is_err());
         assert!(block(get_last_apply(&sp, PL)).unwrap().is_some());
-        stub.push(200, r#"{"snapshot_id":"s2"}"#); // undo's re-read
+        stub.push(200, &pg(&v("A"))); // undo's read
         stub.push(200, r#"{"snapshot_id":"s3"}"#);
         block(undo_last_apply(&sp, PL)).unwrap();
         assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
-    /// No answer and the re-read fails too (offline): the snapshot stays with the list the write
-    /// sent; a later undo that finds the playlist holding exactly that treats the moved id as the
-    /// app's own write and restores, instead of a false `conflict` that drops the undo.
+    /// No answer and the re-read fails too (offline): the snapshot stays and expects either the
+    /// list before that write or the list it sent; a later undo that finds either restores, and
+    /// anything else (someone's edit) is still a conflict.
     #[test]
     fn unknown_write_outcome_keeps_the_undo_and_undo_recognises_it() {
-        let d = temp_dir("studio-unknown");
         let orig = many(150);
-        let keep: Vec<String> = orig.iter().rev().map(|t| t.0.clone()).collect();
-        let stub = Stub::new(&[
-            (200, &page(&orig)),
-            (200, r#"{"snapshot_id":"s1"}"#),
-            (502, ""), // PUT: unknown
-            (502, ""), // re-read fails too
-        ]);
-        let sp = connected(&d, &stub);
-        assert!(block(apply_studio_draft(&sp, &draft("AB", "s1"), &keep)).is_err());
-        assert!(
-            block(get_last_apply(&sp, PL)).unwrap().is_some(),
-            "undo dropped"
-        );
-        let landed: Vec<(String, &str, &str)> =
-            keep[..100].iter().map(|u| (u.clone(), "n", "a")).collect();
-        stub.push(200, r#"{"snapshot_id":"s2"}"#); // moved: our PUT did land
-        stub.push(200, &page(&landed)); // holds exactly what the PUT sent
-        stub.push(200, r#"{"snapshot_id":"s3"}"#);
-        stub.push(201, r#"{"snapshot_id":"s4"}"#);
-        block(undo_last_apply(&sp, PL)).unwrap();
-        assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
-
-        // someone else's edit (other items) under the same unknown state is still a conflict
-        let stub = Stub::new(&[
-            (200, &page(&orig)),
-            (200, r#"{"snapshot_id":"s1"}"#),
-            (502, ""),
-            (502, ""),
-            (200, r#"{"snapshot_id":"s9"}"#),
-            (200, &page(&[(t(b'Z'), "n", "a")])),
-        ]);
-        let d = temp_dir("studio-unknown-edit");
-        let sp = connected(&d, &stub);
-        assert!(block(apply_studio_draft(&sp, &draft("AB", "s1"), &keep)).is_err());
+        let keep: Vec<String> = orig.iter().rev().cloned().collect();
+        let unknown = |name: &str, found: &[String]| {
+            let stub = Stub::new(&[
+                (200, &pg(&orig)),
+                (502, ""), // PUT: unknown
+                (502, ""), // re-read fails too
+            ]);
+            let sp = connected(&temp_dir(name), &stub);
+            assert!(block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).is_err());
+            assert!(
+                block(get_last_apply(&sp, PL)).unwrap().is_some(),
+                "undo dropped"
+            );
+            stub.push(200, &pg(found));
+            stub.push(200, r#"{"snapshot_id":"s3"}"#);
+            stub.push(201, r#"{"snapshot_id":"s4"}"#);
+            block(undo_last_apply(&sp, PL)).map(|_| block(get_last_apply(&sp, PL)).unwrap())
+        };
         assert_eq!(
-            block(undo_last_apply(&sp, PL)).unwrap_err().code,
+            unknown("studio-unknown-landed", &keep[..100]).unwrap(),
+            None
+        );
+        assert_eq!(unknown("studio-unknown-not", &orig).unwrap(), None);
+        assert_eq!(
+            unknown("studio-unknown-edit", &v("Z")).unwrap_err().code,
             Code::Conflict
         );
     }
 
     /// Apply, apply, undo: the older apply's snapshot doesn't come back as a dead Undo (one
-    /// undo per playlist, as the mock).
+    /// undo per playlist, as the mock); undo restores the second apply's starting point.
     #[test]
     fn second_apply_replaces_the_first_undo() {
         let d = temp_dir("studio-two-applies");
-        let two = page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")]);
         let stub = Stub::new(&[
-            (200, &two),
-            (200, r#"{"snapshot_id":"s1"}"#),
+            (200, &pg(&v("AB"))),
             (200, r#"{"snapshot_id":"s2"}"#), // apply 1 PUT
-            (200, &page(&[(t(b'A'), "n", "a")])),
-            (200, r#"{"snapshot_id":"s2"}"#),
+            (200, &pg(&v("A"))),
             (200, r#"{"snapshot_id":"s3"}"#), // apply 2 PUT
-            (200, r#"{"snapshot_id":"s3"}"#), // undo re-read
+            (200, &pg(&v("B"))),              // undo's read
             (200, r#"{"snapshot_id":"s4"}"#), // undo PUT
         ]);
         let sp = connected(&d, &stub);
         block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("A"))).unwrap();
         block(apply_studio_draft(&sp, &draft("A", "s2"), &v("B"))).unwrap();
         block(undo_last_apply(&sp, PL)).unwrap();
+        assert_eq!(body_uris(&stub.requests.lock().unwrap()[5].body), v("A"));
         assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
@@ -732,23 +776,22 @@ mod tests {
     fn disconnect_waits_for_a_running_apply() {
         let d = temp_dir("studio-disconnect");
         let mut stub = Stub::new(&[
-            (200, &page(&many(150))),
-            (200, r#"{"snapshot_id":"s1"}"#),
+            (200, &pg(&many(150))),
             (200, r#"{"snapshot_id":"s2"}"#), // PUT
             (201, r#"{"snapshot_id":"s3"}"#), // POST
         ]);
         stub.delay_ms = 100;
         let sp = std::sync::Arc::new(connected(&d, &stub));
         let sp2 = sp.clone();
-        let keep: Vec<String> = many(150).into_iter().rev().map(|t| t.0).collect();
+        let keep: Vec<String> = many(150).into_iter().rev().collect();
         let job = tauri::async_runtime::spawn(async move {
-            apply_studio_draft(&sp2, &draft("AB", "s1"), &keep).await
+            apply_studio_draft(&sp2, &draft_of(&many(150), "s1"), &keep).await
         });
         std::thread::sleep(std::time::Duration::from_millis(150)); // apply is in flight
         block(sp.disconnect()).unwrap();
         block(job).unwrap().unwrap();
         let methods: Vec<String> = stub.calls().into_iter().map(|c| c.0).collect();
-        assert_eq!(methods, ["GET", "GET", "PUT", "POST"], "every chunk landed");
+        assert_eq!(methods, ["GET", "PUT", "POST"], "every chunk landed");
         assert!(!d.join(crate::cleanup::CACHE_DB).exists());
     }
 
@@ -767,55 +810,11 @@ mod tests {
         assert_eq!(e.code, Code::Validation);
     }
 
-    #[test]
-    fn apply_replaces_with_kept_uris() {
-        let d = temp_dir("studio-ok");
-        let stub = Stub::new(&[
-            (200, &page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")])),
-            (200, r#"{"snapshot_id":"s1"}"#),
-            (200, r#"{"snapshot_id":"s2"}"#),
-        ]);
-        let sp = connected(&d, &stub);
-        let a = block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("B"))).unwrap();
-        let calls = stub.calls();
-        assert_eq!(calls[2].0, "PUT");
-        assert_eq!(
-            a.undo_id,
-            block(get_last_apply(&sp, PL)).unwrap().unwrap().undo_id
-        );
-    }
-
-    /// Edited on Spotify after the apply: undo refuses instead of erasing the edit, and drops the
-    /// snapshot (that id never comes back, so the undo could never go through).
-    #[test]
-    fn undo_after_a_later_edit_is_a_conflict() {
-        let d = temp_dir("studio-undo-conflict");
-        let stub = Stub::new(&[
-            (200, &page(&[(t(b'A'), "n", "a"), (t(b'B'), "n", "a")])),
-            (200, r#"{"snapshot_id":"s1"}"#),
-            (200, r#"{"snapshot_id":"s2"}"#), // PUT answer: the post-apply id
-            (200, r#"{"snapshot_id":"s9"}"#), // undo's re-read: someone edited since
-        ]);
-        let sp = connected(&d, &stub);
-        block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("B"))).unwrap();
-        let e = block(undo_last_apply(&sp, PL)).unwrap_err();
-        assert_eq!(e.code, Code::Conflict);
-        assert_eq!(stub.calls().len(), 4, "no write after the conflict");
-        assert_eq!(
-            block(get_last_apply(&sp, PL)).unwrap(),
-            None,
-            "dead undo kept"
-        );
-    }
-
     /// One apply/undo at a time: while another holds the Studio lock, nothing is sent.
     #[test]
     fn apply_waits_for_a_running_apply_or_undo() {
         let d = temp_dir("studio-lock");
-        let stub = Stub::new(&[
-            (200, &page(&[(t(b'A'), "n", "a")])),
-            (200, r#"{"snapshot_id":"other"}"#),
-        ]);
+        let stub = Stub::new(&[(200, &pg(&v("A")))]);
         let sp = std::sync::Arc::new(connected(&d, &stub));
         let held = block(sp.studio_lock.lock());
         let sp2 = sp.clone();

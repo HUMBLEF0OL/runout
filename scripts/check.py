@@ -157,7 +157,7 @@ def check_spotify_rules():
             if m.group(1) != "replace" and re.search(r"\breplace\(", m.group(2)) and "studio_lock" not in m.group(2):
                 bad.append(f"{studio.relative_to(ROOT).as_posix()}: {m.group(1)} calls replace( without sp.studio_lock")
             # audit M5: a failed playlist write may still have landed (timeout, 5xx): replace must
-            # look at the error (re-read snapshot_id) instead of `?`-ing it away
+            # look at the error (re-read the items) instead of `?`-ing it away
             if m.group(1) == "replace" and re.search(r"send_json\([^;]*?\)\s*\.await\?", m.group(2), re.S):
                 bad.append(f"{studio.relative_to(ROOT).as_posix()}: replace `?`s a write error (it may have landed; re-read)")
     # audit M5: status never turns a Credential Manager read error into 'disconnected'
@@ -229,7 +229,8 @@ def check_mock_r3_parity():
     # M5 audit round 4: the R3 mocks behave like Rust at the M7 switch (API.md §7, M2 WI 3).
     # Every API.md §5 command but status/connect/disconnect answers spotify_auth when disconnected
     # (Rust require_connected); bulk_add_album_tracks skips tracks already in the library; apply
-    # checks snapshot_id after the paginated items read (TSD §5.2 race window).
+    # compares the current items with the draft before the snapshot and the write, and apply/undo
+    # never decide on snapshot_id (GET serves a stale one after a write, TSD §5.2, 2026-10-20).
     mock = (ROOT / "src/mocks/index.ts").read_text(encoding="utf-8")
     sec = re.search(r"^## 5\..*?(?=^## )", (ROOT / "docs/API.md").read_text(encoding="utf-8"), re.S | re.M)
     bad = []
@@ -246,8 +247,12 @@ def check_mock_r3_parity():
     studio = (TAURI / "src/spotify/studio.rs").read_text(encoding="utf-8")
     m = re.search(r"pub async fn apply_studio_draft.*?\n}\n", studio, re.S)
     body = m.group(0) if m else ""
-    if not (0 <= body.find("items(sp") < body.find("snapshot_id(sp")):
-        bad.append("src-tauri/src/spotify/studio.rs: apply_studio_draft must read items( before snapshot_id( (TSD §5.2)")
+    if not (0 <= body.find("current_uris(sp") < body.find("Code::Conflict") < body.find("put_snapshot(") < body.find("replace(")):
+        bad.append("src-tauri/src/spotify/studio.rs: apply_studio_draft must read current_uris(, conflict, put_snapshot(, then replace( (TSD §5.2)")
+    for fn in ("apply_studio_draft", "undo_last_apply", "replace"):
+        m = re.search(rf"\n(?:pub )?async fn {fn}\b.*?\n}}\n", studio, re.S)
+        if not m or "snapshot_id(sp" in m.group(0):
+            bad.append(f"src-tauri/src/spotify/studio.rs: {fn} must not decide on snapshot_id( (GET serves a stale one, TSD §5.2)")
     if bad:
         failures.append("mock R3 parity")
         print("--- mock R3 parity: FAIL\n" + "\n".join(bad))
