@@ -32,6 +32,7 @@
 |---|---|
 | P1 | UI direction D · Pulse chosen: Last.fm-inspired listening story with the user’s opinions, Spotify-compatible dark theme (D29). Design spec: docs/DESIGN.md. |
 | P2 | Delivery order changed to design, then UI on mock data, then backend, then integration (D30). Milestones renumbered M0–M8 (section 14); dates in sections 11, 12, 15 and 18 follow. |
+| P3 | O1 resolved (S1): a Premium Student plan qualifies for Development Mode. Tested 19 Oct 2026 with the user's own developer app: PKCE login and GET /me returned 200 with product = premium. |
 | P3 | New hard stop: the user approves all screen designs before UI build (end of M1). |
 
 ### 0.3 Changes in Version 0.5 (document review fixes)
@@ -554,7 +555,7 @@ Basis: Documented = stated in official Spotify documentation; Interpretation = o
 
 | # | Topic | Finding | Basis | Impact |
 |---|---|---|---|---|
-| S1 | Premium requirement | Development Mode needs the owner to hold active Premium; app stops if it lapses. Plan tiers not specified. | Documented / Student: Unverified | Verify in M5 (O1). |
+| S1 | Premium requirement | Development Mode needs the owner to hold active Premium; app stops if it lapses. Plan tiers not specified by Spotify. Tested: a Premium Student account works (PKCE login and GET /me returned 200 with product = premium, 19 Oct 2026). | Documented / Student: Verified | Resolved in M5 gate (O1). |
 | S2 | User limit | 5 users in Development Mode; extended quota only for organizations with 250k+ MAU. | Documented | Accepted: personal use. |
 | S3 | Playlists | Items readable only for owned/collaborative playlists; write endpoints available. | Documented | Playlist Studio scope. |
 | S4 | Top items | Top 50 for ~4 weeks / ~6 months / ~1 year. | Documented | Display only. |
@@ -713,7 +714,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 
 | # | Item | Owner | Resolve by |
 |---|---|---|---|
-| O1 | Does a Premium Student plan qualify for Development Mode? (S1) | User — create app and test one call | Start of M5 |
+| O1 | Does a Premium Student plan qualify for Development Mode? (S1). Resolved: yes, PKCE login and GET /me returned 200 with product = premium (19 Oct 2026). | Resolved by the user (developer app created, one call tested) | Done |
 | O2 | Export delivery time and allowed request frequency (S14). Partly resolved: Extended streaming history took about 1 day (one account, 19 Oct 2026); Account data export delivery and allowed frequency still open. | User — request both exports in M0 | M4 |
 | O3 | Technology stack and detailed technical design | Resolved: Tauri 2 + React + SQLite (docs/TSD.md) | Done |
 | O4 | Playlist snapshot retention — proposed 30 days | Technical design to confirm | M5 |

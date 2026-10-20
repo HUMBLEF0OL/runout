@@ -23,7 +23,7 @@ Facts the specs rely on, and facts learned while building. The BRD says *what*, 
 | T2 | NSIS update-mode detection for cleanup hook | M6 | agent | open |
 | T3 | Redirect-URI rules, `/me/library` scope | M5 | agent | open |
 | T4 | Incognito WebView2 works with embeds and keeps no cache | M2 | agent | **resolved** 2026-10-18 (wry probe; [windows-tauri.md](windows-tauri.md#webview2)); in-app re-check in M2 |
-| O1 | Student Premium qualifies for Development Mode? | M5 | U-6 then agent | open |
+| O1 | Student Premium qualifies for Development Mode? | M5 | U-6 then agent | resolved 19 Oct 2026: yes ([spotify.md](spotify.md)) |
 | O4 / O5 | Snapshot retention 30 d / cache expiry 7 d | M5 | agent | proposed |
 | O7 | Spotify support on export-data analysis (optional) | before M5 | U-8 | optional |
 
