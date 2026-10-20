@@ -254,7 +254,7 @@ fn rotate(dir: &Path, just_made: &Path) -> Result<()> {
     }
     // Leftovers of a backup that was killed mid-way (`.zip.tmp`, `.<name>.db` snapshot; NFR-05).
     // Callers hold the library lock, so no other backup is in flight in this process
-    // (a second app instance could lose its in-flight .tmp; single-instance is M6).
+    // (a second app instance could lose its in-flight .tmp; tauri-plugin-single-instance prevents that).
     for e in std::fs::read_dir(dir)?.flatten() {
         let n = e.file_name().to_string_lossy().into_owned();
         if (n.starts_with(PREFIX) && n.ends_with(".zip.tmp"))

@@ -63,14 +63,14 @@ pub fn emit_status<R: Runtime>(app: &AppHandle<R>, s: &LoggerStatus) {
     }
     if let Some(i) = app.try_state::<Items<R>>() {
         let paused = s.state == "paused";
-        let _ = i.status.set_text(&tip);
+        let _ = i.status.set_text(tip.replace('&', "&&")); // a menu item reads `&` as an access key
         let _ = i.resume.set_enabled(paused);
         let _ = i.pause_1h.set_enabled(!paused && s.state != "off");
         let _ = i.pause.set_enabled(!paused && s.state != "off");
     }
 }
 
-fn show<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn show<R: Runtime>(app: &AppHandle<R>) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();

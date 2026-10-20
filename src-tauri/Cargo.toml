@@ -32,6 +32,7 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] 
 regex = "1.13.1"
 icu_normalizer = "2.3.0"
 tauri-plugin-autostart = "2.7.0"
+tauri-plugin-single-instance = "2"
 
 [dev-dependencies]
 # tauri::test mock runtime: commands.rs round-trips invokes with the keys src/api.ts sends.

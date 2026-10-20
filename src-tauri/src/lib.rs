@@ -99,6 +99,11 @@ fn fatal_box(text: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First: a second launch (Start menu while hidden in the tray) shows this window and exits, so one
+        // logger, one tray and one pause state exist (TSD §2, §4.5).
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            tray::show(app)
+        }))
         .plugin(tauri_plugin_dialog::init())
         // Rust-only (set_logger); the UI gets no autostart permission (TSD §7).
         .plugin(tauri_plugin_autostart::init(
@@ -160,7 +165,15 @@ Settings file: {file}",
             app.manage(listener);
             backup::spawn_scheduler(app.handle().clone());
             app.manage(std::sync::Mutex::new(logger::Logger::default()));
-            tray::build(app.handle())?;
+            if let Err(e) = tray::build(app.handle()) {
+                // Close hides to the tray, so without one the app can't be reached or quit (TSD §6).
+                fatal_box(&format!(
+                    "Runout couldn't create its tray icon.
+
+{e}"
+                ));
+                std::process::exit(1);
+            }
             logger::poll::spawn(app.handle().clone());
             // spotify_cache.db sweeper: at startup, then daily (TSD §5.2)
             let handle = app.handle().clone();

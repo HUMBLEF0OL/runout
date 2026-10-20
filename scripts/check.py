@@ -504,6 +504,9 @@ def check_release_build():
         bad.append(".env.production must set VITE_MOCK=0 (tauri build -> npm run build)")
     if not re.search(r"export const loadMocks = .*VITE_MOCK", (ROOT / "src" / "api.ts").read_text(encoding="utf-8")):
         bad.append("src/api.ts: loadMocks must check VITE_MOCK beside the import so a real build drops the mocks")
+    lib = (TAURI / "src" / "lib.rs").read_text(encoding="utf-8")
+    if "prevent_close" in lib and "tauri_plugin_single_instance" not in lib:
+        bad.append("src-tauri/src/lib.rs: close hides to tray, so register tauri_plugin_single_instance (one logger, one pause)")
     lang = TAURI / "windows" / "English.nsh"
     if lang.exists():
         keys = re.findall(r"^LangString (\w+) ", lang.read_text(encoding="utf-8"), re.M)
