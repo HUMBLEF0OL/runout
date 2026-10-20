@@ -89,6 +89,11 @@ async fn probe_row(sp: &Spotify, pl: &str) -> String {
     ))
     .await;
     let items = get(format!("/playlists/{id}/items?limit=1")).await;
+    let first = items["items"][0]["item"]["uri"]
+        .as_str()
+        .or(items["items"][0]["track"]["uri"].as_str())
+        .map(|u| u.rsplit(':').next().unwrap_or_default()[..6].to_string())
+        .unwrap_or("?".into());
     let mine: Vec<Value> = sp
         .paginate("/me/playlists?limit=50", 500)
         .await
@@ -99,12 +104,13 @@ async fn probe_row(sp: &Spotify, pl: &str) -> String {
         .map(snap)
         .unwrap_or("-".into());
     format!(
-        "fields={} full={} market={} me/playlists={} items.total={}",
+        "fields={} full={} market={} me/playlists={} items.total={} items[0]={}",
         snap(&fields),
         snap(&full),
         snap(&market),
         listed,
-        items["total"]
+        items["total"],
+        first
     )
 }
 
@@ -134,18 +140,30 @@ fn main() {
         );
         let orig: Vec<String> = draft.tracks.iter().map(|t| t.uri.clone()).collect();
         if probe {
-            // Rewrites the SAME track list (content unchanged), then watches how fast each read
-            // path shows the new snapshot_id.
+            // Real but reversible change: move the last track to the front, watch how fast each
+            // read path shows it (snapshot ids + the first track of the items list), then put the
+            // original order back.
+            let mut moved = orig.clone();
+            moved.rotate_right(1);
+            let short = |u: &str| u.rsplit(':').next().unwrap_or_default()[..6].to_string();
+            println!(
+                "original first track {}, moved-in first track {}",
+                short(&orig[0]),
+                short(&moved[0])
+            );
             println!("before:  {}", probe_row(&sp, &pl).await);
             println!(
-                "rewrote same {} tracks; write-response snapshot_id {}",
-                orig.len(),
-                put_all(&sp, &pl, &orig).await
+                "moved last track to the front; write-response snapshot_id {}",
+                put_all(&sp, &pl, &moved).await
             );
-            for t in 0..10 {
+            for t in 0..21 {
                 println!("+{:>2} s:  {}", t * 3, probe_row(&sp, &pl).await);
                 std::thread::sleep(std::time::Duration::from_secs(3));
             }
+            println!(
+                "restored original order; write-response snapshot_id {}",
+                put_all(&sp, &pl, &orig).await
+            );
             return;
         }
         let dupe = draft.tracks.iter().position(|t| t.dupe_of.is_some());
