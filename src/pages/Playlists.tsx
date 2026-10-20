@@ -91,24 +91,63 @@ function Checkup() {
 }
 
 /* ------------------------------------------------------------------ Studio (live, R3) */
+/** Apply failures after which nothing was written on Spotify (API.md §5): the draft and keep/cut choices stay. */
+const NOTHING_WRITTEN = new Set<AppError["code"]>(["conflict", "validation", "spotify_busy"]);
+const wait = (e: AppError) => (e.retry_after_s ? `in ${e.retry_after_s} s` : "in a moment");
+
 function Studio() {
   const [sp] = useSearchParams();
   const online = useOnline();
   const toast = useToast();
-  const pls = useApi(api.listSpotifyPlaylists);
+  // Not live: the draft is what the user edits, so another write in the app (QuickAdd, a failed apply) must not
+  // swap it out under them or skip the pre-apply conflict check. It reloads only when this page says so.
+  const pls = useApi(api.listSpotifyPlaylists, [], false);
   const sel = pls.data?.find((p) => p.name === sp.get("p")) ?? pls.data?.[0];
-  const draft = useApi(() => (sel ? api.loadStudioDraft(sel.uri) : Promise.resolve(null)), [sel?.uri]);
-  const last = useApi(() => (sel ? api.getLastApply(sel.uri) : Promise.resolve(null)), [sel?.uri]);
+  const draft = useApi(() => (sel ? api.loadStudioDraft(sel.uri) : Promise.resolve(null)), [sel?.uri], false);
+  // Not live either: a refetch that fails elsewhere would drop the Undo banner. Re-read after each apply/undo.
+  const last = useApi(() => (sel ? api.getLastApply(sel.uri) : Promise.resolve(null)), [sel?.uri], false);
   const suggested = useMemo(() => new Set((draft.data?.tracks ?? []).flatMap((t, i, all) => (cutReason(t, all) ? [i] : []))), [draft.data]);
-  const [cut, setCut] = useState<Set<number>>(suggested);
+  // Keep/cut edits belong to one draft: playlist + its track URI list. A reload that reads the same list keeps them.
+  const key = draft.data ? `${draft.data.playlist_uri} ${draft.data.tracks.map((t) => t.uri).join(" ")}` : "";
+  const [edit, setEdit] = useState<{ key: string; cut: Set<number> }>();
+  const cut = edit?.key === key ? edit.cut : suggested;
   const [confirm, setConfirm] = useState<{ d: Draft; diff: StudioDiff } | null>(null);
   const [busy, setBusy] = useState(false);
   // Which call failed decides the banner: a failed apply/undo may have changed the playlist (TSD §5.2).
   const [fail, setFail] = useState<{ op: "preview" | "apply" | "undo"; e: AppError }>();
-  // A freshly loaded draft starts from the suggestions. Every write reloads the draft and the undo
-  // record (api.ts), failed or not, so the error is kept until another playlist is picked or retried.
-  useEffect(() => { setCut(suggested); }, [suggested]);
   useEffect(() => { setFail(undefined); }, [sel?.uri]);
+  const refresh = () => { pls.reload(); draft.reload(); };
+
+  const undo = () => {
+    if (!sel) return;
+    setFail(undefined);
+    api.undoLastApply(sel.uri).then(() => { setEdit(undefined); refresh(); toast(`${sel.name} restored to how it was before you applied`); }, (e) => {
+      const err = api.toAppError(e);
+      setFail({ op: "undo", e: err });
+      if (!["conflict", "not_found", "spotify_busy"].includes(err.code)) refresh(); // may be partly restored
+    }).finally(last.reload);
+  };
+  const banner = !fail ? null
+    : fail.e.code === "conflict" && fail.op === "apply"
+      ? <ErrorBanner error={{ ...fail.e, message: "Someone edited it since you started. Reload to see the new version." }} title="This playlist changed on Spotify." onRetry={() => { setFail(undefined); refresh(); }} />
+      : fail.e.code === "conflict" ? <ErrorBanner error={fail.e} title="This playlist changed on Spotify." />
+      : fail.e.code === "spotify_busy" && fail.op === "undo"
+        ? <ErrorBanner error={{ ...fail.e, message: "Nothing was restored yet, and the undo is kept." }} title={`Spotify may still be finishing your last change. Try Undo again ${wait(fail.e)}.`} />
+      : fail.e.code === "spotify_busy"
+        ? <ErrorBanner error={{ ...fail.e, message: "Nothing was changed, and your draft is kept." }} title={`Spotify is still finishing a change; try again ${wait(fail.e)}.`} />
+      : fail.op === "undo" && fail.e.code === "not_found"
+        ? <ErrorBanner error={{ ...fail.e, message: "It was already undone, or its 30 days are over. Nothing was changed." }} title="There's nothing to undo." />
+      : fail.op === "undo" ? <ErrorBanner error={fail.e} title="Undo didn't finish; the playlist may be partly restored. Try Undo again." />
+      : fail.op === "apply" && fail.e.code !== "validation"
+        ? <ErrorBanner error={fail.e} title="This may have been partly applied on Spotify. If Undo is offered below, it puts the playlist back." />
+        : <ErrorBanner error={fail.e} title="Nothing was changed on Spotify." />;
+  // The warning and the Undo banner stay on screen even when a reload fails or the page is offline.
+  const top = <>{banner}{last.data && (
+    <div className="banner">
+      <span><b>Applied {day(last.data.applied_at)}.</b> <span className="text-text-2">Undo is available until {day(last.data.expires_at)}.</span></span>
+      <button className="btn btn-secondary s" onClick={undo}>Undo last apply</button>
+    </div>
+  )}</>;
 
   const list = pls.data?.map((p) => <PlaylistLink key={p.uri} tab="studio" name={p.name} sel={p === sel}>{pl(p.tracks, "track")}</PlaylistLink>);
   const wrap = (body: ReactNode) => <Layout tab="studio" list={list} title={sel?.name ?? "Studio"} subline={sel && `Your playlist, ${pl(sel.tracks, "track")}`}>{body}</Layout>;
@@ -117,42 +156,31 @@ function Studio() {
     <Empty h="Connect Spotify to use Studio" line="Studio edits your own playlists on Spotify. The check-up from your export works without connecting.">
       <Link className="btn btn-primary" to="/settings">Connect Spotify in Settings</Link>
     </Empty>);
-  if (!online || err?.code === "offline") return wrap(<Empty h="Studio needs a connection" line="Your draft is kept. Reconnect to read the playlist from Spotify and apply changes." />);
+  if (!online || err?.code === "offline") return wrap(<>{top}<Empty h="Studio needs a connection" line="Your draft is kept. Reconnect to read the playlist from Spotify and apply changes." /></>);
   if (pls.loading || draft.loading) return wrap(<><span className="text-muted">Reading the playlist from Spotify…</span><SkelRows n={8} /></>);
-  if (err) return wrap(<ErrorBanner error={err} title="Couldn't read the playlist from Spotify." onRetry={() => { pls.reload(); draft.reload(); }} />);
+  if (err) return wrap(<>{top}<ErrorBanner error={err} title="Couldn't read the playlist from Spotify." onRetry={refresh} /></>);
   if (!sel || !draft.data) return wrap(<Empty h="No playlists of yours on Spotify" line="Studio edits playlists you own. Make one in Spotify, then come back." />);
 
   const d = draft.data;
   const changes = d.tracks.map((t, i) => ({ t, i })).filter(({ i }) => cut.has(i));
-  const toggle = (i: number, v: "keep" | "cut") => setCut((s) => { const n = new Set(s); if (v === "cut") n.add(i); else n.delete(i); return n; });
+  const toggle = (i: number, v: "keep" | "cut") => { const n = new Set(cut); if (v === "cut") n.add(i); else n.delete(i); setEdit({ key, cut: n }); };
   const openConfirm = () => { setBusy(true); api.previewStudioApply(d, keepList(d.tracks, cut)).then((diff) => setConfirm({ d, diff }), (e) => setFail({ op: "preview", e: api.toAppError(e) })).finally(() => setBusy(false)); };
-  // Rejections: api.ts has already reloaded draft and last (a kept undo shows its banner).
-  const undo = () => { setFail(undefined); api.undoLastApply(sel.uri).then(() => toast(`${sel.name} restored to how it was before you applied`), (e) => setFail({ op: "undo", e: api.toAppError(e) })); };
   const apply = () => {
     setBusy(true); setFail(undefined);
     api.applyStudioDraft(d, keepList(d.tracks, cut)).then(() => {
-      setConfirm(null);
+      setConfirm(null); setEdit(undefined); refresh();
       toast(`${pl(changes.length, "change")} applied to ${sel.name}. Undo is available for 30 days.`, undo);
-    }, (e) => { setConfirm(null); setFail({ op: "apply", e: api.toAppError(e) }); }).finally(() => setBusy(false));
+    }, (e) => {
+      const err = api.toAppError(e);
+      setConfirm(null); setFail({ op: "apply", e: err });
+      // May have landed: read the playlist again (keep/cut survive if its track list didn't change).
+      if (!NOTHING_WRITTEN.has(err.code)) refresh();
+    }).finally(() => { setBusy(false); last.reload(); });
   };
-  const banner = !fail ? null
-    : fail.e.code === "conflict" && fail.op === "apply"
-      ? <ErrorBanner error={{ ...fail.e, message: "Someone edited it since you started. Reload to see the new version." }} title="This playlist changed on Spotify." onRetry={() => { setFail(undefined); draft.reload(); }} />
-      : fail.e.code === "conflict" ? <ErrorBanner error={fail.e} title="This playlist changed on Spotify." />
-      : fail.op === "undo" ? <ErrorBanner error={fail.e} title="Undo didn't finish; the playlist may be partly restored. Try Undo again." />
-      : fail.op === "apply" && fail.e.code !== "validation"
-        ? <ErrorBanner error={fail.e} title="This may have been partly applied on Spotify. If Undo is offered below, it puts the playlist back." />
-        : <ErrorBanner error={fail.e} title="Nothing was changed on Spotify." />;
 
   return wrap(<>
     <Attribution uri={sel.uri} name={sel.name}><span className="text-text-2 text-sm">Tracks from Spotify, read just now, with your own ratings and tags. No listening data is used here.</span></Attribution>
-    {banner}
-    {last.data && (
-      <div className="banner">
-        <span><b>Applied {day(last.data.applied_at)}.</b> <span className="text-text-2">Undo is available until {day(last.data.expires_at)}.</span></span>
-        <button className="btn btn-secondary s" onClick={undo}>Undo last apply</button>
-      </div>
-    )}
+    {top}
     <div className="flex flex-wrap gap-7 items-start">
       <div className="card pad-s flex-[1.5_1_520px] min-w-0 flex flex-col gap-3.5"><div className="list">
         {d.tracks.map((t, i) => {
@@ -179,7 +207,7 @@ function Studio() {
           </div>)) : <span className="text-muted">No changes yet.</span>}
         <button className="btn btn-primary l" disabled={!changes.length || busy} onClick={openConfirm}>{busy && !confirm ? <Dots /> : `Apply ${pl(changes.length, "change")} to Spotify`}</button>
         <span className="text-muted text-xs leading-[1.45]">Runout checks the playlist hasn't changed on Spotify first. You can undo for 30 days.</span>
-        <button className="btn btn-secondary" onClick={() => { setCut(new Set(suggested)); toast("Draft discarded"); }}>Discard draft</button>
+        <button className="btn btn-secondary" onClick={() => { setEdit(undefined); toast("Draft discarded"); }}>Discard draft</button>
       </aside>
     </div>
     {confirm && (

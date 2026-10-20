@@ -512,6 +512,10 @@ export async function mockCall<T>(cmd: string, args: Record<string, unknown>): P
       if (cmd === "undo_last_apply") { spotifyOn(); noUndo(args.playlistUri as string); lastApply.delete(args.playlistUri as string); } // Rust drops a dead undo
       fail("conflict", CONFLICT[cmd]);
     }
+    if (dev.view === "busy" && (cmd === "apply_studio_draft" || cmd === "undo_last_apply")) {
+      spotifyOn(); if (cmd === "undo_last_apply") noUndo(args.playlistUri as string);
+      fail("spotify_busy", "Spotify hasn't finished the last change to this playlist yet.", { retry_after_s: 90 });
+    }
   }
   // As Rust: a write that failed without a 4xx may have landed, so its effect stays (API.md apply / create rows).
   if (dev.view === "partial" && (cmd === "apply_studio_draft" || cmd.startsWith("create_playlist_from"))) {
