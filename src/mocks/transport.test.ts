@@ -42,12 +42,14 @@ describe("M6 MVP transport", () => {
       "list_backups", "backup_now", "pick_backup", "check_backup", "restore_backup", "choose_backup_dir",
       "move_library", "delete_library", "record_page_visit", "get_success_metrics",
     ]);
-    await Promise.all([api.getLoggerStatus(), api.getSpotifyStatus()]);
+    // R2/R3 aren't on Rust yet and a real build carries no mocks: they fail instead of showing mock data.
+    await expect(api.getLoggerStatus()).rejects.toThrow(/Release 2\/3/);
+    await expect(api.getSpotifyStatus()).rejects.toThrow(/Release 2\/3/);
     expect(invoke).toHaveBeenCalledTimes(calls.length);
-    expect(mockCall).toHaveBeenCalledTimes(2);
+    expect(mockCall).not.toHaveBeenCalled();
   });
 
-  it("uses Rust for MVP events while leaving the R2 logger event mocked", async () => {
+  it("uses Rust for MVP events and never loads mocks for the R2 logger event", async () => {
     const api = await import("../api");
     const invoke = vi.fn(async <T>(_cmd: string, _args?: Record<string, unknown>) => undefined as T) as unknown as Parameters<typeof api.__setTransportForTests>[0]["invoke"];
     const listen = vi.fn(async () => () => undefined);
@@ -61,7 +63,7 @@ describe("M6 MVP transport", () => {
     const offLogger = api.onEvent("logger-status", () => undefined);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(listen).toHaveBeenCalledTimes(5);
-    expect(mockListen).toHaveBeenCalledTimes(1);
+    expect(mockListen).not.toHaveBeenCalled();
     offOnline();
     offCapture();
     offDisabled();

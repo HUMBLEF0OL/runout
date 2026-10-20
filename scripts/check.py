@@ -497,6 +497,8 @@ def check_release_build():
     env = ROOT / ".env.production"
     if not (env.exists() and re.search(r"^VITE_MOCK=0\s*$", env.read_text(encoding="utf-8"), re.M)):
         bad.append(".env.production must set VITE_MOCK=0 (tauri build -> npm run build)")
+    if not re.search(r"export const loadMocks = .*VITE_MOCK", (ROOT / "src" / "api.ts").read_text(encoding="utf-8")):
+        bad.append("src/api.ts: loadMocks must check VITE_MOCK beside the import so a real build drops the mocks")
     lang = TAURI / "windows" / "English.nsh"
     if lang.exists():
         keys = re.findall(r"^LangString (\w+) ", lang.read_text(encoding="utf-8"), re.M)

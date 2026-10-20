@@ -142,8 +142,11 @@ export interface SpotifyEntry { uri: string; name: string; artist: string; in_li
 
 /* ------------------------------------------------------------------ transport */
 export const MOCK = import.meta.env.VITE_MOCK !== "0";
-// Loaded on demand so R2/R3 can keep using the M2 dataset during M6.
-export const loadMocks = () => import("./mocks");
+// Loaded on demand: main.tsx awaits it before the first render on mocks. A VITE_MOCK=0 build (.env.production)
+// shows MVP screens only (useRelease), which all run on Rust, so it drops the mocks and their dataset entirely
+// and an R2/R3 call there fails rather than show mock data. The env check sits beside the import, not via MOCK,
+// so the bundler can prove the branch dead.
+export const loadMocks = () => (import.meta.env.VITE_MOCK !== "0" ? import("./mocks") : Promise.reject(new Error("Not available until Release 2/3 runs on your data")));
 /** API.md §3 commands switched to Rust in M6; R2/R3 stay mocked until M7. */
 export const MVP_COMMANDS = new Set([
   "get_counts", "get_dashboard", "list_items", "get_item", "create_item", "update_item", "set_status",
@@ -194,7 +197,7 @@ export interface EventMap {
 export function onEvent<K extends keyof EventMap>(name: K, cb: (payload: EventMap[K]) => void): () => void {
   const p = !MOCK && MVP_EVENTS.has(name)
     ? listenEvent<EventMap[K]>(name, (e) => cb(e.payload))
-    : loadMocks().then((m) => m.mockListen(name, cb as (p: unknown) => void));
+    : loadMocks().then((m) => m.mockListen(name, cb as (p: unknown) => void), () => () => {}); // no mocks: R2/R3 events never fire
   return () => { p.then((un) => un()); };
 }
 
