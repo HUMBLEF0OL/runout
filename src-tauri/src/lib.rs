@@ -16,6 +16,7 @@ pub mod settings;
 pub mod spotify;
 pub mod state;
 pub mod text;
+pub mod tray;
 pub mod usage;
 
 use std::time::Duration;
@@ -105,6 +106,13 @@ pub fn run() {
             None,
         ))
         .invoke_handler(commands::handler())
+        // Closing the window hides it to the tray; the logger keeps running (TSD §2).
+        .on_window_event(|w, e| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = e {
+                api.prevent_close();
+                let _ = w.hide();
+            }
+        })
         .setup(|app| {
             let st = match state::AppState::init(app.handle()) {
                 Ok(st) => st,
@@ -152,6 +160,7 @@ Settings file: {file}",
             app.manage(listener);
             backup::spawn_scheduler(app.handle().clone());
             app.manage(std::sync::Mutex::new(logger::Logger::default()));
+            tray::build(app.handle())?;
             logger::poll::spawn(app.handle().clone());
             // spotify_cache.db sweeper: at startup, then daily (TSD §5.2)
             let handle = app.handle().clone();

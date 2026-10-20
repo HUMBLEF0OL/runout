@@ -514,8 +514,9 @@ pub fn get_logger_status(st: St<'_>, lg: Lg<'_>) -> Result<LoggerStatus> {
 }
 
 /// Apply `f` to the settings; when that stops logging, the current play is closed first (written
-/// if ≥ 1 s), so paused or off time writes nothing. Emits `play-logged` / `logger-status`.
-fn change_logger<R: Runtime>(
+/// if ≥ 1 s), so paused or off time writes nothing. Emits `play-logged` / `logger-status` (and
+/// updates the tray). Also the tray's pause/resume path.
+pub(crate) fn change_logger<R: Runtime>(
     app: &AppHandle<R>,
     st: &AppState,
     lg: &std::sync::Mutex<Logger>,
@@ -537,7 +538,7 @@ fn change_logger<R: Runtime>(
         let _ = app.emit("play-logged", logger::play(&db, id)?);
     }
     let status = lg.status(&db, &s, now)?;
-    let _ = app.emit("logger-status", &status);
+    crate::tray::emit_status(app, &status);
     Ok(status)
 }
 

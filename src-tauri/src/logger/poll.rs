@@ -64,7 +64,7 @@ fn emit_if_changed<R: Runtime>(
         k
     };
     if last.as_ref().map(key) != Some(key(&s)) {
-        let _ = app.emit("logger-status", &s);
+        crate::tray::emit_status(app, &s);
         *last = Some(s);
     }
 }
