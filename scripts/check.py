@@ -156,10 +156,13 @@ def check_spotify_rules():
         for m in re.finditer(fn_re, studio.read_text(encoding="utf-8"), re.S):
             if m.group(1) != "replace" and re.search(r"\breplace\(", m.group(2)) and "studio_lock" not in m.group(2):
                 bad.append(f"{studio.relative_to(ROOT).as_posix()}: {m.group(1)} calls replace( without sp.studio_lock")
-            # audit M5: a failed playlist write may still have landed (timeout, 5xx): replace must
-            # look at the error (re-read the items) instead of `?`-ing it away
+            # audit M5 (r2): a failed playlist write may still have landed (timeout, 5xx): replace
+            # decides by client::refused(&e) (4xx = not landed, else unknown), never `?` and never
+            # a re-read (a re-read proves nothing, TSD §5.2)
             if m.group(1) == "replace" and re.search(r"send_json\([^;]*?\)\s*\.await\?", m.group(2), re.S):
-                bad.append(f"{studio.relative_to(ROOT).as_posix()}: replace `?`s a write error (it may have landed; re-read)")
+                bad.append(f"{studio.relative_to(ROOT).as_posix()}: replace `?`s a write error; use client::refused(&e) (4xx = not landed, else unknown; TSD §5.2)")
+            if m.group(1) == "replace" and re.search(r"current_uris\(|items\(sp", m.group(2)):
+                bad.append(f"{studio.relative_to(ROOT).as_posix()}: replace re-reads the items; a re-read proves nothing after a failed write (TSD §5.2)")
     # audit M5: status never turns a Credential Manager read error into 'disconnected'
     spmod = d / "mod.rs"
     if spmod.exists():
@@ -227,10 +230,27 @@ def check_no_snapshot_id_compare_in_docs():
     # (GET serves a stale one); a session following the plan would bring the check back (TSD §5.2).
     bad = [f"{p.relative_to(ROOT).as_posix()}:{i}" for p in (ROOT / "docs").rglob("*.md")
            for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
-           if re.search(r"compar\w*\s+(?:the\s+)?`?snapshot_id", line, re.I)]
+           if re.search(r"compar\w*\s+(?:the\s+)?`?snapshot_id", line, re.I)
+           # audit r2: only the snapshot_id GET is verified stale; items freshness is an Assumption
+           or ("eventually consistent" in line and "snapshot_id" not in line and "Assumption" not in line)]
     if bad:
         failures.append("no snapshot_id compare in docs")
         print("--- no snapshot_id compare in docs: FAIL (Studio checks track content, TSD §5.2)\n" + "\n".join(bad))
+
+
+def check_example_usage():
+    # audit r2: a dev example's `--flag` that its `//!` usage line doesn't name is a step only a
+    # commit message describes (studio_roundtrip --probe).
+    bad = []
+    for p in (ROOT / "src-tauri" / "examples").glob("*.rs"):
+        src = p.read_text(encoding="utf-8")
+        usage = "\n".join(l for l in src.splitlines() if l.startswith("//!"))
+        for flag in re.findall(r'a == "(--[\w-]+)"', src):
+            if flag not in usage:
+                bad.append(f"{p.relative_to(ROOT).as_posix()}: {flag} missing from the //! usage")
+    if bad:
+        failures.append("example usage")
+        print("--- example usage: FAIL\n" + "\n".join(bad))
 
 
 def check_mock_conflicts():
@@ -604,6 +624,7 @@ check_mock_conflicts()
 check_mock_r3_parity()
 check_dropped_cache_columns()
 check_no_snapshot_id_compare_in_docs()
+check_example_usage()
 check_no_committed_client_id()
 check_deferrals_tracked()
 check_listening_event_reads()

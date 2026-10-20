@@ -708,7 +708,7 @@ mod tests {
     }
 
     /// A 502/timeout only means the client stopped waiting: the PUT may land after any re-read
-    /// (GETs are eventually consistent, 20 Oct 2026). So no re-read decides it: the snapshot stays
+    /// (the server may still be processing it, TSD §5.2). So no re-read decides it: the snapshot stays
     /// and expects the list before that write or the list it sent; a later undo that finds either
     /// restores, and anything else (someone's edit) is still a conflict.
     #[test]
@@ -745,6 +745,28 @@ mod tests {
             unknown("studio-unknown-edit", &v("Z")).unwrap_err().code,
             Code::Conflict
         );
+    }
+
+    /// A later chunk's answer is lost (502) but it ran: undo finds the whole written list (the
+    /// `after` of chunk 3, not chunk 1's) and restores instead of a false `conflict`.
+    #[test]
+    fn unknown_later_chunk_that_landed_keeps_the_undo() {
+        let orig = many(250);
+        let keep: Vec<String> = orig.iter().rev().cloned().collect();
+        let stub = Stub::new(&[
+            (200, &pg(&orig)),
+            (200, r#"{"snapshot_id":"s2"}"#), // PUT 100
+            (201, r#"{"snapshot_id":"s3"}"#), // POST 100
+            (502, ""),                        // POST 50: unknown, but it ran
+        ]);
+        let sp = connected(&temp_dir("studio-unknown-later"), &stub);
+        assert!(block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).is_err());
+        stub.push(200, &pg(&keep)); // undo's read: all 250 of our own writes
+        stub.push(200, r#"{"snapshot_id":"s4"}"#);
+        stub.push(201, r#"{"snapshot_id":"s5"}"#);
+        stub.push(201, r#"{"snapshot_id":"s6"}"#);
+        block(undo_last_apply(&sp, PL)).unwrap();
+        assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
     /// After an apply the user adds an episode or a local file on Spotify (or grows it past the

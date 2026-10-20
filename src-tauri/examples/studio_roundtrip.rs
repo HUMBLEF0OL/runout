@@ -4,11 +4,13 @@
 //! refresh can't rotate the refresh token out from under a running app (check.py). Needs
 //! RUNOUT_SPOTIFY_CLIENT_ID set; uses a throwaway cache DB in the temp folder.
 //!
-//! `cargo run --example studio_roundtrip -- spotify:playlist:<22 chars> [--conflict]`
+//! `cargo run --example studio_roundtrip -- spotify:playlist:<22 chars> [--conflict | --probe]`
 //!
 //! Loads the draft, cuts 3 tracks and 1 duplicate, prints the diff, applies, waits for Enter, undoes.
 //! `--conflict`: pauses after loading the draft so you edit the playlist in Spotify, then expects
 //! apply to be blocked with `conflict` (nothing written).
+//! `--probe`: moves the last track to the front, prints what the snapshot_id and items reads say
+//! every 3 s for 60 s, then restores the order (is the items read fresh? G-30).
 use std::sync::Mutex;
 
 use reqwest::Method;

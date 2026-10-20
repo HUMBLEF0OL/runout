@@ -110,17 +110,32 @@ async fn create(
     }
     uris.truncate(MAX_TRACKS);
 
+    // Only a 4xx proves the create didn't land (TSD §5.2); otherwise (timeout, 5xx, a 2xx
+    // without id/uri) the playlist may exist, and a blind retry would make a second one.
+    let maybe = |e: AppError| {
+        if super::client::refused(&e) {
+            return e;
+        }
+        AppError {
+            message: format!(
+                "{} The playlist may have been created on Spotify; check there before trying again.",
+                e.message
+            ),
+            ..e
+        }
+    };
     let pl = sp
         .send_json(
             Method::POST,
             "/me/playlists",
             Some(json!({ "name": name, "public": public })),
         )
-        .await?;
+        .await
+        .map_err(maybe)?;
     let (Some(id), Some(playlist_uri)) = (pl["id"].as_str(), pl["uri"].as_str()) else {
-        return Err(AppError::internal(
+        return Err(maybe(AppError::internal(
             "Spotify didn't return the new playlist.",
-        ));
+        )));
     };
     // The playlist exists from here on: a failed chunk keeps its code (busy, offline…) but says
     // the playlist is there and how full, with its URI in `detail`, so the UI can link to it
@@ -313,6 +328,28 @@ mod tests {
         let sp = connected(&d, &stub);
         let e = block(create_playlist_from_items(&sp, &db, &ids, "Big", true)).unwrap_err();
         assert!(e.message.contains("only 100 of 150"), "{}", e.message);
+    }
+
+    /// The create call itself fails without a 4xx (or answers 2xx without id/uri): Spotify may
+    /// have made the playlist, so the error says to check before retrying (a retry would make a
+    /// second one). A 4xx refusal proves it wasn't made: no such hint.
+    #[test]
+    fn unknown_create_outcome_says_to_check_spotify() {
+        for (status, body, hint) in [(503, "", true), (201, "{}", true), (400, "", false)] {
+            let d = temp_dir(&format!("create-unknown-{status}"));
+            let db = lib(&d);
+            let t = add(&db, "track", Some(format!("spotify:track:{}", id22(1))));
+            let stub = Stub::new(&[(status, body)]);
+            let sp = connected(&d, &stub);
+            let e = block(create_playlist_from_items(&sp, &db, &[t], "Mix", false)).unwrap_err();
+            assert_eq!(
+                e.message.contains("may have been created"),
+                hint,
+                "{status}: {}",
+                e.message
+            );
+            assert_eq!(stub.calls().len(), 1, "nothing after a failed create");
+        }
     }
 
     #[test]
