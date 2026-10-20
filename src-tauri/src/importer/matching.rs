@@ -82,10 +82,15 @@ impl Matcher {
             .iter()
             .filter(|(_, has_uri, _)| uri.is_none() || !has_uri)
             .collect();
-        if let [(id, _, _)] = cands.as_slice() {
+        let parts = artists(artist);
+        // A lone name match still needs the artist to agree when the item has linked artists:
+        // the real-export spot-check (20 Oct 2026) found same-titled songs by other artists
+        // ("Rose", "Silence") landing on the user's record. Unmatched is safe; a wrong link isn't.
+        if let [(id, _, linked)] = cands.as_slice()
+            && (linked.is_empty() || linked.iter().any(|a| parts.contains(a)))
+        {
             return Some(*id);
         }
-        let parts = artists(artist);
         let mut hits = cands
             .iter()
             .filter(|(_, _, linked)| linked.iter().any(|a| parts.contains(a)));
@@ -115,8 +120,9 @@ mod tests {
                (13, 'track', 'Twice'), (14, 'track', 'Twice'),
                (15, 'album', 'Album Only');
              INSERT INTO item(id, type) VALUES (16, 'track');
+             INSERT INTO item(id, type, display_name) VALUES (17, 'track', 'Solo');
              INSERT INTO item_link VALUES (11, 1, 'by_artist'), (12, 2, 'by_artist'), (12, 3, 'by_artist'),
-               (13, 1, 'by_artist'), (14, 1, 'by_artist');"
+               (13, 1, 'by_artist'), (14, 1, 'by_artist'), (17, 2, 'by_artist');"
         ))
         .unwrap();
         let m = Matcher::load(&c).unwrap();
@@ -137,8 +143,12 @@ mod tests {
                 "Quuxley",
                 Some(12),
             ),
-            // single candidate by normalized name, artist not needed
+            // single candidate by normalized name; it has no linked artist, so any artist goes
             (None, "UNIQUE SONG - Remastered 2011", "Anyone", Some(10)),
+            // single candidate with a linked artist: a different artist's same-titled song stays unmatched
+            (None, "Missing", "Zorblax", None),
+            (None, "Solo", "Stranger", None),
+            (None, "Solo", "Quuxley feat. Someone", Some(17)),
             // tie broken by artist overlap, SMTC multi-artist string
             (None, "Shared Name", "Someone, Quuxley", Some(12)),
             (
