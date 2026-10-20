@@ -121,7 +121,7 @@ def check_spotify_rules():
     d = TAURI / "src" / "spotify"
     if not d.exists():
         return
-    data = re.compile(r"listening_event|exported_playlist")
+    data = re.compile(r"listening_\w+|exported_playlist")
     logs = re.compile(r"\b(println!|eprintln!|print!|eprint!|dbg!|log::\w+!|tracing::\w+!)")
     interp = re.compile(r"\{[^{}\"]*\b(access|refresh|token|client_id|verifier|code|secret)\w*[^{}\"]*\}")
     # audit M5: the same names passed as positional args after the format string (`"{}", t.refresh`)
@@ -134,7 +134,7 @@ def check_spotify_rules():
         in_spotify = p.parent.name == "spotify"
         for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
             if in_spotify and data.search(line):
-                bad.append(f"{rel}:{i}: spotify/ must not reference listening_event / exported_playlist")
+                bad.append(f"{rel}:{i}: spotify/ must not reference listening_* tables / exported_playlist")
             if in_spotify and logs.search(line):
                 bad.append(f"{rel}:{i}: no logging in spotify/ (tokens, client id)")
             if re.search(r"format!|panic!|assert\w*!|with_detail|AppError|e?print(ln)?!", line) and (
@@ -146,8 +146,10 @@ def check_spotify_rules():
                 bad.append(f"{rel}:{i}: load_tokens(..).ok() turns a read error into 'signed out'")
             # audit M5: examples never share the app's credential (a refresh there rotates the
             # app's refresh token and signs the app out)
-            if not in_spotify and "cleanup::CREDENTIAL" in line:
-                bad.append(f"{rel}:{i}: examples must not use the app's credential (cleanup::CREDENTIAL)")
+            # audit r6: Spotify::new(..) passes the same credential, and so does the literal name
+            code = line.split("//", 1)[0]
+            if not in_spotify and re.search(r"cleanup::CREDENTIAL|Spotify::new\(|Runout/spotify", code):
+                bad.append(f"{rel}:{i}: examples must not use the app's credential (CREDENTIAL / Spotify::new / Runout/spotify)")
     # Studio: every fn that writes a playlist (calls replace(..)) holds studio_lock across the
     # whole check -> snapshot -> chunks sequence, so two applies/undos never interleave.
     studio = d / "studio.rs"

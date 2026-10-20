@@ -5,7 +5,8 @@ export interface ApiState<T> { data: T | undefined; error: AppError | undefined;
 
 /** Run a read command, refetch whenever data changes (any write command, dev state switch).
  *  `live: false` reads once per deps change and on `reload()` only: for data the user is editing (Studio draft),
- *  where a refetch triggered by an unrelated write would swap it out under them. */
+ *  where a refetch triggered by an unrelated write would swap it out under them. Its `loading` is true for every
+ *  fetch (deps change, reload), so the old data, still in `data`, is never shown as current. */
 export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = [], live = true): ApiState<T> {
   const [state, setState] = useState<{ data?: T; error?: AppError; loading: boolean }>({ loading: true });
   const seq = useRef(0);
@@ -19,7 +20,7 @@ export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = [], live = tru
     );
   }, deps);
   useEffect(() => { run(); return live ? onInvalidate(run) : undefined; }, [run, live]);
-  return { data: state.data, error: state.error, loading: state.loading && state.data === undefined, reload: run };
+  return { data: state.data, error: state.error, loading: state.loading && (!live || state.data === undefined), reload: run };
 }
 
 // One shared online state for every subscriber (every EmbedSlot uses it): one `get_online` per subscribe

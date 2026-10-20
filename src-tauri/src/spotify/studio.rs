@@ -229,6 +229,13 @@ async fn replace(
                 let _ = sp
                     .with_cache(|db| cache::set_expected(db, undo_id, &json!([before, after]), at));
             }
+            // `spotify_busy` means nothing was written (API.md §5); after chunk 0 the PUT landed.
+            if i > 0 && e.code == Code::SpotifyBusy {
+                return Err(AppError::internal(
+                    "Spotify got busy partway through, so the playlist was only partly changed. Undo puts it back.",
+                )
+                .with_detail("HTTP 429 after the first chunk"));
+            }
             return Err(e);
         }
         *landed = true;
@@ -402,7 +409,8 @@ pub async fn undo_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<()> {
     // A playlist that now holds local files/episodes or is over the ceiling was edited on Spotify
     // since: same as any other edit (conflict, dropped), not a `validation` that keeps a dead undo.
     let now = match current_uris(sp, playlist_uri).await {
-        Err(e) if e.code == Code::Validation => None,
+        // Deleted or unfollowed (404): the undo can never go through, so it's dropped too.
+        Err(e) if matches!(e.code, Code::Validation | Code::NotFound) => None,
         r => Some(r?),
     };
     let Some(now) = now.filter(|n| expected.contains(n)) else {
@@ -937,6 +945,47 @@ mod tests {
                 "dead undo kept"
             );
         }
+    }
+
+    /// A 429 the client can't wait out on a later chunk: the PUT already cut the playlist, so the
+    /// error must not read as `spotify_busy` (nothing written) for apply or undo (audit r6).
+    #[test]
+    fn busy_later_chunk_is_not_spotify_busy() {
+        let busy = || crate::spotify::client::HttpResp {
+            status: 429,
+            retry_after: Some(120),
+            body: String::new(),
+        };
+        let orig = many(150);
+        let keep: Vec<String> = orig.iter().rev().cloned().collect();
+        let stub = Stub::new(&[(200, &pg(&orig)), (200, r#"{"snapshot_id":"s2"}"#)]);
+        stub.push_resp(busy());
+        let sp = connected(&temp_dir("studio-busy-later"), &stub);
+        let e = block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).unwrap_err();
+        assert_ne!(e.code, Code::SpotifyBusy, "apply");
+        assert!(block(get_last_apply(&sp, PL)).unwrap().is_some());
+
+        stub.push(200, &pg(&keep[..100])); // undo's read: the landed PUT
+        stub.push(200, r#"{"snapshot_id":"s3"}"#);
+        stub.push_resp(busy());
+        let e = block(undo_last_apply(&sp, PL)).unwrap_err();
+        assert_ne!(e.code, Code::SpotifyBusy, "undo");
+        assert!(block(get_last_apply(&sp, PL)).unwrap().is_some(), "kept");
+    }
+
+    /// The playlist was deleted or unfollowed (404 on the read): the undo can never go through,
+    /// so it's dropped (`conflict`) instead of a `not_found` that leaves a dead Undo banner.
+    #[test]
+    fn undo_on_a_deleted_playlist_drops_the_snapshot() {
+        let stub = Stub::new(&[(200, &pg(&v("AB"))), (200, r#"{"snapshot_id":"s2"}"#)]);
+        let sp = connected(&temp_dir("studio-undo-404"), &stub);
+        block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("B"))).unwrap();
+        stub.push(404, "");
+        assert_eq!(
+            block(undo_last_apply(&sp, PL)).unwrap_err().code,
+            Code::Conflict
+        );
+        assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
     /// Apply, apply, undo: the older apply's snapshot doesn't come back as a dead Undo (one

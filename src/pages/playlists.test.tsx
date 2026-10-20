@@ -9,15 +9,18 @@ import { setDev } from "../mocks/devState";
 import Playlists from "./Playlists";
 
 let names: string[] = [];
+let uris: string[] = [];
 beforeAll(async () => {
   await api.loadMocks();
-  names = (await api.listSpotifyPlaylists()).map((p) => p.name);
+  const pls = await api.listSpotifyPlaylists();
+  names = pls.map((p) => p.name);
+  uris = pls.map((p) => p.uri);
 });
 afterEach(() => { cleanup(); setDev({ view: "normal" }); });
 
 /** Render Studio on the n-th playlist; returns its first row's keep/cut group. */
 async function studio(n: number) {
-  render(<ToastProvider><MemoryRouter initialEntries={[`/playlists/studio?p=${encodeURIComponent(names[n])}`]}>
+  render(<ToastProvider><MemoryRouter initialEntries={[`/playlists/studio?p=${encodeURIComponent(uris[n])}`]}>
     <Routes><Route path="/playlists/:tab" element={<Playlists />} /></Routes></MemoryRouter></ToastProvider>);
   const groups = await screen.findAllByRole("radiogroup", { name: /^Keep or cut / }, { timeout: 3000 });
   return groups[0];
@@ -94,5 +97,21 @@ describe("Studio undo banners", () => {
     fireEvent.click(b); fireEvent.click(b);
     await alert(/There's nothing to undo\./);
     expect(screen.queryByText(/partly restored/)).toBeNull();
+  });
+});
+
+describe("Studio selection", () => {
+  it("links and selects playlists by uri (names are not unique on Spotify)", async () => {
+    await studio(1);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(names[1]);
+    const link = within(screen.getByRole("navigation", { name: "Playlists" })).getByRole("link", { name: new RegExp(names[1]) });
+    expect(link.getAttribute("href")).toContain(encodeURIComponent(uris[1]));
+  });
+  it("switching playlist never shows the previous playlist's draft under the new name", async () => {
+    await studio(0);
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Playlists" })).getByRole("link", { name: new RegExp(names[1]) }));
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(names[1]);
+    expect(screen.queryAllByRole("radiogroup", { name: /^Keep or cut / })).toHaveLength(0);
+    await screen.findAllByRole("radiogroup", { name: /^Keep or cut / }, { timeout: 3000 });
   });
 });

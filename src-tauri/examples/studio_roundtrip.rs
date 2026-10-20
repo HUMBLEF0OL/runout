@@ -15,7 +15,7 @@
 use std::sync::Mutex;
 
 use reqwest::Method;
-use runout_lib::error::Code;
+use runout_lib::error::{AppError, Code};
 use runout_lib::spotify::{self, Spotify, client, studio};
 use serde_json::{Value, json};
 
@@ -43,8 +43,8 @@ impl Drop for RemoveOnExit {
 }
 
 /// Replace the playlist with `uris` (PUT the first 100, POST the rest). Returns the last write's
-/// snapshot_id. Used to restore the test playlist when undo fails, and by --probe.
-async fn put_all(sp: &Spotify, pl: &str, uris: &[String]) -> String {
+/// snapshot_id. Used to restore the test playlist when a write or undo fails, and by --probe.
+async fn put_all(sp: &Spotify, pl: &str, uris: &[String]) -> Result<String, AppError> {
     let path = format!(
         "/playlists/{}/items",
         pl.rsplit(':').next().unwrap_or_default()
@@ -52,13 +52,20 @@ async fn put_all(sp: &Spotify, pl: &str, uris: &[String]) -> String {
     let mut last = String::new();
     for (i, c) in uris.chunks(100).enumerate() {
         let m = if i == 0 { Method::PUT } else { Method::POST };
-        let r = sp
-            .send_json(m, &path, Some(json!({ "uris": c })))
-            .await
-            .unwrap();
+        let r = sp.send_json(m, &path, Some(json!({ "uris": c }))).await?;
         last = r["snapshot_id"].as_str().unwrap_or("?").to_string();
     }
-    last
+    Ok(last)
+}
+
+/// Put the playlist back as loaded from this program's own copy (the undo snapshot is deleted
+/// with the cache folder on exit), and say whether that worked.
+async fn restore(sp: &Spotify, pl: &str, orig: &[String]) {
+    println!("Restoring the test playlist from this program's own copy…");
+    match put_all(sp, pl, orig).await {
+        Ok(s) => println!("restored; write-response snapshot_id {s}"),
+        Err(e) => println!("RESTORE FAILED: {e:?}. Fix the test playlist by hand."),
+    }
 }
 
 /// What each way of reading the playlist says right now (--probe). The track list is read with
@@ -146,10 +153,13 @@ fn main() {
                 short(&moved[0])
             );
             println!("before:  {}", probe_row(&sp, &pl, &orig, &moved).await);
-            println!(
-                "moved last track to the front; write-response snapshot_id {}",
-                put_all(&sp, &pl, &moved).await
-            );
+            match put_all(&sp, &pl, &moved).await {
+                Ok(s) => println!("moved last track to the front; write-response snapshot_id {s}"),
+                Err(e) => {
+                    println!("FAIL: the move failed partway: {e:?}");
+                    return restore(&sp, &pl, &orig).await;
+                }
+            }
             for t in 0..21 {
                 println!(
                     "+{:>2} s:  {}",
@@ -158,11 +168,7 @@ fn main() {
                 );
                 std::thread::sleep(std::time::Duration::from_secs(3));
             }
-            println!(
-                "restored original order; write-response snapshot_id {}",
-                put_all(&sp, &pl, &orig).await
-            );
-            return;
+            return restore(&sp, &pl, &orig).await;
         }
         let dupe = draft.tracks.iter().position(|t| t.dupe_of.is_some());
         if dupe.is_none() {
@@ -234,15 +240,19 @@ fn main() {
                 }
                 Err(e) => println!("FAIL: apply failed with another error: {e:?}"),
                 Ok(_) => {
-                    println!("FAIL: apply went through; restoring the playlist as it was loaded.");
-                    put_all(&sp, &pl, &orig).await;
+                    println!("FAIL: apply went through.");
+                    restore(&sp, &pl, &orig).await;
                 }
             }
             return;
         }
-        let applied = studio::apply_studio_draft(&sp, &draft, &keep)
-            .await
-            .unwrap();
+        let applied = match studio::apply_studio_draft(&sp, &draft, &keep).await {
+            Ok(a) => a,
+            Err(e) => {
+                println!("FAIL: apply failed: {e:?}");
+                return restore(&sp, &pl, &orig).await;
+            }
+        };
         println!(
             "applied: undo_id {} (expires {}). Check the playlist in Spotify, then press Enter to undo.",
             applied.undo_id, applied.expires_at
@@ -271,8 +281,7 @@ fn main() {
         wait_enter();
         if let Err(e) = studio::undo_last_apply(&sp, &pl).await {
             println!("FAIL: undo refused: {e:?}");
-            println!("Restoring the test playlist from this program's own copy…");
-            put_all(&sp, &pl, &orig).await;
+            restore(&sp, &pl, &orig).await;
         }
         let after = studio::load_studio_draft(&sp, &db, &pl).await.unwrap();
         let same = after

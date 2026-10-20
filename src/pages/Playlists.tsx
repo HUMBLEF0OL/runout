@@ -40,8 +40,9 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
   );
 }
 
-const PlaylistLink = ({ tab, name, sel, children }: { tab: Tab; name: string; sel: boolean; children: ReactNode }) => (
-  <Link to={`/playlists/${tab}?p=${encodeURIComponent(name)}`} className={`row grid-cols-[minmax(0,1fr)] ${sel ? "bg-surface-2" : ""}`} aria-current={sel ? "page" : undefined}>
+// `p` is the playlist id (check-up) or uri (Studio): names are not unique on Spotify.
+const PlaylistLink = ({ tab, id, name, sel, children }: { tab: Tab; id: string; name: string; sel: boolean; children: ReactNode }) => (
+  <Link to={`/playlists/${tab}?p=${encodeURIComponent(id)}`} className={`row grid-cols-[minmax(0,1fr)] ${sel ? "bg-surface-2" : ""}`} aria-current={sel ? "page" : undefined}>
     <span className="flex flex-col gap-0.5 min-w-0"><span className="truncate font-semibold text-text">{name}</span><span className="text-muted text-xs">{children}</span></span>
   </Link>
 );
@@ -51,10 +52,10 @@ function Checkup() {
   const { r3 } = useRelease();
   const [sp] = useSearchParams();
   const pls = useApi(api.listExportedPlaylists);
-  const sel = pls.data?.find((p) => p.name === sp.get("p")) ?? pls.data?.[0];
+  const sel = pls.data?.find((p) => String(p.id) === sp.get("p")) ?? pls.data?.[0];
   const cu = useApi(() => (sel ? api.getPlaylistCheckup(sel.id) : Promise.resolve(null)), [sel?.id]);
   const list = pls.data?.map((p) => (
-    <PlaylistLink key={p.id} tab="checkup" name={p.name} sel={p === sel}>
+    <PlaylistLink key={p.id} tab="checkup" id={String(p.id)} name={p.name} sel={p === sel}>
       {pl(p.tracks, "track")}{p.dupes > 0 && <>, <span className="text-accent">{pl(p.dupes, "duplicate")}</span></>}{p.low > 0 && <>, <span className="text-accent">{p.low} rated low</span></>}
     </PlaylistLink>
   ));
@@ -102,10 +103,12 @@ function Studio() {
   // Not live: the draft is what the user edits, so another write in the app (QuickAdd, a failed apply) must not
   // swap it out under them or skip the pre-apply conflict check. It reloads only when this page says so.
   const pls = useApi(api.listSpotifyPlaylists, [], false);
-  const sel = pls.data?.find((p) => p.name === sp.get("p")) ?? pls.data?.[0];
+  // By uri; a name only from the check-up's "Open in Studio" (the export has no uri).
+  const sel = pls.data?.find((p) => p.uri === sp.get("p")) ?? pls.data?.find((p) => p.name === sp.get("p")) ?? pls.data?.[0];
   const draft = useApi(() => (sel ? api.loadStudioDraft(sel.uri) : Promise.resolve(null)), [sel?.uri], false);
   // Not live either: a refetch that fails elsewhere would drop the Undo banner. Re-read after each apply/undo.
-  const last = useApi(() => (sel ? api.getLastApply(sel.uri) : Promise.resolve(null)), [sel?.uri], false);
+  // Tagged with its playlist so a previous playlist's record never shows (or undoes) under the new one while loading.
+  const last = useApi(() => (sel ? api.getLastApply(sel.uri).then((r) => r && { ...r, uri: sel.uri }) : Promise.resolve(null)), [sel?.uri], false);
   const suggested = useMemo(() => new Set((draft.data?.tracks ?? []).flatMap((t, i, all) => (cutReason(t, all) ? [i] : []))), [draft.data]);
   // Keep/cut edits belong to one draft: playlist + its track URI list. A reload that reads the same list keeps them.
   const key = draft.data ? `${draft.data.playlist_uri} ${draft.data.tracks.map((t) => t.uri).join(" ")}` : "";
@@ -142,20 +145,20 @@ function Studio() {
         ? <ErrorBanner error={fail.e} title="This may have been partly applied on Spotify. If Undo is offered below, it puts the playlist back." />
         : <ErrorBanner error={fail.e} title="Nothing was changed on Spotify." />;
   // The warning and the Undo banner stay on screen even when a reload fails or the page is offline.
-  const top = <>{banner}{last.data && (
+  const top = <>{banner}{last.data?.uri === sel?.uri && last.data && (
     <div className="banner">
       <span><b>Applied {day(last.data.applied_at)}.</b> <span className="text-text-2">Undo is available until {day(last.data.expires_at)}.</span></span>
       <button className="btn btn-secondary s" onClick={undo}>Undo last apply</button>
     </div>
   )}</>;
 
-  const list = pls.data?.map((p) => <PlaylistLink key={p.uri} tab="studio" name={p.name} sel={p === sel}>{pl(p.tracks, "track")}</PlaylistLink>);
+  const list = pls.data?.map((p) => <PlaylistLink key={p.uri} tab="studio" id={p.uri} name={p.name} sel={p === sel}>{pl(p.tracks, "track")}</PlaylistLink>);
   const wrap = (body: ReactNode) => <Layout tab="studio" list={list} title={sel?.name ?? "Studio"} subline={sel && `Your playlist, ${pl(sel.tracks, "track")}`}>{body}</Layout>;
   const err = pls.error ?? draft.error;
-  if (err?.code === "spotify_auth" || err?.code === "spotify_forbidden") return wrap(
+  if (err?.code === "spotify_auth" || err?.code === "spotify_forbidden") return wrap(<>{top}
     <Empty h="Connect Spotify to use Studio" line="Studio edits your own playlists on Spotify. The check-up from your export works without connecting.">
       <Link className="btn btn-primary" to="/settings">Connect Spotify in Settings</Link>
-    </Empty>);
+    </Empty></>);
   if (!online || err?.code === "offline") return wrap(<>{top}<Empty h="Studio needs a connection" line="Your draft is kept. Reconnect to read the playlist from Spotify and apply changes." /></>);
   if (pls.loading || draft.loading) return wrap(<><span className="text-muted">Reading the playlist from Spotify…</span><SkelRows n={8} /></>);
   if (err) return wrap(<>{top}<ErrorBanner error={err} title="Couldn't read the playlist from Spotify." onRetry={refresh} /></>);
