@@ -25,6 +25,9 @@
 |---|---|
 | P1 | Milestone efforts re-estimated for agentic development (D31): Claude Code agents build and review in parallel. M3 took about 3 hours against a 3–4 week estimate. Section 14 now gives build hours plus the real-world waits (user actions, daily use, soak runs) that agents cannot shorten. |
 | P2 | O2 partly resolved (S14, section 16 assumption): the Extended streaming history export arrived about 1 day after the request for one account (19 Oct 2026). Account data export delivery and allowed request frequency remain open. |
+| P3 | O1 resolved (S1): a Premium Student plan qualifies for Development Mode. Tested 19 Oct 2026 with the user's own developer app: PKCE login and GET /me returned 200 with product = premium. |
+| P4 | O4 and O5 resolved by the technical design and built in M5: playlist snapshots kept 30 days, Spotify cache entries 7 days, both swept at startup and daily; disconnect deletes both at once. |
+| P5 | U-5 no longer gates M7 (D32, user decision 20 Oct 2026): M7 starts once M6 code, installer and U-3/U-4 pass. Two weeks of daily use and the section 15 metrics run in parallel; their review is the MVP’s final sign-off. |
 
 ### 0.2 Changes in Version 0.6 (design-first delivery)
 
@@ -32,9 +35,7 @@
 |---|---|
 | P1 | UI direction D · Pulse chosen: Last.fm-inspired listening story with the user’s opinions, Spotify-compatible dark theme (D29). Design spec: docs/DESIGN.md. |
 | P2 | Delivery order changed to design, then UI on mock data, then backend, then integration (D30). Milestones renumbered M0–M8 (section 14); dates in sections 11, 12, 15 and 18 follow. |
-| P3 | O1 resolved (S1): a Premium Student plan qualifies for Development Mode. Tested 19 Oct 2026 with the user's own developer app: PKCE login and GET /me returned 200 with product = premium. |
 | P3 | New hard stop: the user approves all screen designs before UI build (end of M1). |
-| P4 | O4 and O5 resolved by the technical design and built in M5: playlist snapshots kept 30 days, Spotify cache entries 7 days, both swept at startup and daily; disconnect deletes both at once. |
 
 ### 0.3 Changes in Version 0.5 (document review fixes)
 
@@ -645,7 +646,7 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 | M3 Backend: MVP core | Database, link parsing, library, Promotion Rule, search, capture listener, export, backup, delete, usage counters | Core tests and MVP performance checks pass | Done (about 3 h agentic) |
 | M4 Backend: listening and insights | Desktop logger, export import, play rule, reconciliation, matching, playlist check-up, insight queries | Lifetime history imported; no double counts; insights hand-verified | 4–6 h agentic, plus export download (U-2) and a 24 h logger run |
 | M5 Backend: Spotify connected | Gate: O1 (Premium plan) and optional O7; login; R3-1 to R3-7 logic | Test-playlist round-trip passes | 4–6 h agentic, after the O1 gate (U-6) |
-| M6 Integration: MVP release | MVP screens on real data, installer, phone capture | MVP criteria pass; 2 weeks of daily use measured against section 15 | 4–6 h agentic, plus U-3/U-4 and 2 weeks of daily use (U-5) |
+| M6 Integration: MVP release | MVP screens on real data, installer, phone capture | MVP criteria pass on the installed build; 2 weeks of daily use measured against section 15, reviewed as the MVP’s final sign-off (runs in parallel with M7, D32) | 4–6 h agentic, plus U-3/U-4; 2 weeks of daily use (U-5) in parallel, not blocking M7 |
 | M7 Integration: R2 and R3 | Listening, insights and Spotify screens on real data | R2 and R3 criteria pass | 3–4 h agentic |
 | M8 Future candidates | Selected items from 4.4 | Per item | As needed |
 
@@ -710,6 +711,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | D29 | Which UI direction? | D · Pulse: listening story plus the user’s opinions; Spotify-compatible dark theme, amber accent, never Spotify’s look (docs/DESIGN.md) |
 | D30 | Delivery order? | Design, then UI on mock data, then backend, then integration; each milestone starts from current specs and a written plan |
 | D31 | How is effort estimated? | Agentic development: build and review hours per milestone, plus the real-world waits agents cannot shorten (user actions, 24 h logger run, 2 weeks of daily use). Calibrated on M3: about 3 hours against a 3–4 week estimate |
+| D32 | Does daily use gate R2/R3 integration? | No (user decision 20 Oct 2026). M7 starts once M6 code, installer and U-3/U-4 pass. U-5 (2 weeks of daily use, section 15 metrics) runs in parallel and is the MVP’s final sign-off; findings feed fixes, not a gate |
 
 ## 18. Remaining Open Items
 

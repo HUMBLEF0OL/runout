@@ -17,7 +17,7 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 | U-9 | Approve the screen designs | End of M1 | ~30 min | UI build (M2) · **done 18 Oct 2026** |
 | U-3 | Create the iPhone Shortcut | M6 | 5 min | Phone capture |
 | U-4 | Allow the app through Windows Firewall | M6 | 10 s | Phone capture |
-| U-5 | Use the app daily for 2 weeks, then say go/no-go | End of M6 | 2 weeks | M7 integration |
+| U-5 | Use the app daily for 2 weeks, then sign off the MVP | From the M6 install, in parallel with M7 | 2 weeks | Nothing (MVP final sign-off; D32) |
 | U-6 | Create the Spotify developer app | Start of M5 | 5 min | Release 3 · **done 19 Oct 2026** (redirect `http://127.0.0.1:8888/callback`; client ID kept out of the repo) |
 | U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 · **done 19 Oct 2026** (gate login); live Studio check on a test playlist still open |
 | U-8 | *(Optional)* Ask Spotify developer support one question | Before M5 | 5 min | Nothing |
@@ -85,14 +85,14 @@ Also make sure your home Wi-Fi is set to **Private**: Settings → Network & int
 
 **Send back:** nothing, unless you clicked Cancel.
 
-## U-5 — Two weeks of daily use, then go/no-go (end of M6)
+## U-5 — Two weeks of daily use, then MVP sign-off (in parallel with M7)
 
 **Why only you:** whether the app is useful is your call.
 
-Use the app normally for 2 weeks. Then I'll show you the success metrics from your own data (BRD §15). You answer:
-- **Go** to M7 (wiring the listening and Spotify screens),
-- **Fix first**: list what annoyed you, or
-- **Stop**.
+Use the app normally for 2 weeks; M7 work goes on meanwhile (your decision, 20 Oct 2026, BRD D32). Then I'll show you the success metrics from your own data (BRD §15). You answer:
+- **Sign off** the MVP,
+- **Fix first**: list what annoyed you (fixes go in alongside M7), or
+- **Stop** further R2/R3 work.
 
 ## U-9 — Approve the screen designs (end of M1)
 

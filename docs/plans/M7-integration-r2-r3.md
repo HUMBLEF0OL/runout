@@ -3,7 +3,7 @@
 Specs: [MILESTONES M7](../MILESTONES.md#m7--integration-r2-and-r3) · [API.md §4–6](../API.md) · TSD §4.9, §5.2, §6 · BRD §13.2, §13.3, journeys F and G, FR-031, FR-032, FR-041, FR-042 · DESIGN §7.
 Agents: `react-ui` (switch-over), `rust-core` (fixes), `spec-reviewer` (compliance on the running app).
 
-**Entry:** M6 done with go/no-go = go (so M4 and M5 are already done — integration starts only after the whole backend). If M5 was stopped at the O1 gate, only the R2 half runs.
+**Entry:** M6 done apart from U-5 (so M4 and M5 are already done — integration starts only after the whole backend). U-5 daily use runs in parallel (BRD D32, 20 Oct 2026). If M5 was stopped at the O1 gate, only the R2 half runs.
 
 ## Steps
 1. **Switch R2 (WI 1).** Add API.md §4 commands to the real set in `api.ts`; wire `logger-status` and `play-logged`; remove R2 data from `src/mocks/`. Run journey F on the user’s real imported history: import → insights (all four tabs) → recent plays → rate/save a play → unmatched list → link.

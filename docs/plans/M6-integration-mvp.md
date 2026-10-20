@@ -21,7 +21,7 @@ Agents: `react-ui` (switch-over), `rust-core` (installer, cleanup hook), `spotif
    - NFR-04: start < 3 s, navigation < 500 ms on 10k items.
    - 50 real items (5 short links, 2 offline), each opens in the Spotify app; duplicate → open existing; episode rejected; two versions linked.
 6. **Compliance.** `spec-reviewer` over the running app: attribution on every Spotify-sourced screen, embeds unaltered, ≤ 20 per set.
-7. **Daily use (U-5).** User uses the installed app for 2 weeks; R2/R3 stay on mocks meanwhile (no new backend work in this phase). At the end: review success metrics vs BRD §15 with the user → go/no-go for M7 recorded in MILESTONES.
+7. **Daily use (U-5).** User uses the installed app for 2 weeks, in parallel with M7 (BRD D32, 20 Oct 2026: U-5 no longer gates M7). At the end: review success metrics vs BRD §15 with the user → MVP sign-off recorded in MILESTONES; findings become fixes.
 8. **Record.** SOURCE_MAP (`src-tauri/windows/`), KB (T2, network capture), `close-milestone M6`.
 
 ## Parallelism
@@ -32,7 +32,7 @@ Agents: `react-ui` (switch-over), `rust-core` (installer, cleanup hook), `spotif
 |---|---|
 | NSIS update mode not detectable in hook | Fall back to `/UPDATE` flag check or registry marker written by the installer; record in KB, `change-spec` TSD §4.11 |
 | Firewall blocks LAN listener on public network profile | Settings shows the profile and a hint; U-4 covers private profile |
-| Success metrics miss targets | Not a release blocker for M7 work; findings go to the M7 go/no-go conversation |
+| Success metrics miss targets | Not a blocker for M7 (D32); findings go to the U-5 MVP sign-off conversation and become fixes |
 
 ## Done when
-MILESTONES M6 acceptance passes, including U-3, U-4 and U-5 with the go/no-go recorded.
+MILESTONES M6 acceptance passes, including U-3 and U-4. U-5 stays open as the MVP's final sign-off and doesn't block M7 (D32).
