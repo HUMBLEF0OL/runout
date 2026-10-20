@@ -67,13 +67,28 @@ pub fn challenge(verifier: &str) -> String {
     b64url(&Sha256::digest(verifier.as_bytes()))
 }
 
-/// `n` random unreserved characters (verifier: 64, within RFC 7636's 43–128; state: 32).
+/// `n` random unreserved characters (verifier: 64, within RFC 7636's 43–128).
 fn random(n: usize) -> String {
+    pick(
+        n,
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~",
+    )
+}
+
+/// OAuth `state`: letters and digits only. It comes back in the callback query, and a `~` can
+/// arrive as `%7E` (live sign-in failed this way, 20 Oct 2026), which a raw compare rejects.
+fn random_state() -> String {
+    pick(
+        32,
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    )
+}
+
+fn pick(n: usize, alphabet: &[u8]) -> String {
     use rand::RngExt;
-    const CH: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
     let mut rng = rand::rng();
     (0..n)
-        .map(|_| CH[rng.random_range(0..CH.len())] as char)
+        .map(|_| alphabet[rng.random_range(0..alphabet.len())] as char)
         .collect()
 }
 
@@ -386,7 +401,7 @@ fn open_browser(url: &str) -> Result<()> {
 pub async fn connect(sp: &Spotify) -> Result<()> {
     let client_id = sp.client_id()?;
     let verifier = random(64);
-    let state = random(32);
+    let state = random_state();
     // T3: any 127.0.0.1:<port>/callback is accepted (KB spotify.md); `localhost` is not.
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
     let redirect = [
@@ -479,6 +494,10 @@ mod tests {
                 .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
         );
         assert_ne!(v, random(64));
+        // state must survive the round trip unencoded
+        for _ in 0..200 {
+            assert!(random_state().bytes().all(|b| b.is_ascii_alphanumeric()));
+        }
     }
 
     #[test]
