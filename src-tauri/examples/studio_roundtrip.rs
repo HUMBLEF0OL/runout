@@ -11,8 +11,10 @@
 //! apply to be blocked with `conflict` (nothing written).
 use std::sync::Mutex;
 
+use reqwest::Method;
 use runout_lib::error::Code;
 use runout_lib::spotify::{self, Spotify, client, studio};
+use serde_json::{Value, json};
 
 fn wait_enter() {
     let mut line = String::new();
@@ -46,9 +48,70 @@ async fn snap_now(sp: &Spotify, pl: &str) -> String {
     v["snapshot_id"].as_str().unwrap_or("?").to_string()
 }
 
+/// Replace the playlist with `uris` (PUT the first 100, POST the rest). Returns the last write's
+/// snapshot_id. Used to restore the test playlist when undo fails, and by --probe.
+async fn put_all(sp: &Spotify, pl: &str, uris: &[String]) -> String {
+    let path = format!(
+        "/playlists/{}/items",
+        pl.rsplit(':').next().unwrap_or_default()
+    );
+    let mut last = String::new();
+    for (i, c) in uris.chunks(100).enumerate() {
+        let m = if i == 0 { Method::PUT } else { Method::POST };
+        let r = sp
+            .send_json(m, &path, Some(json!({ "uris": c })))
+            .await
+            .unwrap();
+        last = r["snapshot_id"].as_str().unwrap_or("?").to_string();
+    }
+    last
+}
+
+/// What each way of reading the playlist says right now (--probe).
+async fn probe_row(sp: &Spotify, pl: &str) -> String {
+    let id = pl.rsplit(':').next().unwrap_or_default();
+    let get = |path: String| async move {
+        match sp.get_json::<Value>(&path).await {
+            Ok(v) => v,
+            Err(e) => json!({ "err": format!("{:?}", e.code) }),
+        }
+    };
+    let snap = |v: &Value| {
+        v["snapshot_id"]
+            .as_str()
+            .map(|s| s[..12.min(s.len())].to_string())
+            .unwrap_or_else(|| v["err"].to_string())
+    };
+    let fields = get(format!("/playlists/{id}?fields=snapshot_id")).await;
+    let full = get(format!("/playlists/{id}")).await;
+    let market = get(format!(
+        "/playlists/{id}?fields=snapshot_id&market=from_token"
+    ))
+    .await;
+    let items = get(format!("/playlists/{id}/items?limit=1")).await;
+    let mine: Vec<Value> = sp
+        .paginate("/me/playlists?limit=50", 500)
+        .await
+        .unwrap_or_default();
+    let listed = mine
+        .iter()
+        .find(|p| p["id"] == id)
+        .map(snap)
+        .unwrap_or("-".into());
+    format!(
+        "fields={} full={} market={} me/playlists={} items.total={}",
+        snap(&fields),
+        snap(&full),
+        snap(&market),
+        listed,
+        items["total"]
+    )
+}
+
 fn main() {
     let arg = std::env::args().nth(1).unwrap_or_default();
     let conflict = std::env::args().any(|a| a == "--conflict");
+    let probe = std::env::args().any(|a| a == "--probe");
     let pl = spotify::check_uri(&arg, &["playlist"]).expect("pass a spotify:playlist:… URI");
     let dir = std::env::temp_dir().join("runout-studio-roundtrip");
     let _cleanup = RemoveOnExit(dir.clone());
@@ -69,6 +132,22 @@ fn main() {
             draft.tracks.len(),
             draft.snapshot_id
         );
+        let orig: Vec<String> = draft.tracks.iter().map(|t| t.uri.clone()).collect();
+        if probe {
+            // Rewrites the SAME track list (content unchanged), then watches how fast each read
+            // path shows the new snapshot_id.
+            println!("before:  {}", probe_row(&sp, &pl).await);
+            println!(
+                "rewrote same {} tracks; write-response snapshot_id {}",
+                orig.len(),
+                put_all(&sp, &pl, &orig).await
+            );
+            for t in 0..10 {
+                println!("+{:>2} s:  {}", t * 3, probe_row(&sp, &pl).await);
+                std::thread::sleep(std::time::Duration::from_secs(3));
+            }
+            return;
+        }
         let dupe = draft.tracks.iter().position(|t| t.dupe_of.is_some());
         if dupe.is_none() {
             println!("no duplicate in this playlist: add one copy of a track to test dedupe");
@@ -115,9 +194,8 @@ fn main() {
                 }
                 Err(e) => println!("FAIL: apply failed with another error: {e:?}"),
                 Ok(_) => {
-                    println!("FAIL: apply went through; undoing it.");
-                    let undo = studio::undo_last_apply(&sp, &pl).await;
-                    println!("undo: {undo:?}");
+                    println!("FAIL: apply went through; restoring the playlist as it was loaded.");
+                    put_all(&sp, &pl, &orig).await;
                 }
             }
             return;
@@ -147,7 +225,11 @@ fn main() {
         println!("GET snapshot_id +3 s: {}", snap_now(&sp, &pl).await);
         wait_enter();
         println!("GET snapshot_id before undo: {}", snap_now(&sp, &pl).await);
-        studio::undo_last_apply(&sp, &pl).await.unwrap();
+        if let Err(e) = studio::undo_last_apply(&sp, &pl).await {
+            println!("FAIL: undo refused: {e:?}");
+            println!("Restoring the test playlist from this program's own copy…");
+            put_all(&sp, &pl, &orig).await;
+        }
         let after = studio::load_studio_draft(&sp, &db, &pl).await.unwrap();
         let same = after
             .tracks
