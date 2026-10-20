@@ -47,6 +47,11 @@ DELETE FROM playlist_snapshot;
 ALTER TABLE playlist_snapshot DROP COLUMN applied_snapshot_id;
 ALTER TABLE playlist_snapshot RENAME COLUMN pending_json TO expected_json;
 ",
+    // 2026-10-20 (audit r3): when Runout's last write had an unknown outcome, so undo can wait
+    // for it to land instead of trusting one read of the list before it.
+    "
+ALTER TABLE playlist_snapshot ADD COLUMN unsure_at TEXT;
+",
 ];
 
 fn iso(t: DateTime<Utc>) -> String {
@@ -167,13 +172,33 @@ pub fn last_snapshot(
         .transpose()
 }
 
-/// Record the URI lists the playlist may now hold (see [`last_snapshot`]) after an apply/undo write.
-pub fn set_expected(c: &Connection, undo_id: i64, lists: &Value) -> Result<()> {
+/// Record the URI lists the playlist may now hold (see [`last_snapshot`]) after an apply/undo write,
+/// and `unsure`: when that write failed with an unknown outcome (`None` once a write is answered).
+pub fn set_expected(
+    c: &Connection,
+    undo_id: i64,
+    lists: &Value,
+    unsure: Option<DateTime<Utc>>,
+) -> Result<()> {
     c.execute(
-        "UPDATE playlist_snapshot SET expected_json = ?2 WHERE id = ?1",
-        params![undo_id, lists.to_string()],
+        "UPDATE playlist_snapshot SET expected_json = ?2, unsure_at = ?3 WHERE id = ?1",
+        params![undo_id, lists.to_string(), unsure.map(iso)],
     )?;
     Ok(())
+}
+
+/// When snapshot `undo_id`'s last write failed with an unknown outcome, if it did.
+pub fn unsure_since(c: &Connection, undo_id: i64) -> Result<Option<DateTime<Utc>>> {
+    let s: Option<String> = c
+        .query_row(
+            "SELECT unsure_at FROM playlist_snapshot WHERE id = ?1",
+            [undo_id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    Ok(s.and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+        .map(|t| t.with_timezone(&Utc)))
 }
 
 /// One undo per playlist (as the mock): once snapshot `keep_id` stands for the playlist's latest
@@ -276,7 +301,8 @@ mod tests {
             t0 + chrono::Duration::seconds(5),
         )
         .unwrap();
-        set_expected(&c, s2.undo_id, &json!([["w"]])).unwrap();
+        set_expected(&c, s2.undo_id, &json!([["w"]]), Some(t0)).unwrap();
+        assert!(unsure_since(&c, s2.undo_id).unwrap().is_some());
         let (rec, exp, items) = last_snapshot(&c, u, t0).unwrap().unwrap();
         assert_eq!(
             (rec, exp, items),

@@ -17,6 +17,10 @@ const CHUNK: usize = 100;
 /// Ceiling on playlist size read into a draft. A longer playlist is refused, never truncated: an
 /// apply would delete everything past the ceiling and the undo snapshot couldn't bring it back.
 const MAX_ITEMS: usize = 10_000;
+/// How long after a write with unknown outcome undo won't trust a read showing the list before it
+/// (the server may still be processing it, TSD §5.2). Requests time out after 20 s (`net.rs`).
+/// ponytail: fixed bound, not proof; a write Spotify finishes later than this can still land.
+const UNSURE_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// API.md `list_spotify_playlists` row.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -173,8 +177,9 @@ async fn items(sp: &Spotify, playlist_uri: &str) -> Result<Vec<(String, String, 
 }
 
 /// The playlist's current track URIs, in order. The one read every Studio check compares against
-/// (`GET /playlists/{id}/items`), so the read path can be swapped here alone.
-async fn current_uris(sp: &Spotify, playlist_uri: &str) -> Result<Vec<String>> {
+/// (`GET /playlists/{id}/items`), so the read path can be swapped here alone (`studio_roundtrip
+/// --probe` checks this same function).
+pub async fn current_uris(sp: &Spotify, playlist_uri: &str) -> Result<Vec<String>> {
     Ok(items(sp, playlist_uri)
         .await?
         .into_iter()
@@ -213,13 +218,14 @@ async fn replace(
         if let Err(e) = sent {
             if !super::client::refused(&e) {
                 *landed = true;
-                let _ =
-                    sp.with_cache(|db| cache::set_expected(db, undo_id, &json!([before, after])));
+                let at = Some(chrono::Utc::now());
+                let _ = sp
+                    .with_cache(|db| cache::set_expected(db, undo_id, &json!([before, after]), at));
             }
             return Err(e);
         }
         *landed = true;
-        sp.with_cache(|db| cache::set_expected(db, undo_id, &json!([after])))?;
+        sp.with_cache(|db| cache::set_expected(db, undo_id, &json!([after]), None))?;
     }
     Ok(())
 }
@@ -349,7 +355,8 @@ pub async fn get_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<Option<A
 }
 
 /// Put the snapshot's items back, then drop the snapshot (a failed write keeps it for a retry,
-/// which compares against the undo's own last write). The playlist's tracks aren't what Runout
+/// which compares against the undo's own last write). Finding the list from before a write with
+/// unknown outcome less than UNSURE_WAIT after it → `spotify_busy`, nothing written, kept. The playlist's tracks aren't what Runout
 /// last wrote (edited on Spotify since) → `conflict`, nothing overwritten, and the snapshot is
 /// dropped: the undo would erase that edit.
 pub async fn undo_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<()> {
@@ -371,6 +378,20 @@ pub async fn undo_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<()> {
             "This playlist changed on Spotify since you applied, so undo would erase those changes. The undo was dropped.",
         ));
     };
+    // The list from before a write with unknown outcome: that write may still land after this
+    // read, and would cut the restored playlist with no undo left. Wait, keep the snapshot.
+    let unsure = sp.with_cache(|c| cache::unsure_since(c, snap.undo_id))?;
+    let waited = unsure.map_or(UNSURE_WAIT, |t| {
+        (chrono::Utc::now() - t).to_std().unwrap_or_default()
+    });
+    if expected.len() == 2 && now == expected[0] && waited < UNSURE_WAIT {
+        let mut e = AppError::new(
+            Code::SpotifyBusy,
+            "Spotify may still be finishing the last change to this playlist. Try Undo again in a couple of minutes.",
+        );
+        e.retry_after_s = Some((UNSURE_WAIT - waited).as_secs().max(1));
+        return Err(e);
+    }
     let uris: Vec<String> = serde_json::from_value(items)?;
     replace(sp, playlist_uri, &now, &uris, snap.undo_id, &mut false).await?;
     sp.with_cache(|c| cache::delete_snapshot(c, snap.undo_id))
@@ -527,6 +548,16 @@ mod tests {
             _ => panic!("json body"),
         }
     }
+    /// UNSURE_WAIT has passed since the last write with unknown outcome.
+    fn settle(sp: &Spotify) {
+        sp.with_cache(|c| {
+            Ok(c.execute(
+                "UPDATE playlist_snapshot SET unsure_at = '2000-01-01T00:00:00Z'",
+                [],
+            )?)
+        })
+        .unwrap();
+    }
     fn no_snapshot_get(stub: &Stub) {
         assert!(
             stub.calls().iter().all(|c| !c.1.contains("snapshot_id")),
@@ -631,6 +662,7 @@ mod tests {
             .unwrap()
             .expect("snapshot first");
 
+        settle(&sp); // the failed POST (500) may land; undo waits UNSURE_WAIT for it
         stub.push(200, &pg(&keep[..100])); // undo's read: our own partial write
         stub.push(200, r#"{"snapshot_id":"s3"}"#);
         stub.push(201, r#"{"snapshot_id":"s4"}"#);
@@ -682,6 +714,7 @@ mod tests {
         block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &v("A"))).unwrap();
         assert!(block(undo_last_apply(&sp, PL)).is_err());
         assert!(block(get_last_apply(&sp, PL)).unwrap().is_some());
+        settle(&sp);
         stub.push(200, &pg(&orig[..100])); // retry's read: the undo's own PUT
         stub.push(200, r#"{"snapshot_id":"s6"}"#);
         stub.push(201, r#"{"snapshot_id":"s7"}"#);
@@ -740,11 +773,55 @@ mod tests {
             unknown("studio-unknown-landed", &keep[..100]).unwrap(),
             None
         );
-        assert_eq!(unknown("studio-unknown-not", &orig).unwrap(), None);
         assert_eq!(
             unknown("studio-unknown-edit", &v("Z")).unwrap_err().code,
             Code::Conflict
         );
+    }
+
+    /// Undo finds the list from before a write with unknown outcome: that write may still land,
+    /// so within UNSURE_WAIT undo writes nothing and keeps the snapshot (`spotify_busy`); after
+    /// it, the read is trusted and undo restores. Same for a later POST chunk (audit r3).
+    #[test]
+    fn undo_waits_while_an_unanswered_write_may_still_land() {
+        let orig = many(250);
+        let keep: Vec<String> = orig.iter().rev().cloned().collect();
+        // (name, apply answers after the read, list undo finds = that write's `before`)
+        let first: &[(u16, &str)] = &[(502, "")];
+        let later: &[(u16, &str)] = &[(200, r#"{"snapshot_id":"s2"}"#), (502, "")];
+        for (name, answers, before) in [
+            ("studio-wait-put", first, orig.clone()),
+            ("studio-wait-post", later, keep[..100].to_vec()),
+        ] {
+            let stub = Stub::new(&[(200, &pg(&orig))]);
+            for (st, b) in answers {
+                stub.push(*st, b);
+            }
+            let sp = connected(&temp_dir(name), &stub);
+            assert!(block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).is_err());
+            let calls = stub.calls().len();
+            stub.push(200, &pg(&before));
+            let e = block(undo_last_apply(&sp, PL)).unwrap_err();
+            assert_eq!(e.code, Code::SpotifyBusy, "{name}");
+            assert!(
+                e.retry_after_s
+                    .is_some_and(|s| s > 0 && s <= UNSURE_WAIT.as_secs())
+            );
+            assert_eq!(stub.calls().len(), calls + 1, "{name}: nothing written");
+            assert!(
+                block(get_last_apply(&sp, PL)).unwrap().is_some(),
+                "{name}: undo dropped"
+            );
+
+            // UNSURE_WAIT later: the read is trusted, undo restores all 250 and drops the snapshot.
+            settle(&sp);
+            stub.push(200, &pg(&before));
+            stub.push(200, r#"{"snapshot_id":"s4"}"#);
+            stub.push(201, r#"{"snapshot_id":"s5"}"#);
+            stub.push(201, r#"{"snapshot_id":"s6"}"#);
+            block(undo_last_apply(&sp, PL)).unwrap();
+            assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None, "{name}");
+        }
     }
 
     /// A later chunk's answer is lost (502) but it ran: undo finds the whole written list (the

@@ -148,15 +148,18 @@ export const MOCK = import.meta.env.VITE_MOCK !== "0";
 export const loadMocks = () => (import.meta.env.VITE_MOCK !== "0" ? import("./mocks") : Promise.reject(new Error("mocks are off")));
 type Listener = () => void;
 const listeners = new Set<Listener>();
-/** Data changed (a write command succeeded, or the dev state switcher moved): readers refetch. */
+/** Data may have changed (a write command ran, even one that failed, or the dev state switcher moved): readers refetch. */
 export const onInvalidate = (fn: Listener) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
 export const invalidate = () => listeners.forEach((fn) => fn());
 const READ = /^(get_|list_|search$|parse_link|preview_|check_backup|prefill_title|autofill|load_studio|library_contains|record_page_visit|pick_)/;
 
 async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
-  const res = MOCK ? await (await loadMocks()).mockCall<T>(cmd, args) : await invoke<T>(cmd, args);
-  if (!READ.test(cmd)) invalidate();
-  return res;
+  // A failed write may still have changed data (a Spotify write that timed out keeps an undo, TSD §5.2).
+  try {
+    return MOCK ? await (await loadMocks()).mockCall<T>(cmd, args) : await invoke<T>(cmd, args);
+  } finally {
+    if (!READ.test(cmd)) invalidate();
+  }
 }
 
 export interface EventMap {

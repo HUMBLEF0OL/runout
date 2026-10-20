@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyStudioDraft, getLastApply, undoLastApply, createItem, listSpotifyPlaylists, loadStudioDraft, getCounts, getDashboard, getItem, getTakeInsights, listPlays, linkItems, listItems, listSavedFilters, listTags, renameTag, saveFilter, setStatus, unlinkItems, updateItem, type AppError } from "../api";
+import { applyStudioDraft, createPlaylistFromFilter, getLastApply, undoLastApply, createItem, listSpotifyPlaylists, loadStudioDraft, getCounts, getDashboard, getItem, getTakeInsights, listPlays, linkItems, listItems, listSavedFilters, listTags, renameTag, saveFilter, setStatus, unlinkItems, updateItem, type AppError } from "../api";
 import { setDev } from "./devState";
 
 describe("mock commands (API.md)", () => {
@@ -96,6 +96,16 @@ describe("mock commands (API.md)", () => {
     await expect(undoLastApply(pl.uri)).rejects.toMatchObject({ code: "conflict" });
     setDev({ view: "normal" });
     expect(await getLastApply(pl.uri)).toBeNull();
+  });
+  it("partial dev state: a failed apply keeps its undo, a failed create carries the new playlist", async () => {
+    const pl = (await listSpotifyPlaylists())[0];
+    const d = await loadStudioDraft(pl.uri);
+    setDev({ view: "partial" });
+    await expect(applyStudioDraft(d, d.tracks.map((t) => t.uri))).rejects.toMatchObject({ code: "internal" });
+    const f = (await listSavedFilters())[0];
+    await expect(createPlaylistFromFilter(f.id, "Mix", false)).rejects.toMatchObject({ detail: expect.stringMatching(/^spotify:playlist:/) });
+    setDev({ view: "normal" });
+    expect(await getLastApply(pl.uri)).not.toBeNull();
   });
   it("G-1/G-7/G-8: track plays, album rating on plays, uncheckable albums count", async () => {
     const take = (await getTakeInsights()).data;

@@ -9,8 +9,9 @@
 //! Loads the draft, cuts 3 tracks and 1 duplicate, prints the diff, applies, waits for Enter, undoes.
 //! `--conflict`: pauses after loading the draft so you edit the playlist in Spotify, then expects
 //! apply to be blocked with `conflict` (nothing written).
-//! `--probe`: moves the last track to the front, prints what the snapshot_id and items reads say
-//! every 3 s for 60 s, then restores the order (is the items read fresh? G-30).
+//! `--probe`: moves the last track to the front, prints what the snapshot_id reads and
+//! `studio::current_uris` (the whole list, compared with the moved order) say every 3 s for 60 s,
+//! then restores the order (is the read Studio decides on fresh? G-30).
 use std::sync::Mutex;
 
 use reqwest::Method;
@@ -60,8 +61,9 @@ async fn put_all(sp: &Spotify, pl: &str, uris: &[String]) -> String {
     last
 }
 
-/// What each way of reading the playlist says right now (--probe).
-async fn probe_row(sp: &Spotify, pl: &str) -> String {
+/// What each way of reading the playlist says right now (--probe). The track list is read with
+/// `studio::current_uris`, the one read apply and undo decide on, so a PASS here covers it (G-30).
+async fn probe_row(sp: &Spotify, pl: &str, orig: &[String], moved: &[String]) -> String {
     let id = pl.rsplit(':').next().unwrap_or_default();
     let get = |path: String| async move {
         match sp.get_json::<Value>(&path).await {
@@ -81,12 +83,12 @@ async fn probe_row(sp: &Spotify, pl: &str) -> String {
         "/playlists/{id}?fields=snapshot_id&market=from_token"
     ))
     .await;
-    let items = get(format!("/playlists/{id}/items?limit=1")).await;
-    let first = items["items"][0]["item"]["uri"]
-        .as_str()
-        .or(items["items"][0]["track"]["uri"].as_str())
-        .map(|u| u.rsplit(':').next().unwrap_or_default()[..6].to_string())
-        .unwrap_or("?".into());
+    let items = match studio::current_uris(sp, pl).await {
+        Ok(l) if l == moved => "MOVED (fresh)".to_string(),
+        Ok(l) if l == orig => "orig (stale)".to_string(),
+        Ok(l) => format!("other ({} tracks)", l.len()),
+        Err(e) => format!("err {:?}", e.code),
+    };
     let mine: Vec<Value> = sp
         .paginate("/me/playlists?limit=50", 500)
         .await
@@ -97,13 +99,12 @@ async fn probe_row(sp: &Spotify, pl: &str) -> String {
         .map(snap)
         .unwrap_or("-".into());
     format!(
-        "fields={} full={} market={} me/playlists={} items.total={} items[0]={}",
+        "fields={} full={} market={} me/playlists={} current_uris={}",
         snap(&fields),
         snap(&full),
         snap(&market),
         listed,
-        items["total"],
-        first
+        items
     )
 }
 
@@ -134,7 +135,7 @@ fn main() {
         let orig: Vec<String> = draft.tracks.iter().map(|t| t.uri.clone()).collect();
         if probe {
             // Real but reversible change: move the last track to the front, watch how fast each
-            // read path shows it (snapshot ids + the first track of the items list), then put the
+            // read path shows it (snapshot ids + Studio's own track-list read), then put the
             // original order back.
             let mut moved = orig.clone();
             moved.rotate_right(1);
@@ -144,13 +145,17 @@ fn main() {
                 short(&orig[0]),
                 short(&moved[0])
             );
-            println!("before:  {}", probe_row(&sp, &pl).await);
+            println!("before:  {}", probe_row(&sp, &pl, &orig, &moved).await);
             println!(
                 "moved last track to the front; write-response snapshot_id {}",
                 put_all(&sp, &pl, &moved).await
             );
             for t in 0..21 {
-                println!("+{:>2} s:  {}", t * 3, probe_row(&sp, &pl).await);
+                println!(
+                    "+{:>2} s:  {}",
+                    t * 3,
+                    probe_row(&sp, &pl, &orig, &moved).await
+                );
                 std::thread::sleep(std::time::Duration::from_secs(3));
             }
             println!(

@@ -152,7 +152,13 @@ def check_spotify_rules():
     # whole check -> snapshot -> chunks sequence, so two applies/undos never interleave.
     studio = d / "studio.rs"
     if studio.exists():
-        fn_re = r"\n(?:pub(?:\(crate\))? )?(?:async )?fn (\w+)[^\n]*\{(.*?)\n\}"
+        # audit M5 (r3): the signature may span lines (replace's does); a regex that skips a fn
+        # silently disables every rule below, so the fns it must find are asserted
+        fn_re = r"\n(?:pub(?:\(crate\))? )?(?:async )?fn (\w+)\b[^{;]*\{(.*?)\n\}"
+        found = {m.group(1) for m in re.finditer(fn_re, studio.read_text(encoding="utf-8"), re.S)}
+        for need in ("replace", "apply_studio_draft", "undo_last_apply", "load_studio_draft"):
+            if need not in found:
+                bad.append(f"{studio.relative_to(ROOT).as_posix()}: check.py's fn regex no longer finds {need}; fix the regex")
         for m in re.finditer(fn_re, studio.read_text(encoding="utf-8"), re.S):
             if m.group(1) != "replace" and re.search(r"\breplace\(", m.group(2)) and "studio_lock" not in m.group(2):
                 bad.append(f"{studio.relative_to(ROOT).as_posix()}: {m.group(1)} calls replace( without sp.studio_lock")
@@ -163,6 +169,14 @@ def check_spotify_rules():
                 bad.append(f"{studio.relative_to(ROOT).as_posix()}: replace `?`s a write error; use client::refused(&e) (4xx = not landed, else unknown; TSD §5.2)")
             if m.group(1) == "replace" and re.search(r"current_uris\(|items\(sp", m.group(2)):
                 bad.append(f"{studio.relative_to(ROOT).as_posix()}: replace re-reads the items; a re-read proves nothing after a failed write (TSD §5.2)")
+    # audit M5 (r3): --probe must check the read Studio decides on (studio::current_uris, whole
+    # list), not a hand-built /items? GET (a fresh limit=1 says nothing about it, G-30)
+    rt = TAURI / "examples/studio_roundtrip.rs"
+    if rt.exists():
+        m = re.search(r"\nasync fn probe_row\b.*?\n\}\n", rt.read_text(encoding="utf-8"), re.S)
+        body = m.group(0) if m else ""
+        if "studio::current_uris(" not in body or "/items?" in body:
+            bad.append("src-tauri/examples/studio_roundtrip.rs: probe_row must read the list with studio::current_uris(, not its own /items? GET (G-30)")
     # audit M5: status never turns a Credential Manager read error into 'disconnected'
     spmod = d / "mod.rs"
     if spmod.exists():
@@ -378,6 +392,17 @@ def check_ui_purity():
                 bad.append(f"{rel}:{i}: convert caught errors with toAppError(e) from api.ts")
             if "@tauri-apps/api" in line and rel != "src/api.ts":
                 bad.append(f"{rel}:{i}: only src/api.ts may import @tauri-apps/api")
+            # audit M5 (r3): a toast's Undo that calls api.* bare drops the promise: a failure or
+            # conflict is silent and nothing reloads; pass the page's handler instead
+            if re.search(r"toast\([^;]*,\s*\(\)\s*=>\s*api\.\w+\([^)]*\)\s*\)", line):
+                bad.append(f"{rel}:{i}: toast undo calls api.* bare; pass a handler that shows errors and reloads")
+    # audit M5 (r3): a failed write may still have changed data (a Spotify write that timed out
+    # keeps an undo, TSD §5.2), so readers refetch after every write command, failed or not
+    api = src / "api.ts"
+    if api.exists():
+        m = re.search(r"\nasync function call<T>.*?\n\}\n", api.read_text(encoding="utf-8"), re.S)
+        if not (m and re.search(r"finally\s*\{[^}]*invalidate\(\)", m.group(0))):
+            bad.append("src/api.ts: call() must invalidate() in a finally (a failed write may have changed data)")
     if bad:
         failures.append("ui purity")
         print("--- ui purity: FAIL\n" + "\n".join(bad))

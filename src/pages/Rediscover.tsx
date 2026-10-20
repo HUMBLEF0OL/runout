@@ -11,6 +11,7 @@ import { Dialog, Dots, Empty, ErrorBanner, ItemSet, SkelTiles, Attribution, useT
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { age, nameOf, pl, stars, STATUS, STATUS_ORDER, TYPE } from "../lib/format";
+import { safeUri } from "../lib/sanitize";
 
 interface Shelf { name: string; rule: string; items: ItemSummary[]; meta: (it: ItemSummary) => ReactNode; act?: boolean }
 interface Filter { tag: string; min: number; revisit: boolean }
@@ -135,6 +136,8 @@ function MakePlaylistDialog({ make, onClose }: { make: Make; onClose: () => void
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<AppError>();
   const rows = make.items.filter((i) => i.type !== "artist").slice(0, 50);
+  // A failure after the create carries the new playlist in `detail` (API.md): link it, and don't offer a retry that makes a second one.
+  const made = safeUri(err?.detail)?.type === "playlist" ? err!.detail : undefined;
   const go = async () => {
     setBusy(true); setErr(undefined);
     try {
@@ -145,7 +148,7 @@ function MakePlaylistDialog({ make, onClose }: { make: Make; onClose: () => void
   };
   return (
     <Dialog title={`New Spotify playlist from “${make.title}”`} onClose={onClose}
-      footer={<><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || !name.trim() || !rows.length} onClick={go}>{busy ? <Dots /> : "Create playlist"}</button></>}>
+      footer={<><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || !!made || !name.trim() || !rows.length} onClick={go}>{busy ? <Dots /> : "Create playlist"}</button></>}>
       <div className="field"><label className="label" htmlFor="mp-name">Playlist name</label>
         <input id="mp-name" className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
       <span className="text-text-2">{pl(rows.length, "record")} from this {make.kind}. Albums add all their tracks.</span>
@@ -156,7 +159,8 @@ function MakePlaylistDialog({ make, onClose }: { make: Make; onClose: () => void
       </div></div>
       <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)} />Private playlist</label>
       <Attribution><span className="help">Created on your Spotify account.</span></Attribution>
-      {err && <ErrorBanner error={err} title="Couldn’t create the playlist." />}
+      {made ? <><ErrorBanner error={err} title="The playlist was created on Spotify, but not every track was added." /><Attribution uri={made} name={name.trim()} /></>
+        : err && <ErrorBanner error={err} title="Couldn’t create the playlist." />}
     </Dialog>
   );
 }

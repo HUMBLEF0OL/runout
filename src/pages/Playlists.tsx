@@ -103,9 +103,12 @@ function Studio() {
   const [cut, setCut] = useState<Set<number>>(suggested);
   const [confirm, setConfirm] = useState<{ d: Draft; diff: StudioDiff } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [applyErr, setApplyErr] = useState<AppError>();
-  // A freshly loaded draft starts from the suggestions; a reload after a conflict starts over.
-  useEffect(() => { setCut(suggested); setApplyErr(undefined); }, [suggested]);
+  // Which call failed decides the banner: a failed apply/undo may have changed the playlist (TSD §5.2).
+  const [fail, setFail] = useState<{ op: "preview" | "apply" | "undo"; e: AppError }>();
+  // A freshly loaded draft starts from the suggestions. Every write reloads the draft and the undo
+  // record (api.ts), failed or not, so the error is kept until another playlist is picked or retried.
+  useEffect(() => { setCut(suggested); }, [suggested]);
+  useEffect(() => { setFail(undefined); }, [sel?.uri]);
 
   const list = pls.data?.map((p) => <PlaylistLink key={p.uri} tab="studio" name={p.name} sel={p === sel}>{pl(p.tracks, "track")}</PlaylistLink>);
   const wrap = (body: ReactNode) => <Layout tab="studio" list={list} title={sel?.name ?? "Studio"} subline={sel && `Your playlist, ${pl(sel.tracks, "track")}`}>{body}</Layout>;
@@ -122,22 +125,28 @@ function Studio() {
   const d = draft.data;
   const changes = d.tracks.map((t, i) => ({ t, i })).filter(({ i }) => cut.has(i));
   const toggle = (i: number, v: "keep" | "cut") => setCut((s) => { const n = new Set(s); if (v === "cut") n.add(i); else n.delete(i); return n; });
-  const openConfirm = () => { setBusy(true); api.previewStudioApply(d, keepList(d.tracks, cut)).then((diff) => setConfirm({ d, diff }), (e) => setApplyErr(api.toAppError(e))).finally(() => setBusy(false)); };
+  const openConfirm = () => { setBusy(true); api.previewStudioApply(d, keepList(d.tracks, cut)).then((diff) => setConfirm({ d, diff }), (e) => setFail({ op: "preview", e: api.toAppError(e) })).finally(() => setBusy(false)); };
+  // Rejections: api.ts has already reloaded draft and last (a kept undo shows its banner).
+  const undo = () => { setFail(undefined); api.undoLastApply(sel.uri).then(() => toast(`${sel.name} restored to how it was before you applied`), (e) => setFail({ op: "undo", e: api.toAppError(e) })); };
   const apply = () => {
-    setBusy(true);
+    setBusy(true); setFail(undefined);
     api.applyStudioDraft(d, keepList(d.tracks, cut)).then(() => {
       setConfirm(null);
-      toast(`${pl(changes.length, "change")} applied to ${sel.name}. Undo is available for 30 days.`, () => api.undoLastApply(sel.uri));
-      draft.reload(); last.reload();
-    }, (e) => { setConfirm(null); setApplyErr(api.toAppError(e)); }).finally(() => setBusy(false));
+      toast(`${pl(changes.length, "change")} applied to ${sel.name}. Undo is available for 30 days.`, undo);
+    }, (e) => { setConfirm(null); setFail({ op: "apply", e: api.toAppError(e) }); }).finally(() => setBusy(false));
   };
-  const undo = () => api.undoLastApply(sel.uri).then(() => { toast(`${sel.name} restored to how it was before you applied`); draft.reload(); last.reload(); }, (e) => setApplyErr(api.toAppError(e)));
+  const banner = !fail ? null
+    : fail.e.code === "conflict" && fail.op === "apply"
+      ? <ErrorBanner error={{ ...fail.e, message: "Someone edited it since you started. Reload to see the new version." }} title="This playlist changed on Spotify." onRetry={() => { setFail(undefined); draft.reload(); }} />
+      : fail.e.code === "conflict" ? <ErrorBanner error={fail.e} title="This playlist changed on Spotify." />
+      : fail.op === "undo" ? <ErrorBanner error={fail.e} title="Undo didn't finish; the playlist may be partly restored. Try Undo again." />
+      : fail.op === "apply" && fail.e.code !== "validation"
+        ? <ErrorBanner error={fail.e} title="This may have been partly applied on Spotify. If Undo is offered below, it puts the playlist back." />
+        : <ErrorBanner error={fail.e} title="Nothing was changed on Spotify." />;
 
   return wrap(<>
     <Attribution uri={sel.uri} name={sel.name}><span className="text-text-2 text-sm">Tracks from Spotify, read just now, with your own ratings and tags. No listening data is used here.</span></Attribution>
-    {applyErr?.code === "conflict"
-      ? <ErrorBanner error={{ ...applyErr, message: "Someone edited it since you started. Reload to see the new version." }} title="This playlist changed on Spotify." onRetry={draft.reload} />
-      : applyErr && <ErrorBanner error={applyErr} title="Nothing was changed on Spotify." />}
+    {banner}
     {last.data && (
       <div className="banner">
         <span><b>Applied {day(last.data.applied_at)}.</b> <span className="text-text-2">Undo is available until {day(last.data.expires_at)}.</span></span>

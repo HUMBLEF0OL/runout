@@ -513,6 +513,11 @@ export async function mockCall<T>(cmd: string, args: Record<string, unknown>): P
       fail("conflict", CONFLICT[cmd]);
     }
   }
+  // As Rust: a write that failed without a 4xx may have landed, so its effect stays (API.md apply / create rows).
+  if (dev.view === "partial" && (cmd === "apply_studio_draft" || cmd.startsWith("create_playlist_from"))) {
+    const r = h(args) as { playlist_uri?: string };
+    throw { code: "internal", message: "Spotify didn't answer the last write, so it may have been applied.", detail: r.playlist_uri } as AppError;
+  }
   const out = h(args);
   return structuredClone(dev.view === "empty" && !NO_EMPTY.has(cmd) ? emptied(out) : out) as T;
 }
