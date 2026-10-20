@@ -141,13 +141,11 @@ This repeats **every 6 months**, which is Spotify's rule (BRD S7).
 
 **Send back:** nothing. The app confirms the connection.
 
-**Still to do for M5 (live Studio check, ~10 min):**
+**Live Studio check (M5): done 20 Oct 2026** — round trip and `--conflict` passed on your test playlist (`48mYdS19…`); you can delete that playlist. Steps kept for a re-run:
 1. In Spotify, make a **test playlist** you don't care about: ~15 tracks, with one track added twice.
 2. Set `RUNOUT_SPOTIFY_CLIENT_ID` to your Client ID in your environment (it stays out of the repo).
 3. Run `cargo run --example studio_roundtrip -- spotify:playlist:<id>` in `src-tauri`, approve the login in the browser, check the cut in Spotify, press Enter, check it's restored.
 4. Run it again with `--conflict` at the end: when it pauses, remove or move any track in Spotify, press Enter; it should print `PASS: apply blocked with conflict`.
-
-**Send back:** the playlist link, or just "done" with what you saw.
 
 ## U-8 — *(Optional)* Ask Spotify developer support (before M5)
 
