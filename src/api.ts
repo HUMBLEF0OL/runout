@@ -1,6 +1,6 @@
 // The only bridge between the UI and the Rust core (docs/API.md). Every command exists here in camelCase
 // with the same snake_case fields as the Rust serde structs. `VITE_MOCK` (default on in M2) routes calls to
-// src/mocks/; M6/M7 switch to `invoke` by turning it off. Pages never import anything else to reach data.
+// src/mocks/; M6 routes MVP calls to `invoke` while R2/R3 remain mocked until M7.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { cleanLine, cleanTags, cleanText, LIMITS, lineOrNull, textOrNull } from "./lib/sanitize";
@@ -142,12 +142,33 @@ export interface SpotifyEntry { uri: string; name: string; artist: string; in_li
 
 /* ------------------------------------------------------------------ transport */
 export const MOCK = import.meta.env.VITE_MOCK !== "0";
-// Loaded on demand: main.tsx awaits it before the first render (pins the mock "today"), and a VITE_MOCK=0
-// build drops the mocks and their dataset entirely. The env check sits beside the import, not via MOCK,
-// so the bundler can prove the branch dead.
-export const loadMocks = () => (import.meta.env.VITE_MOCK !== "0" ? import("./mocks") : Promise.reject(new Error("mocks are off")));
+// Loaded on demand so R2/R3 can keep using the M2 dataset during M6.
+export const loadMocks = () => import("./mocks");
+/** API.md §3 commands switched to Rust in M6; R2/R3 stay mocked until M7. */
+export const MVP_COMMANDS = new Set([
+  "get_counts", "get_dashboard", "list_items", "get_item", "create_item", "update_item", "set_status",
+  "delete_item", "link_items", "unlink_items", "reorder_backlog", "parse_link", "resolve_link", "prefill_title",
+  "list_unresolved", "retry_unresolved", "discard_unresolved", "search", "list_tags", "rename_tag", "merge_tags",
+  "delete_tag", "list_saved_filters", "save_filter", "delete_saved_filter", "get_rediscover", "get_online",
+  "get_settings", "update_settings", "get_capture", "set_capture_enabled", "new_pairing_code", "export_library",
+  "list_backups", "backup_now", "pick_backup", "check_backup", "restore_backup", "choose_backup_dir",
+  "move_library", "delete_library", "record_page_visit", "get_success_metrics",
+]);
+const MVP_EVENTS = new Set(["online-changed", "capture-received", "capture-disabled", "backup-finished", "unresolved-resolved"]);
 type Listener = () => void;
 const listeners = new Set<Listener>();
+type InvokeTransport = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+type ListenTransport = <T>(event: string, handler: (event: { payload: T }) => void) => Promise<() => void>;
+let invokeCommand: InvokeTransport = invoke;
+let listenEvent: ListenTransport = listen;
+/** Test seam for transport routing; production callers should use the typed wrappers below. */
+export const __setTransportForTests = (transport: {
+  invoke: InvokeTransport;
+  listen: ListenTransport;
+}) => {
+  invokeCommand = transport.invoke;
+  listenEvent = transport.listen;
+};
 /** Data may have changed (a write command ran, even one that failed, or the dev state switcher moved): readers refetch. */
 export const onInvalidate = (fn: Listener) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
 export const invalidate = () => listeners.forEach((fn) => fn());
@@ -156,7 +177,9 @@ const READ = /^(get_|list_|search$|parse_link|preview_|check_backup|prefill_titl
 async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   // A failed write may still have changed data (a Spotify write that timed out keeps an undo, TSD §5.2).
   try {
-    return MOCK ? await (await loadMocks()).mockCall<T>(cmd, args) : await invoke<T>(cmd, args);
+    return !MOCK && MVP_COMMANDS.has(cmd)
+      ? await invokeCommand<T>(cmd, args)
+      : await (await loadMocks()).mockCall<T>(cmd, args);
   } finally {
     if (!READ.test(cmd)) invalidate();
   }
@@ -169,7 +192,9 @@ export interface EventMap {
 }
 /** Subscribe to a Rust → UI event (API.md §6). Returns an unsubscribe function. */
 export function onEvent<K extends keyof EventMap>(name: K, cb: (payload: EventMap[K]) => void): () => void {
-  const p = MOCK ? loadMocks().then((m) => m.mockListen(name, cb as (p: unknown) => void)) : listen<EventMap[K]>(name, (e) => cb(e.payload));
+  const p = !MOCK && MVP_EVENTS.has(name)
+    ? listenEvent<EventMap[K]>(name, (e) => cb(e.payload))
+    : loadMocks().then((m) => m.mockListen(name, cb as (p: unknown) => void));
   return () => { p.then((un) => un()); };
 }
 

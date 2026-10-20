@@ -17,7 +17,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M8 Future candidates | — | — | per item | per item | as needed |
 
 ### Status (20 Oct 2026)
-- **Phase:** backend phase; M3 and M5 done; M4 closing; integration (M6–M7) starts when M4 is done. Branch `dev` → merge to `master`; commits only, no remote.
+- **Phase:** M4 remains the formal backend gate; code-completable M6 preparation is underway as an explicit exception, not a closed integration phase. M6 WI 1 (MVP transport/events) and WI 3 (NSIS hook/config) are implemented; `python scripts/check.py` is green and external audit found the code clean, with installed-build and U-3/U-4/U-5 evidence still open. Branch `dev` → merge to `master`; commits only, no remote.
 - **M0** done. **M1** designs approved (U-9, 18 Oct 2026); its other acceptance lines were never ticked on the boards themselves, and M2 met them in code (states per screen, `tokens.test.ts` contrast, compliance review with no open findings).
 - **M2** done and closed: all 13 screens + design-system page on mock data, Tailwind v4, `src/api.ts` = full API.md contract behind mocks, input sanitization, T4 verified in the real window. Proof: `python scripts/check.py` (92 Vitest tests) and `node scripts/journeys.mjs` (30/30 keyboard-only steps, journeys A–H). Commits `9cd6c2e`, `df6b155`, `fc12844`.
 - **Contract additions made in M2** (backend must implement): `create_playlist_from_items`; dashboard tile fields; `Unmatched.candidates`; `CollectionInsights` stat fields; `NewItem.artist_name/notes/promoted_fields`; `ItemPatch.artist_name`; `ItemSummary.album_name/added_via/recommended_by`; `ItemDetail.track_list` (all in API.md).

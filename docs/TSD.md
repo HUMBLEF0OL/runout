@@ -209,7 +209,7 @@ Tauri’s NSIS uninstaller has a “delete application data” checkbox. It is o
    - the Credential Manager entry `Runout/spotify`
    - the `EBWebView` folder
 
-   The hook must skip this step when the uninstaller runs in update mode, so updates keep the Spotify connection. **⚑ verify update-mode detection in M6.**
+   The hook must skip this step when the uninstaller runs in update mode, so updates keep the Spotify connection. Tauri's NSIS template parses `/UPDATE` into `$UpdateMode` before invoking `NSIS_HOOK_PREUNINSTALL`.
 2. **Library**: removed only if the user ticks the checkbox, relabelled “Also delete my music library”. This removes `%APPDATA%\app.runout.desktop\` (including `library.db.pre-restore`).
 3. **Backups**: the default folder is `Documents\Runout\Backups`, outside both app-data folders, so neither step touches it.
 4. **Library moved elsewhere (D15)**: not removed automatically. Settings warns about this when the user moves it.
@@ -309,6 +309,6 @@ spotify-companion/
 | # | Item | Resolve in |
 |---|---|---|
 | T1 | ~~Export file and field names (4.8)~~ Resolved 19 Oct 2026 for streaming history ([KB](kb/spotify.md#extended-streaming-history-format-t1--verified-2026-10-19)). Account data `Playlist*.json` not received, still ⚑ in 4.8 | M4 |
-| T2 | NSIS checkbox relabel and update-mode detection in the pre-uninstall hook (4.11) | M6 |
+| T2 | ~~NSIS checkbox relabel and update-mode detection in the pre-uninstall hook (4.11)~~ Resolved 20 Oct 2026 ([KB windows-tauri.md](kb/windows-tauri.md#nsis-update-mode-t2--verified-2026-10-20)) | M6 |
 | T3 | Re-check redirect-URI rules just before registering the app (5.2); confirmed 18 Oct 2026; dynamic loopback port verified with a real login 19 Oct 2026 (registered `:8888`, `:58163` accepted) | M5 |
 | T4 | ~~Incognito (InPrivate) WebView2 works with Spotify embeds and keeps no disk cache (§1)~~ Resolved 18 Oct 2026: yes ([KB](kb/windows-tauri.md#webview2)); re-check in the real app window in M2 | M2 |

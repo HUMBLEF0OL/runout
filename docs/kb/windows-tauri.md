@@ -13,7 +13,7 @@ Format: fact — **status**, date, source. Design decisions live in [TSD](../TSD
 ## Tauri 2
 - App data paths must come from the path API (`app_data_dir`, `app_local_data_dir`) so the uninstaller deletes the same folders — **Documented**, TSD §2. Docs: https://v2.tauri.app/
 - Capabilities restrict which commands/plugins the WebView may call; Runout grants only its own commands (no shell/fs plugin) — **Documented**, TSD §7. https://v2.tauri.app/security/capabilities/
-- NSIS uninstaller "delete app data" checkbox is off by default and skipped in update mode; `NSIS_HOOK_PREUNINSTALL` available — **Documented**, TSD §4.11; update-mode detection **Unverified (T2)**.
+- NSIS uninstaller "delete app data" checkbox is off by default and skipped in update mode; `NSIS_HOOK_PREUNINSTALL` is included before the uninstall section — **Documented**, TSD §4.11 and Tauri's NSIS template (2026-10-20). The template parses `/UPDATE` into `$UpdateMode` in `un.onInit` before the pre-uninstall macro runs, so a hook can guard cleanup with `${If} $UpdateMode <> 1` — **Verified**, 2026-10-20, source: https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi (lines 510–524, 815–825). Runout configures this hook and overrides `deleteAppData` with “Also delete my music library”.
 
 ## WebView2
 - Cross-origin iframes don't report load failure reliably → Rust `net::online()` decides whether to mount embeds — **Interpretation**, TSD §4.3.
