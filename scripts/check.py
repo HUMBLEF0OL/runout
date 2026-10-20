@@ -310,6 +310,8 @@ def check_mock_r3_parity():
     body = m.group(0) if m else ""
     if not (0 <= body.find("current_uris(sp") < body.find("Code::Conflict") < body.find("put_snapshot(") < body.find("replace(")):
         bad.append("src-tauri/src/spotify/studio.rs: apply_studio_draft must read current_uris(, conflict, put_snapshot(, then replace( (TSD §5.2)")
+    if not (0 <= body.find("Code::Conflict") < body.find("unsure_since(") < body.find("put_snapshot(")):
+        bad.append("src-tauri/src/spotify/studio.rs: apply_studio_draft must check unsure_since( (UNSURE_WAIT) after the conflict check and before put_snapshot( (TSD §5.2, audit r5)")
     for fn in ("apply_studio_draft", "undo_last_apply", "replace"):
         m = re.search(rf"\n(?:pub )?async fn {fn}\b.*?\n}}\n", studio, re.S)
         if not m or "snapshot_id(sp" in m.group(0):

@@ -68,36 +68,43 @@ pub struct Applied {
 /// API.md `get_last_apply` record: `cache::Snapshot` (`{undo_id, applied_at, expires_at}`).
 pub use super::cache::Snapshot as ApplyRecord;
 
-/// Diff of `orig` → `keep` (both URI lists, playlist order), as multisets: `removed` = copies
-/// dropped, `added` = copies not in `orig`, `reordered` = positions where the kept copies' order
-/// differs from their original relative order.
+/// Diff of `orig` → `keep` (both URI lists, playlist order), as multisets: `common` = Σ min(copies
+/// in each), `removed` = orig − common, `added` = keep − common, `reordered` = common − LCS(orig,
+/// keep): the fewest kept entries that must move. Removing an earlier copy of a duplicate is not a
+/// move (live, 20 Oct 2026: a removal-only edit showed 7). LCS by Hunt–Szymanski: each keep entry
+/// becomes its URI's orig positions in descending order; the longest strictly increasing run of
+/// that sequence is the LCS (O((n + matches) log n), fine for 10,000 entries without many copies).
 pub fn diff(orig: &[String], keep: &[String]) -> StudioDiff {
-    fn count<'a>(l: impl Iterator<Item = &'a str>) -> HashMap<&'a str, usize> {
-        let mut m = HashMap::new();
-        for u in l {
-            *m.entry(u).or_default() += 1;
+    let mut pos: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (i, u) in orig.iter().enumerate() {
+        pos.entry(u).or_default().push(i);
+    }
+    let mut used: HashMap<&str, usize> = HashMap::new();
+    let mut common = 0;
+    // tails[k] = smallest orig position ending an increasing run of length k + 1.
+    let mut tails: Vec<usize> = Vec::new();
+    for u in keep {
+        let Some(ps) = pos.get(u.as_str()) else {
+            continue;
+        };
+        let n = used.entry(u).or_default();
+        if *n < ps.len() {
+            *n += 1;
+            common += 1;
         }
-        m
+        for &p in ps.iter().rev() {
+            let k = tails.partition_point(|&t| t < p);
+            if k == tails.len() {
+                tails.push(p);
+            } else {
+                tails[k] = p;
+            }
+        }
     }
-    /// The entries of `l` that still fit in `room` (each use takes one copy).
-    fn take<'a>(l: &'a [String], mut room: HashMap<&str, usize>) -> Vec<&'a str> {
-        l.iter()
-            .filter(|u| match room.get_mut(u.as_str()) {
-                Some(n) if *n > 0 => {
-                    *n -= 1;
-                    true
-                }
-                _ => false,
-            })
-            .map(String::as_str)
-            .collect()
-    }
-    let base = take(orig, count(keep.iter().map(String::as_str)));
-    let kept = take(keep, count(base.iter().copied()));
     StudioDiff {
-        removed: (orig.len() - base.len()) as i64,
-        reordered: base.iter().zip(&kept).filter(|(a, b)| a != b).count() as i64,
-        added: (keep.len() - kept.len()) as i64,
+        removed: (orig.len() - common) as i64,
+        reordered: (common - tails.len()) as i64,
+        added: (keep.len() - common) as i64,
     }
 }
 
@@ -316,6 +323,16 @@ pub async fn apply_studio_draft(sp: &Spotify, draft: &Draft, keep: &[String]) ->
             "This playlist changed on Spotify. Reload the draft.",
         ));
     }
+    // The last apply's write may still land (unknown outcome < UNSURE_WAIT ago): it would cut this
+    // apply's result. Wait; nothing written, the old snapshot (its only undo) is kept.
+    let last =
+        sp.with_cache(|c| cache::last_snapshot(c, &draft.playlist_uri, chrono::Utc::now()))?;
+    if let Some((s, ..)) = last {
+        let left = wait_left(sp.with_cache(|c| cache::unsure_since(c, s.undo_id))?);
+        if let Some(left) = left {
+            return Err(busy(left, "Apply"));
+        }
+    }
     let snap = sp.with_cache(|c| {
         cache::put_snapshot(
             c,
@@ -350,6 +367,23 @@ pub async fn apply_studio_draft(sp: &Spotify, draft: &Draft, keep: &[String]) ->
     })
 }
 
+/// Time left of UNSURE_WAIT since a write with unknown outcome at `unsure`, if any.
+fn wait_left(unsure: Option<chrono::DateTime<chrono::Utc>>) -> Option<std::time::Duration> {
+    let waited = (chrono::Utc::now() - unsure?).to_std().unwrap_or_default();
+    UNSURE_WAIT.checked_sub(waited).filter(|l| !l.is_zero())
+}
+
+fn busy(left: std::time::Duration, what: &str) -> AppError {
+    let mut e = AppError::new(
+        Code::SpotifyBusy,
+        format!(
+            "Spotify may still be finishing the last change to this playlist. Try {what} again in a couple of minutes."
+        ),
+    );
+    e.retry_after_s = Some(left.as_secs().max(1));
+    e
+}
+
 pub async fn get_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<Option<ApplyRecord>> {
     sp.with_cache(|c| Ok(cache::last_snapshot(c, playlist_uri, chrono::Utc::now())?.map(|s| s.0)))
 }
@@ -380,17 +414,9 @@ pub async fn undo_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<()> {
     };
     // The list from before a write with unknown outcome: that write may still land after this
     // read, and would cut the restored playlist with no undo left. Wait, keep the snapshot.
-    let unsure = sp.with_cache(|c| cache::unsure_since(c, snap.undo_id))?;
-    let waited = unsure.map_or(UNSURE_WAIT, |t| {
-        (chrono::Utc::now() - t).to_std().unwrap_or_default()
-    });
-    if expected.len() == 2 && now == expected[0] && waited < UNSURE_WAIT {
-        let mut e = AppError::new(
-            Code::SpotifyBusy,
-            "Spotify may still be finishing the last change to this playlist. Try Undo again in a couple of minutes.",
-        );
-        e.retry_after_s = Some((UNSURE_WAIT - waited).as_secs().max(1));
-        return Err(e);
+    let left = wait_left(sp.with_cache(|c| cache::unsure_since(c, snap.undo_id))?);
+    if let Some(left) = left.filter(|_| expected.len() == 2 && now == expected[0]) {
+        return Err(busy(left, "Undo"));
     }
     let uris: Vec<String> = serde_json::from_value(items)?;
     replace(sp, playlist_uri, &now, &uris, snap.undo_id, &mut false).await?;
@@ -458,11 +484,16 @@ mod tests {
             ("ABCD", "ABCD", 0, 0, 0),
             ("ABCD", "ABD", 1, 0, 0),
             ("ABCD", "", 4, 0, 0),
-            ("ABCD", "BACD", 0, 2, 0),
+            ("ABCD", "BACD", 0, 1, 0), // a real swap: one entry moves
             ("ABCD", "DCB", 1, 2, 0),
             ("AABC", "ABC", 1, 0, 0), // one copy of a duplicate cut
+            ("XAX", "AX", 1, 0, 0),   // the earlier copy cut, the later kept
+            ("XAXBX", "AB", 3, 0, 0), // pure removals with duplicates
+            ("XABXCX", "ABXC", 2, 0, 0),
+            ("XAX", "XXA", 0, 1, 0),
             ("ABC", "ABCE", 0, 0, 1),
-            ("ABC", "EBA", 1, 2, 1),
+            ("ABC", "EABCA", 0, 0, 2),
+            ("ABC", "EBA", 1, 1, 1),
             ("", "", 0, 0, 0),
         ];
         for (o, k, r, ro, a) in cases {
@@ -822,6 +853,41 @@ mod tests {
             block(undo_last_apply(&sp, PL)).unwrap();
             assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None, "{name}");
         }
+    }
+
+    /// Apply after an apply whose write has unknown outcome: within UNSURE_WAIT that write may
+    /// still land and cut the new result, so apply writes nothing and keeps the old snapshot
+    /// (`spotify_busy`); after it, apply runs.
+    #[test]
+    fn apply_waits_while_an_unanswered_write_may_still_land() {
+        let orig = v("ABC");
+        let stub = Stub::new(&[(200, &pg(&orig)), (502, "")]);
+        let sp = connected(&temp_dir("studio-apply-wait"), &stub);
+        assert!(block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &v("AB"))).is_err());
+        let first = block(get_last_apply(&sp, PL)).unwrap().unwrap();
+        let calls = stub.calls().len();
+        stub.push(200, &pg(&orig));
+        let e = block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &v("C"))).unwrap_err();
+        assert_eq!(e.code, Code::SpotifyBusy);
+        assert!(
+            e.retry_after_s
+                .is_some_and(|s| s > 0 && s <= UNSURE_WAIT.as_secs())
+        );
+        assert_eq!(stub.calls().len(), calls + 1, "nothing written");
+        assert_eq!(
+            block(get_last_apply(&sp, PL)).unwrap(),
+            Some(first),
+            "old undo kept"
+        );
+
+        settle(&sp);
+        stub.push(200, &pg(&orig));
+        stub.push(200, r#"{"snapshot_id":"s2"}"#);
+        let done = block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &v("C"))).unwrap();
+        assert_eq!(
+            block(get_last_apply(&sp, PL)).unwrap().map(|s| s.undo_id),
+            Some(done.undo_id)
+        );
     }
 
     /// A later chunk's answer is lost (502) but it ran: undo finds the whole written list (the
