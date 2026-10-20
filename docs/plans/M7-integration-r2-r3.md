@@ -9,13 +9,14 @@ Agents: `react-ui` (switch-over), `rust-core` (fixes), `spec-reviewer` (complian
 1. **Switch R2 (WI 1).** Add API.md §4 commands to the real set in `api.ts`; wire `logger-status` and `play-logged`; remove R2 data from `src/mocks/`. Run journey F on the user’s real imported history: import → insights (all four tabs) → recent plays → rate/save a play → unmatched list → link.
    - Proof: every insight card renders `sources` + `freshness` (Vitest on the card component with a response lacking them → test fails); freshness box in the rail shows real dates.
 2. **Switch R3 (WI 2).** Add API.md §5 commands; wire `spotify-status`. Run journey G on the **test playlist**: check-up → Studio → cut 3, dedupe 1 → preview → apply → verify in Spotify → undo. Then: playlist from a saved filter; autofill on paste with confirm; From Spotify top items + recent plays, “Add to backlog” → promoted record (FR-041); save then remove an album in the Spotify library (FR-042).
-3. **Degradation.** Disconnect Spotify → every MVP and R2 feature still works, R3 screens show the connect state. Unplug network → MVP and R2 work. Revoke app access in Spotify account → reconnect prompt.
-4. **Compliance (WI 3).** `spec-reviewer` on the running app: attribution on SC-12, Studio and autofill; no Spotify Top items or API recent plays in any insight; no listening data in Studio; design guidelines (logo sizes) met.
-5. **Mock cleanup.** `src/mocks/` holds nothing imported by the production build: `VITE_MOCK` off in release config; Vite build check fails if `src/mocks` appears in the bundle graph (add to `check.py`). Keep mocks for Vitest only, or delete them.
-6. **Record.** SOURCE_MAP statuses final; KB gotchas; BRD §15 metrics re-reviewed with the user after M7; `close-milestone M7`. Then M8 candidates (BRD §4.4) get their own spec + plan.
+3. **Runout Inbox (WI 4, D33).** API.md §5 contract first (TSD §5.3), then `spotify/inbox.rs` (create on connect, check, import as “name needed”, album-batch collapse, remove imported), a check timer in `lib.rs`, the Settings section, mocks. Live proof on a real phone on mobile data: track → backlog; whole album → one album item; Inbox emptied.
+4. **Degradation.** Disconnect Spotify → every MVP and R2 feature still works, R3 screens show the connect state. Unplug network → MVP and R2 work. Revoke app access in Spotify account → reconnect prompt.
+5. **Compliance (WI 3).** `spec-reviewer` on the running app: attribution on SC-12, Studio and autofill; no Spotify Top items or API recent plays in any insight; no listening data in Studio; design guidelines (logo sizes) met.
+6. **Mock cleanup.** `src/mocks/` holds nothing imported by the production build: `VITE_MOCK` off in release config; Vite build check fails if `src/mocks` appears in the bundle graph (add to `check.py`). Keep mocks for Vitest only, or delete them.
+7. **Record.** SOURCE_MAP statuses final; KB gotchas; BRD §15 metrics re-reviewed with the user after M7; `close-milestone M7`. Then M8 candidates (BRD §4.4) get their own spec + plan.
 
 ## Parallelism
-1 and 2 in parallel; 3–5 after both.
+1, 2 and 3 in parallel (3 after 2's `connect` wiring); 4–6 after all.
 
 ## Risks
 | Risk | Response |

@@ -227,6 +227,7 @@ Insert a `usage_event` on app open, on each page visit, and on each capture. A c
 ## 5. Integrations
 
 ### 5.1 Capture listener (FR-018, NFR-18; resolves BRD O6 → local listener)
+- Optional fallback since D33 (20 Oct 2026): phone capture is the Runout Inbox (§5.3); this listener only works with the phone on the PC's Wi-Fi.
 - Off by default. When enabled: binds `0.0.0.0:<port>` (default 47821), shows the PC’s LAN IP and a 6-digit pairing code.
 - Accepts `POST /capture` with JSON `{ "code": "...", "link": "..." }`, body ≤ 2 KB; link must parse per 4.1 or be a spotify.link short link.
 - Rejects requests from non-private source IPs (only 10/8, 172.16/12, 192.168/16, 169.254/16).
@@ -256,6 +257,14 @@ Insert a `usage_event` on app open, on each page visit, and on each capture. A c
 - Playlist Studio reads only `item` ratings and tags (source U) alongside API playlist data. It never queries `listening_event` or `exported_playlist*` (BRD 11.1, D27).
 - Disconnect: delete tokens and delete `spotify_cache.db` (cache and snapshots) immediately, which satisfies the 5-day rule. Disconnect first waits for a running Studio apply/undo (seconds), so a playlist is never left cut short with its undo deleted. The cache file is only ever opened while signed in, so a request still in flight at disconnect can't re-create it; a cache found without a sign-in is deleted by the sweeper. A Credential Manager delete that fails leaves an empty `spotify_disconnect_pending` marker (written before the delete, removed once it or a new sign-in's store succeeds): while it exists the stored tokens count as deleted and every start retries the delete, so a confirmed disconnect never signs back in after a restart. A Credential Manager read that fails (anything but not-found) is not "signed out": it is not cached, the next call reads again, the sweeper deletes nothing on it, and `get_spotify_status` returns `io` (no `spotify-status` event) instead of `disconnected`. A new sign-in bumps the token generation, so a refresh or `invalid_grant` answer from the older grant never overwrites or clears it. Display lists (top items, recently played) cache only the displayed fields, never the raw response.
 - Cache expiry 7 days (O5); snapshot expiry 30 days (O4); sweeper runs at startup and daily.
+
+### 5.3 Runout Inbox (FR-046, D33; built in M7)
+- Create: on a successful `connect_spotify`, if no Inbox is recorded, `POST /me/playlists` `{name: "Runout Inbox", public: false, description: "Add songs or albums here from any device; Runout moves them into your backlog."}`; store its playlist id in settings (not the cache DB: it's the user's own pointer, not Spotify content). If the stored playlist is gone (404 or not in `/me/playlists`), status `missing` and Settings offers **Create Inbox**; never re-created silently.
+- Check: at start, every 15 min while running and on **Check now**; one `GET /playlists/{id}/items` (fresh, kb/spotify.md). Disconnected or offline → skip; items wait in Spotify.
+- Import: each track URI → `create_item` path with `spotify_uri` only, `display_name = NULL` (“name needed”), provenance `promoted`, `added_via = inbox` (Promotion rule §4.2: the user put it there). Already in the library → skip. Tracks of one album added within the same minute and covering ≥ 80 % of that album's tracks (album track list via the cache) → one album item instead.
+- Then remove the imported (or skipped) entries from the Inbox: `DELETE /playlists/{id}/items` by URI + the snapshot id from the same read; one in-flight write (client rule). A removal that fails leaves them for the next check; import is idempotent by URI.
+- Optional (Settings, off by default): import albums saved since the last check (`GET /me/library` albums, `user-library-read`, already granted) and artists followed since the last check (`GET /me/following?type=artist`, needs `user-follow-read`: a new scope, so the user re-approves once).
+- Contract (added to API.md §5 when built, API.md §7): `get_inbox` → `{state: 'none'|'ready'|'missing', playlist_uri, last_check, imported_last}`; `create_inbox`; `check_inbox` → `{imported, albums, skipped}`; `set_inbox_options {saved_albums, followed_artists}`; event `inbox-imported`.
 
 ## 6. Error handling and degradation (NFR-09, NFR-15)
 | Situation | Behaviour |

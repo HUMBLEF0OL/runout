@@ -10,7 +10,7 @@ Agents: `react-ui` (switch-over), `rust-core` (installer, cleanup hook), `spotif
 ## Steps
 1. **Switch MVP calls (WI 1).** In `api.ts`, route every API.md §3 command to `invoke` (per-command table `REAL = new Set([...])` so R2/R3 stay mocked). Wire §6 MVP events. Remove MVP-only data from `src/mocks/`. Run journeys A–E and H in `npm run tauri dev` on an empty library, then on the 10k fixture.
    - Proof: Vitest asserts no §3 command resolves to a mock when `VITE_MOCK` is off.
-2. **Phone capture (WI 2).** Settings shows LAN IP, port, code from `get_capture`; Shortcut steps screen matches TSD §5.1. U-4 firewall prompt on first enable; **U-3** user builds the iOS Shortcut and shares one song → backlog shows it as “name needed” → naming flow.
+2. **Phone capture (WI 2; optional fallback since D33 — the Runout Inbox in M7 is the phone path).** Settings shows LAN IP, port, code from `get_capture`; Shortcut steps screen matches TSD §5.1. U-4 firewall prompt on first enable; **U-3** user builds the iOS Shortcut and shares one song → backlog shows it as “name needed” → naming flow.
 3. **Installer (WI 3, T2).** `verify-assumption` T2: NSIS update-mode detection inside `NSIS_HOOK_PREUNINSTALL`. Add `src-tauri/windows/hooks.nsh` running `runout.exe --uninstall-cleanup` unless update mode; relabel checkbox “Also delete my music library” via custom language string. Per-user NSIS bundle, unsigned.
    - Proof: the four uninstall cases in M6 acceptance, each run on a VM/fresh user profile, results recorded in KB.
 4. **Success metrics (WI 4).** Settings → success-metrics view on `get_success_metrics`; matches BRD §15 targets.
@@ -35,4 +35,4 @@ Agents: `react-ui` (switch-over), `rust-core` (installer, cleanup hook), `spotif
 | Success metrics miss targets | Not a blocker for M7 (D32); findings go to the U-5 MVP sign-off conversation and become fixes |
 
 ## Done when
-MILESTONES M6 acceptance passes, including U-3 and U-4. U-5 stays open as the MVP's final sign-off and doesn't block M7 (D32).
+MILESTONES M6 acceptance passes; U-3/U-4 are optional since D33 (G-34). U-5 stays open as the MVP's final sign-off and doesn't block M7 (D32).

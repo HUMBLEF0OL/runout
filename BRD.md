@@ -12,7 +12,7 @@
 | Supersedes | Version 0.6 |
 | Product type | Personal productivity / media management application |
 | Primary user | Individual music listener (single user; Spotify Development Mode allows up to 5) |
-| Platform | Windows desktop; iOS quick-capture via Shortcuts |
+| Platform | Windows desktop; phone capture via the Runout Inbox Spotify playlist (R3, D33); iOS Shortcut over home Wi-Fi as an optional fallback |
 | Data strategy | Local-first; no hosted backend |
 | Cost target | ₹0 new project expenditure (existing Spotify Premium is a user expense) |
 | Playback provider | Spotify |
@@ -28,6 +28,7 @@
 | P3 | O1 resolved (S1): a Premium Student plan qualifies for Development Mode. Tested 19 Oct 2026 with the user's own developer app: PKCE login and GET /me returned 200 with product = premium. |
 | P4 | O4 and O5 resolved by the technical design and built in M5: playlist snapshots kept 30 days, Spotify cache entries 7 days, both swept at startup and daily; disconnect deletes both at once. |
 | P5 | U-5 no longer gates M7 (D32, user decision 20 Oct 2026): M7 starts once M6 code, installer and U-3/U-4 pass. Two weeks of daily use and the section 15 metrics run in parallel; their review is the MVP’s final sign-off. |
+| P6 | Phone capture moves to the Runout Inbox playlist (D33, FR-046, user decision 20 Oct 2026): works on any network; the iOS Shortcut over home Wi-Fi (FR-018) becomes an optional fallback and leaves the MVP release criteria. |
 
 ### 0.2 Changes in Version 0.6 (design-first delivery)
 
@@ -293,9 +294,10 @@ Revisit is a flag, not a status, so it can be set on any item regardless of its 
 
 Full-text search across titles, artists, notes, reviews and tags.
 
-#### 6.1.9 Mobile quick-capture (iOS Shortcut)
+#### 6.1.9 Mobile quick-capture (Runout Inbox; iOS Shortcut fallback)
 
-- User shares a Spotify link from the Spotify iOS app to an Apple Shortcut.
+- Fallback (optional, same Wi-Fi as the PC): the user shares a Spotify link from the Spotify iOS app to an Apple Shortcut.
+- Primary (R3, D33): on connecting Spotify, Runout creates a private “Runout Inbox” playlist in the user’s account. From any device and any network the user adds tracks (or a whole album) to it in Spotify; Runout checks it at start, every 15 minutes while running and on demand, adds each new track to the backlog as Planned and “name needed”, saves a batch of tracks added together from one album as that album, and removes imported tracks from the Inbox. Optional settings import newly saved albums and newly followed artists. If the user deletes the Inbox, Runout offers to recreate it rather than doing so silently.
 - Transport: a local-network listener on the PC (O6, resolved in the technical design). A shared-file transport remains a fallback option.
 - The listener is off by default, accepts connections from the local network only, requires a pairing code, accepts only Spotify links, validates and rate-limits input (NFR-18).
 - The item lands in the backlog as Planned, marked “name needed” until the user confirms its name on the PC.
@@ -383,7 +385,7 @@ Priority: P0 must have for the release; P1 should have; P2 could have.
 | FR-015 | Dashboard of local counts and activity. | MVP | P0 |
 | FR-016 | Open any record in Spotify. | MVP | P0 |
 | FR-017 | Show Spotify’s official embed on detail pages; optional compact embeds in lists, max 20 per page, visible items only; store nothing from oEmbed except a user-confirmed title; non-persistent web view; placeholder offline. | MVP | P0 |
-| FR-018 | Receive captured links from an iOS Shortcut per 6.1.9 and NFR-18; store them as “name needed” until confirmed. | MVP | P0 |
+| FR-018 | Receive captured links from an iOS Shortcut over the home network per 6.1.9 and NFR-18 (optional fallback; off by default); store them as “name needed” until confirmed. | MVP | P2 |
 | FR-019 | Store all user data locally; work offline. | MVP | P0 |
 | FR-020 | Documented JSON export with per-field provenance. | MVP | P0 |
 | FR-021 | Compressed backup, max 3 copies, size warning; restore with verification. | MVP | P0 |
@@ -411,6 +413,7 @@ Priority: P0 must have for the release; P1 should have; P2 could have.
 | FR-043 | Delete all unpromoted Spotify-provided data within 5 days of disconnect. | R3 | P0 |
 | FR-044 | Follow Spotify design guidelines wherever Spotify metadata or artwork is shown. | MVP/R3 | P0 |
 | FR-045 | Record local usage counters (app opens, page visits, capture duration) for the success metrics; never transmitted. | MVP | P1 |
+| FR-046 | Runout Inbox: create a private “Runout Inbox” playlist on connect (re-create only on request); import its tracks into the backlog as “name needed” per 5.2; save a batch from one album as the album; remove imported tracks from the Inbox; optional import of newly saved albums and followed artists. | R3 | P1 |
 
 ## 8. Key User Journeys
 
@@ -430,9 +433,9 @@ Expected result: Capture in seconds without Spotify API access.
 
 ### Journey B — Capture from phone
 
-1. User taps Share in Spotify iOS and picks the Shortcut.
+1. In Spotify on the phone, the user adds the track (or album) to the Runout Inbox playlist; on the home Wi-Fi the optional Shortcut works too.
 
-2. Shortcut delivers the link to the desktop app.
+2. Runout picks it up at its next check (or at once via the Shortcut) and removes it from the Inbox.
 
 3. Item appears in the backlog as Planned, marked “name needed”; the user confirms the name later on the PC (short links resolve when online).
 
@@ -613,7 +616,7 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 - Ratings, notes, tags, flags persist after restart.
 - Search, filters, backlog, rediscovery and dashboard reflect the local library accurately and meet the NFR-04 targets for records (search, navigation, start).
 - Embeds display on detail pages; list embeds respect the 20-item limit; nothing from oEmbed is stored except confirmed titles; offline placeholder works.
-- iOS Shortcut capture lands an item in the backlog; listener (if used) meets NFR-18.
+- If the optional Wi-Fi phone capture is enabled, its listener meets NFR-18 (D33: phone capture moved to the Runout Inbox, Release 3).
 - Export with provenance, backup (max 3, compressed, size warning) and verified restore work.
 - Uninstall behaves per FR-024.
 - All core functions work offline; nothing is transmitted silently.
@@ -634,6 +637,7 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 - A playlist edit round-trips with preview, confirmation and undo.
 - Playlist from filter creates the expected playlist.
 - Top items and recent plays display, and “Add to backlog” follows the Promotion Rule; save to library round-trips.
+- Runout Inbox: created on connect; a track added to it on the phone lands in the backlog as “name needed”; a whole album added at once lands as one album item; imported tracks leave the Inbox (D33).
 - All core and R2 features work with Spotify disconnected.
 - Spotify design guidelines are met wherever Spotify data appears.
 ## 14. Milestones
@@ -646,8 +650,8 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 | M3 Backend: MVP core | Database, link parsing, library, Promotion Rule, search, capture listener, export, backup, delete, usage counters | Core tests and MVP performance checks pass | Done (about 3 h agentic) |
 | M4 Backend: listening and insights | Desktop logger, export import, play rule, reconciliation, matching, playlist check-up, insight queries | Lifetime history imported; no double counts; insights hand-verified | 4–6 h agentic, plus export download (U-2) and a 24 h logger run |
 | M5 Backend: Spotify connected | Gate: O1 (Premium plan) and optional O7; login; R3-1 to R3-7 logic | Test-playlist round-trip passes | 4–6 h agentic, after the O1 gate (U-6) |
-| M6 Integration: MVP release | MVP screens on real data, installer, phone capture | MVP criteria pass on the installed build; 2 weeks of daily use measured against section 15, reviewed as the MVP’s final sign-off (runs in parallel with M7, D32) | 4–6 h agentic, plus U-3/U-4; 2 weeks of daily use (U-5) in parallel, not blocking M7 |
-| M7 Integration: R2 and R3 | Listening, insights and Spotify screens on real data | R2 and R3 criteria pass | 3–4 h agentic |
+| M6 Integration: MVP release | MVP screens on real data, installer | MVP criteria pass on the installed build; 2 weeks of daily use measured against section 15, reviewed as the MVP’s final sign-off (runs in parallel with M7, D32) | 4–6 h agentic, plus U-3/U-4; 2 weeks of daily use (U-5) in parallel, not blocking M7 |
+| M7 Integration: R2 and R3 | Listening, insights and Spotify screens on real data; Runout Inbox (phone capture) | R2 and R3 criteria pass | 3–4 h agentic |
 | M8 Future candidates | Selected items from 4.4 | Per item | As needed |
 
 ## 15. Business Success Metrics
@@ -712,6 +716,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | D30 | Delivery order? | Design, then UI on mock data, then backend, then integration; each milestone starts from current specs and a written plan |
 | D31 | How is effort estimated? | Agentic development: build and review hours per milestone, plus the real-world waits agents cannot shorten (user actions, 24 h logger run, 2 weeks of daily use). Calibrated on M3: about 3 hours against a 3–4 week estimate |
 | D32 | Does daily use gate R2/R3 integration? | No (user decision 20 Oct 2026). M7 starts once M6 code, installer and U-3/U-4 pass. U-5 (2 weeks of daily use, section 15 metrics) runs in parallel and is the MVP’s final sign-off; findings feed fixes, not a gate |
+| D33 | How is music captured from the phone? | Through a private “Runout Inbox” Spotify playlist that Runout creates on connect and empties as it imports (R3), because a Wi-Fi listener needs the phone and PC on the same network. The iOS Shortcut stays as an optional fallback (user decision 20 Oct 2026) |
 
 ## 18. Remaining Open Items
 

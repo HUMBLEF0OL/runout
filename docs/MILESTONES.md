@@ -12,7 +12,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M3 Backend: MVP core | backend | MVP | CAP-01–17, 35 | — | done 18 Oct 2026 (about 3 h; was estimated 3–4 weeks) |
 | M4 Backend: listening and insights | backend | R2 | CAP-18–27 | U-2 | done 20 Oct 2026 |
 | M5 Backend: Spotify connected | backend | R3 | CAP-28–34 | U-6, U-7, U-8 (opt.) | done 20 Oct 2026 (build ~4 h + live Studio check; was estimated 4–6 h after the O1 gate) |
-| M6 Integration: MVP release | integration | MVP | CAP-01–17, 35 | U-3, U-4 (U-5 in parallel, D32) | 4–6 h + U-3/U-4; 2 weeks daily use (U-5) runs beside M7 |
+| M6 Integration: MVP release | integration | MVP | CAP-01–17, 35 | — (U-5 in parallel, D32; U-3/U-4 optional, D33) | 4–6 h; 2 weeks daily use (U-5) runs beside M7 |
 | M7 Integration: R2 and R3 | integration | R2, R3 | CAP-18–34 | — | 3–4 h |
 | M8 Future candidates | — | — | per item | per item | as needed |
 
@@ -29,7 +29,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 - **M5 closed** 20 Oct 2026: acceptance 6/6 with evidence (2 lines live on the user's test playlist); WI 1–7 done; external audit: 3 rounds (19 Oct), r4, redesign + 3 rounds, r5 (worktree fixers), final 3-lens round (10 confirmed, fixed in `88392fc`, diff re-audit clean); check.py green, journeys 30/30. BRD O1, O4, O5 resolved. Deferred with owners: G-22, G-23, G-32 (M7), G-24 (M7), G-31, G-33 (M8). History below.
 - **M5 code done** 19 Oct 2026: WI 1–7 built on `dev` (`src-tauri/src/spotify/`, stub-tested, never the real API); 3 external audit rounds, 40 confirmed findings fixed (single-flight refresh, disconnect/revoke purge the cache, reconnect marker survives restart, Studio lock, undo conflict check + unclear-write handling, one undo per playlist); check.py green. Acceptance 4/6 ticked (O1, code check, refresh rotation/reconnect, disconnect). G-24 (duplicates across playlists) deferred to M7. **Live run 20 Oct 2026** (test playlist, `studio_roundtrip`): the write landed but `GET /playlists/{id}?fields=snapshot_id` stayed stale 30 s+, so undo hit a false `conflict`; apply/undo now compare track URIs, never `snapshot_id` (`f27081e`, `efacba1`, audit r2). Items-read freshness verified live (G-30 closed). Audit r3: a failed apply/undo now reloads the draft and undo record (since r5 only after Studio's own apply/undo, and not when the error means nothing was written), undo-specific conflict copy (G-25 closed), undo waits 2 min (`spotify_busy`) before trusting a read of the list from before an unanswered write, `--probe` reads via `studio::current_uris`.
 - **M5 live acceptance passed** 20 Oct 2026 on the user's test playlist (`studio_roundtrip`): round trip (cut 3, dedupe 1, apply, undo → `identical to the original: true`) and `--conflict` (apply blocked once the Web API showed the edit, ~9 s after it was made in the Spotify app). `--probe` reorder: `GET /playlists/{id}/items` showed the move at once; every `snapshot_id` read lagged ~33–36 s. Acceptance 6/6.
-- **Next:** integration phase: M6 WI 1 (switch MVP calls in `api.ts` to Rust), then the M6 installed-build runs and U-3/U-4; M7 starts once those pass (U-5 runs in parallel, D32). M7 picks up G-21, G-27–G-29 (M4 live/real-data follow-ups).
+- **Next:** integration phase: M6 WI 1 (switch MVP calls in `api.ts` to Rust), then the M6 installed-build runs; M7 starts once those pass (U-5 runs in parallel, D32). Phone capture is now the Runout Inbox in M7 (D33). M7 picks up G-21, G-27–G-29 (M4 live/real-data follow-ups).
 
 ### Known gaps
 Found while building and closing M2 (18 Oct 2026). None blocks a release criterion. "Contract" = needs an API.md change first (API.md §7), then `api.ts`, the mock and Rust together. Remove a row when it's fixed; say in the commit which G-n it closes.
@@ -51,6 +51,7 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 | G-31 | Playlist check-up's "Open in Studio" link matches the playlist by name (first match wins when two share a name) | `src/pages/Playlists.tsx` | The Account data export's `Playlist*.json` has no Spotify URI, so `list_exported_playlists` can't give one | M8 candidate (needs a contract change: match the export to a live playlist by name + owner + track list) |
 | G-32 | Autofill, album bulk-add, playlist from filter/items, top items, recent plays and library save/remove have only run against stub HTTP responses; only sign-in and Playlist Studio ran live (20 Oct 2026) | `src-tauri/src/spotify/{autofill,create,discover,library_sync}.rs` | M5 acceptance covers Studio + auth only; the UI still calls mocks for R3 | M7 (switching R3 calls to Rust is the first real call of each; G-22/G-23 resolve there too) |
 | G-33 | Apply and undo wait a fixed 2 minutes after a playlist write with an unknown outcome; a write Spotify finishes later than that could still land after Runout acts | `src-tauri/src/spotify/studio.rs` (`UNSURE_WAIT`) | No Spotify signal says a pending write is done; 2 min is far above the 20 s request timeout. Needs a timeout + 5xx on a real write to observe | M8 candidate (raise the bound or add a content re-check before undo's write if ever seen) |
+| G-34 | Wi-Fi phone capture (iOS Shortcut, FR-018) never completed end to end on the real phone: the first try hit the 5-wrong-code lockout | `src-tauri/src/capture.rs`, Shortcut (U-3) | D33 made it an optional fallback; phone capture is the Runout Inbox (M7 WI 4) | M8 candidate (re-test with a fresh code if the fallback is wanted) |
 | G-35 | Tray menu has no "Quick add" entry (DESIGN §6 `#/tray` board); labels read "Pause logging for 1 hour / until resumed" and pause items grey out instead of hiding while paused | `src-tauri/src/tray.rs` | Not in FR-026 or TSD; the tray is R2 (CAP-18) and opening Quick add from Rust needs a new UI event (API.md §7) | M7 (with the R2 switch-over; spec decision, then contract) |
 | G-36 | The play in progress is lost when Windows shuts down or signs out (no `RunEvent`/end-session handling); tray Quit does save it | `src-tauri/src/lib.rs`, `tray.rs` | TSD doesn't cover shutdown; found in the tray review 20 Oct 2026 | M7 (with G-28's live logger run) |
 
@@ -206,17 +207,18 @@ Acceptance
 - [ ] Network capture: idle app makes no outbound connections; normal use reaches only allow-listed hosts plus embed traffic (NFR-07).
 - [ ] Uninstall, box unticked: cache, tokens and `EBWebView` gone; library and backups kept. Box ticked: library also gone; backups kept. Update-mode reinstall keeps the Spotify connection.
 - [ ] NFR-04 on the installed build: navigation < 500 ms, start < 3 s.
-- [ ] **U-3** Shortcut share lands in backlog as “name needed”; **U-4** firewall allowed.
+- [ ] *(Optional since D33, not needed to close M6)* **U-3** Shortcut share lands in backlog as “name needed”; **U-4** firewall allowed (U-4 done 20 Oct 2026; first Shortcut attempt locked out on a wrong code). *(open, G-34: Wi-Fi capture is now a fallback; phone capture is the Runout Inbox, M7 WI 4)*
 - [ ] **U-5** two weeks of daily use; success metrics (BRD §15) reviewed → MVP final sign-off. Not needed to close M6 or start M7 (BRD D32, user decision 20 Oct 2026). *(open: waiting on U-5)*
 
 ## M7 — Integration: R2 and R3
 
-**Goal:** listening, insights and Spotify screens on real data.
+**Goal:** listening, insights and Spotify screens on real data; phone capture through the Runout Inbox.
 
 Work items
 1. Switch R2 calls (logger status, import, plays, insights, check-up) to Rust; remove mocks.
 2. Switch R3 calls (connection, Playlist Studio, playlist from filter, autofill, From Spotify, library save) to Rust; remove mocks.
 3. Compliance pass on the running app (`compliance-review`).
+4. Runout Inbox (FR-046, CAP-36, D33, TSD §5.3): create on connect, check at start / 15 min / on demand, import as “name needed”, album batches → album item, remove imported entries; Settings section (state, Check now, Create Inbox, optional saved albums / followed artists). Contract to API.md first.
 
 Acceptance
 - [ ] All BRD §13.2 and §13.3 criteria pass.
@@ -225,6 +227,7 @@ Acceptance
 - [ ] Top items and recent plays: “Add to backlog” creates a promoted record (FR-041); save then remove an album in the Spotify library (FR-042).
 - [ ] Unplug network → all MVP and R2 features work.
 - [ ] `src/mocks/` holds no code used by the shipped build.
+- [ ] Runout Inbox: connecting creates a private “Runout Inbox”; a track added to it on the phone (mobile data, not the home Wi-Fi) lands in the backlog as “name needed” and leaves the Inbox; adding a whole album lands one album item; deleting the Inbox shows **Create Inbox**, never a silent re-create.
 
 ## M8 — Future candidates
 Pick from BRD §4.4 after the M7 review. Each gets its own spec and plan before work starts.

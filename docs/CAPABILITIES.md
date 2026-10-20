@@ -20,7 +20,7 @@ Data sources: **U** user-authored · **S** desktop logger · **E** Spotify data 
 | CAP-10 | Search everything (titles, notes, reviews, tags) | M1 · M2 · M3 · M6 | FR-014 | U |
 | CAP-11 | Rediscover: revisit list, top-rated, stale backlog, incomplete reviews, saved filters | M1 · M2 · M3 · M6 | FR-013 | U |
 | CAP-12 | Home dashboard: counts, in progress, recent activity | M1 · M2 · M3 · M6 | FR-015 | U |
-| CAP-13 | Share a song from Spotify on iPhone straight into the backlog (name confirmed later on the PC) | M1 · M2 · M3 · M6 | FR-018 | U |
+| CAP-13 | *(Optional fallback, D33)* Share a song from Spotify on iPhone over the home Wi-Fi straight into the backlog (name confirmed later on the PC) | M1 · M2 · M3 · M6 | FR-018 | U |
 | CAP-14 | Export your data (JSON with provenance) | M1 · M2 · M3 · M6 | FR-020, 025 | U |
 | CAP-15 | Automatic weekly backups (max 3, compressed), restore with verification | M1 · M2 · M3 · M6 | FR-021 | U |
 | CAP-16 | Delete a record or the whole library; choose what uninstall removes | M1 · M2 · M3 · M6 | FR-022, 024 | U |
@@ -53,6 +53,7 @@ Data sources: **U** user-authored · **S** desktop logger · **E** Spotify data 
 | CAP-32 | See your Spotify Top 50 (4 weeks / 6 months / 1 year) and add to backlog | M1 · M2 · M5 · M7 | FR-041 | A |
 | CAP-33 | See your last 50 plays from any device; save or rate them | M1 · M2 · M5 · M7 | FR-041 | A |
 | CAP-34 | Save or remove items in your Spotify library | M1 · M2 · M5 · M7 | FR-042 | A |
+| CAP-36 | Capture from the phone anywhere: add a song or album to the “Runout Inbox” Spotify playlist; Runout moves it into the backlog (name confirmed on the PC) | M7 (design, UI and backend built in M7; D33) | FR-046 | A → U on confirm |
 
 ## Not capabilities (explicitly excluded)
 In-app audio playback (beyond Spotify’s own embed) · BPM/mood/energy · Spotify recommendations · popularity · other users’ playlists · podcasts/episodes · stats from Spotify API data · reading Spotify’s internal files · cloud sync · multiple users · native mobile app.
