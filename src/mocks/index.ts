@@ -487,6 +487,12 @@ const emptied = (v: unknown): unknown =>
   Array.isArray(v) ? [] : typeof v === "number" ? 0 : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "freshness" || k === "sources" ? x : emptied(x)])) : v;
 const until = (cond: () => boolean) => new Promise<void>((res) => { if (cond()) return res(); const off = onDevChange(() => { if (cond()) { off(); res(); } }); });
 
+/** API.md §5 commands that answer `conflict`, with the "conflict" dev state's message (check.py). */
+const CONFLICT: Record<string, string> = {
+  apply_studio_draft: "The playlist changed on Spotify since the draft was loaded. Reload the draft.",
+  undo_last_apply: "This playlist changed on Spotify since you applied, so undo would erase those changes. The undo was dropped.",
+};
+
 export async function mockCall<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   const h = H[cmd];
   if (!h) throw { code: "internal", message: `No mock for ${cmd}` } as AppError;
@@ -495,6 +501,10 @@ export async function mockCall<T>(cmd: string, args: Record<string, unknown>): P
     await until(() => dev.view !== "loading");
     if (dev.view === "error") throw { code: "io", message: "Runout couldn't read your library file.", detail: "library.db is locked by another process" } as AppError;
     if (dev.view === "offline" && NETWORK.has(cmd)) fail("offline", "You're offline. This needs Spotify.");
+    if (dev.view === "conflict" && cmd in CONFLICT) {
+      if (cmd === "undo_last_apply") lastApply.delete(args.playlistUri as string); // Rust drops a dead undo
+      fail("conflict", CONFLICT[cmd]);
+    }
   }
   const out = h(args);
   return structuredClone(dev.view === "empty" && !NO_EMPTY.has(cmd) ? emptied(out) : out) as T;

@@ -173,11 +173,12 @@ interface PlaylistCheckup { tracks: { position: number; name: string; artist: st
 | `load_studio_draft` | `playlist_uri` | `Draft` | `{playlist_uri, snapshot_id, tracks: {uri, name, artist, rating, tags, dupe_of}[]}`; ratings/tags only (D27) |
 | `preview_studio_apply` | `draft, keep: string[]` | `{removed, reordered, added}` | Diff shown before confirm |
 | `apply_studio_draft` | `draft, keep: string[]` | `{undo_id, expires_at}` | `conflict` if `snapshot_id` changed |
-| `get_last_apply` / `undo_last_apply` | `playlist_uri` | `{undo_id, applied_at, expires_at} \| null` / `void` | 30-day snapshot (O4) |
-| `create_playlist_from_filter` | `filter_id, name, public` | `{playlist_uri, added, skipped_no_uri}` | FR-039 |
+| `get_last_apply` | `playlist_uri` | `{undo_id, applied_at, expires_at} \| null` | 30-day undo snapshot (O4); `null` when there is none (none is kept when the apply's first write definitely didn't land); one per playlist, so a newer apply replaces it |
+| `undo_last_apply` | `playlist_uri` | `void` | `conflict` if the playlist changed on Spotify since Runout's last write to it; the snapshot is then dropped (`get_last_apply` → `null`), since that undo can never go through. A failed write keeps it for a retry |
+| `create_playlist_from_filter` | `filter_id, name, public` | `{playlist_uri, added, skipped_no_uri}` | FR-039. An add that fails after the playlist was created keeps that error's code, says how many tracks landed, and puts the new `playlist_uri` in `detail` (a retry would create a second playlist) |
 | `create_playlist_from_items` | `item_ids, name, public` | same | FR-039 for Rediscover shelves (rule-built, not saved filters); albums add all their tracks |
 | `autofill` | `uri` | `{fields: {artist?, album?, year?, display_name?}, track_list?: {uri, name, position}[]}` | From cache; nothing written until confirm (TSD §4.2) |
-| `bulk_add_album_tracks` | `album_id, tracks: {uri, name}[]` | `ItemSummary[]` | Promoted + linked `on_album` |
+| `bulk_add_album_tracks` | `album_id, tracks: {uri, name}[]` | `ItemSummary[]` | Promoted + linked `on_album`; tracks already in the library are linked too but not returned (result = added) |
 | `get_top_items` | `kind: 'tracks' \| 'artists', range: '4w' \| '6m' \| '1y'` | `SpotifyEntry[]` | Display only; `{uri, name, artist, in_library_id}` |
 | `get_recent_plays_api` | — | `(SpotifyEntry & {played_at})[]` | Display only; never in insights |
 | `library_contains` / `save_to_spotify_library` / `remove_from_spotify_library` | `uris: string[]` | `boolean[]` / `void` / `void` | ≤ 40 per call, batched in Rust |

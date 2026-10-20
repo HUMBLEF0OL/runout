@@ -22,8 +22,8 @@ Format: fact — **status**, date, source. Design decisions live in [TSD](../TSD
 - Docs behind it: Tauri `incognito` ("Enable or disable incognito mode for the WebView", Android unsupported) https://docs.rs/tauri/latest/tauri/webview/struct.WebviewWindowBuilder.html#method.incognito ; WebView2 `IsInPrivateModeEnabled` https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2controlleroptions ; UDF contents (DiskCache, Cookies, …) https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder — MS docs do not spell out InPrivate's disk behaviour, hence the test.
 
 ## Credentials
-- Tokens go to Windows Credential Manager via the `keyring` crate, target `Runout/spotify` — **Documented**, TSD §2.
-- `--uninstall-cleanup` deletes the generic credential with target name exactly `Runout/spotify` (`CredDeleteW`, `windows` crate, `cleanup.rs`). keyring's Windows backend names the target `{user}.{service}` by default, so M5 must create the entry with `Entry::new_with_target("Runout/spotify", …)` or the uninstaller won't find it — **Interpretation** (keyring docs), 2026-10-18; check in M5.
+- Tokens go to Windows Credential Manager as a generic credential with target exactly `Runout/spotify`, written/read with `CredWriteW`/`CredReadW` from the `windows` crate (`spotify/auth.rs`), no `keyring` crate — **Decision**, 2026-10-19 (M5).
+- `--uninstall-cleanup` deletes that credential with `CredDeleteW` (`cleanup.rs`), the same target `Spotify::new` writes (test `production_credential_target_is_the_one_cleanup_deletes`); write → read → overwrite → delete round-trip passes against the real Credential Manager with a test target — **Verified**, 2026-10-19 (`token_store_round_trip_with_a_test_target`). G-15 closed.
 
 ## SQLite
 - `VACUUM INTO` gives a consistent compacted snapshot for backups — **Documented**, https://www.sqlite.org/lang_vacuum.html

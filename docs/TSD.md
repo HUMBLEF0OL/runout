@@ -24,7 +24,7 @@ Items marked **⚑ verify** are assumptions to confirm in the named milestone. E
 | Windows media session | `windows` crate → `Windows.Media.Control` (SMTC) | Official OS API; proven on this PC (Spotify 1.305, 18 Oct 2026) |
 | HTTP client | `reqwest` (Rust side only) | oEmbed, short-link resolution, Web API |
 | Capture listener | `std::net::TcpListener` on a background thread (non-blocking accept, thread per request ≤ 4) | Needs per-socket read/write timeouts and a refuse-before-read on Content-Length (> 2 KB → 413, chunked → 411); tiny_http 0.12 had neither and drained huge declared bodies on drop (G-17, fixed 18 Oct 2026) |
-| Secrets | `keyring` crate → Windows Credential Manager | NFR-08 |
+| Secrets | Windows Credential Manager via the `windows` crate (`CredWriteW`/`CredReadW`/`CredDeleteW`, generic credential `Runout/spotify`; no `keyring` crate, M5) | NFR-08 |
 | Autostart / tray | Tauri tray API + `tauri-plugin-autostart` | Native |
 | Web view mode | Main window created with `incognito(true)` (WebView2 InPrivate); verified 18 Oct 2026, [KB](kb/windows-tauri.md#webview2) | Spotify embed content is never kept in a disk cache (BRD 5.3, Embeds Terms IV.2.c) |
 | Bundle identifier | `app.runout.desktop` | Determines all app data folders and what the uninstaller deletes |
@@ -125,7 +125,7 @@ usage_event(id PK, kind CHECK(kind IN('app_open','page_visit','capture')), at TE
 `spotify_cache.db` (source A only; deleted as a file on disconnect):
 ```sql
 cache_entry(uri PK, kind, payload_json, fetched_at, expires_at)
-playlist_snapshot(id PK, playlist_uri, spotify_snapshot_id, taken_at, expires_at, items_json)
+playlist_snapshot(id PK, playlist_uri, spotify_snapshot_id, taken_at, expires_at, items_json, applied_snapshot_id, pending_json)  -- applied_snapshot_id: playlist snapshot_id after Runout's last landed apply/undo write (undo's conflict check); pending_json: URI list a write with unknown outcome would leave (undo recognises its own write)
 ```
 
 Timestamps are ISO-8601 UTC strings except `ended_at_local`.
@@ -239,17 +239,20 @@ Insert a `usage_event` on app open, on each page visit, and on each capture. A c
 
 ### 5.2 Spotify Web API (R3)
 - Auth: Authorization Code + PKCE, no client secret.
-- Redirect URI: registered as `http://127.0.0.1/callback` **without a port**. At login the app binds a free loopback port and sends `http://127.0.0.1:<port>/callback`. Spotify allows this only for loopback IP literals; `localhost` is not allowed (redirect-URI concept page, checked 18 Oct 2026).
-- Tokens in Credential Manager. Refresh on 401, and **store the new refresh token** whenever the refresh response contains one. On `invalid_grant`, discard tokens and show “Reconnect Spotify” (6-month expiry).
-- Endpoints (names per Feb 2026 Dev Mode guide): `GET /me`, `GET /me/playlists`, `GET|POST|PUT|DELETE /playlists/{id}/items`, `POST /me/playlists`, `GET /me/top/{artists|tracks}`, `GET /me/player/recently-played`, `PUT|DELETE /me/library`, `GET /me/library/contains`, `GET /albums/{id}`, `GET /tracks/{id}`, `GET /artists/{id}`.
+- Redirect URI: registered as `http://127.0.0.1:8888/callback` (the dashboard rejects a port-less loopback URI). At login the app binds a free loopback port and sends `http://127.0.0.1:<port>/callback`; Spotify accepts any port on the loopback IP literal (T3 verified 19 Oct 2026, KB spotify.md); `localhost` is not allowed.
+- Client ID: read at run time from the `RUNOUT_SPOTIFY_CLIENT_ID` environment variable (`spotify::CLIENT_ID_ENV`); never in the repo, never logged (check.py `check_no_committed_client_id`). Missing or malformed → `spotify_auth` with a message naming the variable.
+- Tokens in Credential Manager. Refresh on 401, and **store the new refresh token** whenever the refresh response contains one. Refresh is single-flight: concurrent callers wait for one refresh and re-read the tokens, so an already-rotated refresh token is never sent; a refresh answer that arrives after a disconnect is dropped. On `invalid_grant` (for the refresh token still stored), discard tokens, delete `spotify_cache.db` (a revoked grant counts as a disconnect for the 5-day rule) and show “Reconnect Spotify” (6-month expiry); the state survives a restart via an empty `spotify_reconnect` marker file. A 429/5xx from the token endpoint is “Spotify busy”, not a sign-in error.
+- Endpoints (names per Feb 2026 Dev Mode guide): `GET /me`, `GET /me/playlists`, `GET|POST|PUT|DELETE /playlists/{id}/items`, `POST /me/playlists`, `GET /me/top/{artists|tracks}`, `GET /me/player/recently-played`, `PUT|DELETE /me/library`, `GET /me/library/contains`, `GET /playlists/{id}` (current `snapshot_id`), `GET /albums/{id}`, `GET /albums/{id}/tracks` (create-playlist album expansion; ⚑ Dev Mode availability unverified, G-23), `GET /tracks/{id}`, `GET /artists/{id}`.
 - Scopes: `playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public user-top-read user-read-recently-played user-library-read user-library-modify`. `PUT /me/library` takes up to 40 URIs per call.
 - Rate limiting: honour `Retry-After` on 429; max 1 in-flight write.
 - Playlist conflict check:
   - Spotify applies item changes even if the playlist changed since the given `snapshot_id`, so that ID gives no protection.
   - Immediately before applying, `GET` the playlist and compare its current `snapshot_id` with the one stored in the draft. On mismatch, stop and show “playlist changed on Spotify, reload draft”.
   - The remaining race window is the gap between that `GET` and the write (sub-second). Accepted.
+  - The whole apply (check, snapshot, every 100-URI chunk) and the whole undo hold one Studio lock, so two of them never interleave.
+  - Undo checks too: every apply/undo write that lands records the `snapshot_id` it returns on the undo snapshot (`applied_snapshot_id`), so after a write fails partway undo, or a retried undo, compares against Runout's own last write. Undo re-reads the playlist and returns `conflict` if it moved on (edited since), instead of overwriting the edit, and drops the snapshot (that id never comes back). A failed write may still have landed (timeout, reset, 5xx, unreadable 2xx), so the playlist's `snapshot_id` is re-read: unchanged = it didn't land; moved = it did (that id is recorded); re-read failed too = unknown, and the list that write would leave is kept (`pending_json`) so undo can tell Runout's own unanswered write from someone else's edit. Only an apply whose first write definitely didn't land keeps no snapshot. One undo per playlist: once an apply (maybe) landed, older snapshots of that playlist are dropped. A playlist longer than 10,000 entries is refused (`validation`), never truncated.
 - Playlist Studio reads only `item` ratings and tags (source U) alongside API playlist data. It never queries `listening_event` or `exported_playlist*` (BRD 11.1, D27).
-- Disconnect: delete tokens and delete `spotify_cache.db` (cache and snapshots) immediately, which satisfies the 5-day rule.
+- Disconnect: delete tokens and delete `spotify_cache.db` (cache and snapshots) immediately, which satisfies the 5-day rule. Disconnect first waits for a running Studio apply/undo (seconds), so a playlist is never left cut short with its undo deleted. The cache file is only ever opened while signed in, so a request still in flight at disconnect can't re-create it; a cache found without a sign-in is deleted by the sweeper. A Credential Manager read that fails (anything but not-found) is not "signed out": it is not cached, the next call reads again, the sweeper deletes nothing on it, and `get_spotify_status` returns `io` (no `spotify-status` event) instead of `disconnected`. A new sign-in bumps the token generation, so a refresh or `invalid_grant` answer from the older grant never overwrites or clears it. Display lists (top items, recently played) cache only the displayed fields, never the raw response.
 - Cache expiry 7 days (O5); snapshot expiry 30 days (O4); sweeper runs at startup and daily.
 
 ## 6. Error handling and degradation (NFR-09, NFR-15)
@@ -305,5 +308,5 @@ spotify-companion/
 |---|---|---|
 | T1 | ~~Export file and field names (4.8)~~ Resolved 19 Oct 2026 for streaming history ([KB](kb/spotify.md#extended-streaming-history-format-t1--verified-2026-10-19)). Account data `Playlist*.json` not received, still ⚑ in 4.8 | M4 |
 | T2 | NSIS checkbox relabel and update-mode detection in the pre-uninstall hook (4.11) | M6 |
-| T3 | Re-check redirect-URI rules just before registering the app (5.2); confirmed 18 Oct 2026 | M5 |
+| T3 | Re-check redirect-URI rules just before registering the app (5.2); confirmed 18 Oct 2026; dynamic loopback port verified with a real login 19 Oct 2026 (registered `:8888`, `:58163` accepted) | M5 |
 | T4 | ~~Incognito (InPrivate) WebView2 works with Spotify embeds and keeps no disk cache (§1)~~ Resolved 18 Oct 2026: yes ([KB](kb/windows-tauri.md#webview2)); re-check in the real app window in M2 | M2 |

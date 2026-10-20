@@ -34,6 +34,14 @@ use crate::links::{self, CaptureSource, Parsed, Unresolved};
 use crate::logger::{self, Logger, LoggerPatch, LoggerStatus};
 use crate::net;
 use crate::settings::{self, Settings};
+use crate::spotify::autofill::{self as sp_autofill, Autofill, NewTrack};
+use crate::spotify::create::{self as sp_create, CreatedPlaylist};
+use crate::spotify::discover::{self as sp_discover, RecentPlay, SpotifyEntry, TopKind, TopRange};
+use crate::spotify::library_sync as sp_library;
+use crate::spotify::studio::{
+    self as sp_studio, Applied, ApplyRecord, Draft, SpotifyPlaylist, StudioDiff,
+};
+use crate::spotify::{self, Spotify, SpotifyStatus};
 use crate::state::AppState;
 use crate::text::{clean_line, limit};
 use crate::usage::{self, SuccessMetrics};
@@ -105,6 +113,24 @@ pub fn handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + 
         get_collection_insights,
         get_take_insights,
         get_year_review,
+        get_spotify_status,
+        connect_spotify,
+        disconnect_spotify,
+        list_spotify_playlists,
+        load_studio_draft,
+        preview_studio_apply,
+        apply_studio_draft,
+        get_last_apply,
+        undo_last_apply,
+        create_playlist_from_filter,
+        create_playlist_from_items,
+        autofill,
+        bulk_add_album_tracks,
+        get_top_items,
+        get_recent_plays_api,
+        library_contains,
+        save_to_spotify_library,
+        remove_from_spotify_library,
     ]
 }
 
@@ -677,6 +703,194 @@ pub fn get_year_review(st: St<'_>, year: i32) -> Result<Sourced<YearReview>> {
     listening::year_review(&st.db.lock().unwrap(), year, private(&st))
 }
 
+/* ------------------------------------------------------------- R3 Spotify (API.md §5) */
+// Every R3 command but status/connect/disconnect starts with `require_connected` (disconnected →
+// `spotify_auth`, the rest of the app unaffected), then validates its args again (TSD §7).
+
+type Sp<'a> = State<'a, Spotify>;
+
+#[tauri::command]
+pub async fn get_spotify_status(sp: Sp<'_>) -> Result<SpotifyStatus> {
+    sp.status().await
+}
+
+#[tauri::command]
+pub async fn connect_spotify(sp: Sp<'_>) -> Result<SpotifyStatus> {
+    sp.connect().await
+}
+
+#[tauri::command]
+pub async fn disconnect_spotify(sp: Sp<'_>) -> Result<()> {
+    sp.disconnect().await
+}
+
+const ITEM_URIS: &[&str] = &["album", "track", "artist"];
+const LIBRARY_URIS: &[&str] = &["album", "track", "artist"];
+
+fn check_uris(uris: &[String], kinds: &[&str]) -> Result<Vec<String>> {
+    uris.iter().map(|u| spotify::check_uri(u, kinds)).collect()
+}
+
+/// The playlist and every kept URI must be well-formed before anything reaches Spotify.
+/// Validates the draft's playlist URI and keeps the trimmed value (the undo snapshot is keyed by
+/// it), then the kept track URIs.
+fn check_draft(draft: &mut Draft, keep: &[String]) -> Result<Vec<String>> {
+    draft.playlist_uri = spotify::check_uri(&draft.playlist_uri, &["playlist"])?;
+    check_uris(keep, &["track"])
+}
+
+fn playlist_name(name: &str) -> Result<String> {
+    let n = clean_line(name, limit::PLAYLIST);
+    if n.is_empty() {
+        return Err(AppError::validation("Give the playlist a name."));
+    }
+    Ok(n)
+}
+
+#[tauri::command]
+pub async fn list_spotify_playlists(sp: Sp<'_>) -> Result<Vec<SpotifyPlaylist>> {
+    sp.require_connected()?;
+    sp_studio::list_spotify_playlists(&sp).await
+}
+
+#[tauri::command]
+pub async fn load_studio_draft(sp: Sp<'_>, st: St<'_>, playlist_uri: String) -> Result<Draft> {
+    sp.require_connected()?;
+    let uri = spotify::check_uri(&playlist_uri, &["playlist"])?;
+    sp_studio::load_studio_draft(&sp, &st.db, &uri).await
+}
+
+#[tauri::command]
+pub async fn preview_studio_apply(
+    sp: Sp<'_>,
+    mut draft: Draft,
+    keep: Vec<String>,
+) -> Result<StudioDiff> {
+    sp.require_connected()?;
+    let keep = check_draft(&mut draft, &keep)?;
+    sp_studio::preview_studio_apply(&sp, &draft, &keep).await
+}
+
+#[tauri::command]
+pub async fn apply_studio_draft(
+    sp: Sp<'_>,
+    mut draft: Draft,
+    keep: Vec<String>,
+) -> Result<Applied> {
+    sp.require_connected()?;
+    let keep = check_draft(&mut draft, &keep)?;
+    sp_studio::apply_studio_draft(&sp, &draft, &keep).await
+}
+
+#[tauri::command]
+pub async fn get_last_apply(sp: Sp<'_>, playlist_uri: String) -> Result<Option<ApplyRecord>> {
+    sp.require_connected()?;
+    let uri = spotify::check_uri(&playlist_uri, &["playlist"])?;
+    sp_studio::get_last_apply(&sp, &uri).await
+}
+
+#[tauri::command]
+pub async fn undo_last_apply(sp: Sp<'_>, playlist_uri: String) -> Result<()> {
+    sp.require_connected()?;
+    let uri = spotify::check_uri(&playlist_uri, &["playlist"])?;
+    sp_studio::undo_last_apply(&sp, &uri).await
+}
+
+#[tauri::command]
+pub async fn create_playlist_from_filter(
+    sp: Sp<'_>,
+    st: St<'_>,
+    filter_id: i64,
+    name: String,
+    public: bool,
+) -> Result<CreatedPlaylist> {
+    sp.require_connected()?;
+    let name = playlist_name(&name)?;
+    sp_create::create_playlist_from_filter(&sp, &st.db, filter_id, &name, public).await
+}
+
+#[tauri::command]
+pub async fn create_playlist_from_items(
+    sp: Sp<'_>,
+    st: St<'_>,
+    item_ids: Vec<i64>,
+    name: String,
+    public: bool,
+) -> Result<CreatedPlaylist> {
+    sp.require_connected()?;
+    let name = playlist_name(&name)?;
+    sp_create::create_playlist_from_items(&sp, &st.db, &item_ids, &name, public).await
+}
+
+#[tauri::command]
+pub async fn autofill(sp: Sp<'_>, uri: String) -> Result<Autofill> {
+    sp.require_connected()?;
+    let uri = spotify::check_uri(&uri, ITEM_URIS)?;
+    sp_autofill::autofill(&sp, &uri).await
+}
+
+#[tauri::command]
+pub async fn bulk_add_album_tracks(
+    sp: Sp<'_>,
+    st: St<'_>,
+    album_id: i64,
+    tracks: Vec<NewTrack>,
+) -> Result<Vec<ItemSummary>> {
+    sp.require_connected()?;
+    let tracks = tracks
+        .into_iter()
+        .map(|t| {
+            let name = clean_line(&t.name, limit::NAME);
+            if name.is_empty() {
+                return Err(AppError::validation("Every track needs a name."));
+            }
+            Ok(NewTrack {
+                uri: spotify::check_uri(&t.uri, &["track"])?,
+                name,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    sp_autofill::bulk_add_album_tracks(&sp, &st.db, album_id, tracks).await
+}
+
+#[tauri::command]
+pub async fn get_top_items(
+    sp: Sp<'_>,
+    st: St<'_>,
+    kind: TopKind,
+    range: TopRange,
+) -> Result<Vec<SpotifyEntry>> {
+    sp.require_connected()?;
+    sp_discover::get_top_items(&sp, &st.db, kind, range).await
+}
+
+#[tauri::command]
+pub async fn get_recent_plays_api(sp: Sp<'_>, st: St<'_>) -> Result<Vec<RecentPlay>> {
+    sp.require_connected()?;
+    sp_discover::get_recent_plays_api(&sp, &st.db).await
+}
+
+#[tauri::command]
+pub async fn library_contains(sp: Sp<'_>, uris: Vec<String>) -> Result<Vec<bool>> {
+    sp.require_connected()?;
+    let uris = check_uris(&uris, LIBRARY_URIS)?;
+    sp_library::library_contains(&sp, &uris).await
+}
+
+#[tauri::command]
+pub async fn save_to_spotify_library(sp: Sp<'_>, uris: Vec<String>) -> Result<()> {
+    sp.require_connected()?;
+    let uris = check_uris(&uris, LIBRARY_URIS)?;
+    sp_library::save_to_spotify_library(&sp, &uris).await
+}
+
+#[tauri::command]
+pub async fn remove_from_spotify_library(sp: Sp<'_>, uris: Vec<String>) -> Result<()> {
+    sp.require_connected()?;
+    let uris = check_uris(&uris, LIBRARY_URIS)?;
+    sp_library::remove_from_spotify_library(&sp, &uris).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -684,6 +898,24 @@ mod tests {
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{INVOKE_KEY, get_ipc_response, mock_builder, mock_context, noop_assets};
     use tauri::{Manager, WebviewWindowBuilder};
+
+    /// The draft's playlist URI is validated and trimmed, so apply and get/undo key the same snapshot.
+    #[test]
+    fn check_draft_keeps_the_trimmed_playlist_uri() {
+        let pl = "spotify:playlist:PPPPPPPPPPPPPPPPPPPPPP";
+        let mut d = Draft {
+            playlist_uri: format!("  {pl} "),
+            snapshot_id: "s1".into(),
+            tracks: vec![],
+        };
+        check_draft(&mut d, &[]).unwrap();
+        assert_eq!(d.playlist_uri, pl);
+        d.playlist_uri = "spotify:album:PPPPPPPPPPPPPPPPPPPPPP".into();
+        assert_eq!(
+            check_draft(&mut d, &[]).unwrap_err().code,
+            crate::error::Code::InvalidLink
+        );
+    }
 
     fn app() -> (tauri::App<tauri::test::MockRuntime>, PathBuf) {
         let d = std::env::temp_dir().join(format!(
@@ -709,6 +941,8 @@ mod tests {
             .unwrap();
         app.manage(st);
         app.manage(Mutex::new(Logger::default()));
+        let stub = crate::spotify::testing::Stub::new(&[]);
+        app.manage(crate::spotify::testing::spotify(&d, &stub));
         (app, d)
     }
 
@@ -832,6 +1066,45 @@ mod tests {
         assert!(t["tracks"].is_array());
         let e = call(&w, "preview_import", json!({"path": "C:\\nope.txt"})).unwrap_err();
         assert_eq!(e["code"], json!("validation"));
+
+        // R3 (API.md §5): disconnected → status says so, every other command is spotify_auth
+        let s = call(&w, "get_spotify_status", json!({})).unwrap();
+        assert_eq!(
+            s,
+            json!({"state": "disconnected", "display_name": null, "renew_by": null})
+        );
+        let pl = json!("spotify:playlist:SyntheticPlaylist00001");
+        let draft = json!({"playlist_uri": pl, "snapshot_id": "s", "tracks": []});
+        for (cmd, args) in [
+            ("list_spotify_playlists", json!({})),
+            ("load_studio_draft", json!({"playlistUri": pl})),
+            ("preview_studio_apply", json!({"draft": draft, "keep": []})),
+            ("apply_studio_draft", json!({"draft": draft, "keep": []})),
+            ("get_last_apply", json!({"playlistUri": pl})),
+            ("undo_last_apply", json!({"playlistUri": pl})),
+            (
+                "create_playlist_from_filter",
+                json!({"filterId": 1, "name": "x", "public": false}),
+            ),
+            (
+                "create_playlist_from_items",
+                json!({"itemIds": [1], "name": "x", "public": false}),
+            ),
+            (
+                "autofill",
+                json!({"uri": "spotify:album:SyntheticAlbumId000001"}),
+            ),
+            ("bulk_add_album_tracks", json!({"albumId": 1, "tracks": []})),
+            ("get_top_items", json!({"kind": "tracks", "range": "4w"})),
+            ("get_recent_plays_api", json!({})),
+            ("library_contains", json!({"uris": []})),
+            ("save_to_spotify_library", json!({"uris": []})),
+            ("remove_from_spotify_library", json!({"uris": []})),
+        ] {
+            let e = call(&w, cmd, args).unwrap_err();
+            assert_eq!(e["code"], json!("spotify_auth"), "{cmd}");
+        }
+        call(&w, "disconnect_spotify", json!({})).unwrap();
         drop(w);
         drop(app);
         let _ = std::fs::remove_dir_all(d);

@@ -105,12 +105,124 @@ def check_restore_marker_guards():
 
 def check_no_oembed_or_tokens_logged():
     # TSD §7: tokens never logged.
-    pat = re.compile(r"(println!|log::\w+!|tracing::\w+!|console\.log)\(.*(token|secret|refresh)", re.I)
-    bad = [f"{p.relative_to(ROOT)}:{i}" for p in source_files()
+    pat = re.compile(r"(e?println!|dbg!|log::\w+!|tracing::\w+!|console\.log)\(.*(token|secret|refresh|client_id|verifier)", re.I)
+    examples = list((TAURI / "examples").glob("*.rs")) if (TAURI / "examples").exists() else []
+    bad = [f"{p.relative_to(ROOT)}:{i}" for p in list(source_files()) + examples
            for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if pat.search(line)]
     if bad:
         failures.append("no secrets in logs")
         print("--- no secrets in logs: FAIL\n" + "\n".join(bad))
+
+
+def check_spotify_rules():
+    # M5 plan rules (BRD 11.1, D27; TSD §7; KB client-ID decision) for src-tauri/src/spotify/:
+    # Playlist Studio etc. never touch listening data or exported playlists; nothing logs; no
+    # token/client id/verifier/code is interpolated into a string (errors, details, panics).
+    d = TAURI / "src" / "spotify"
+    if not d.exists():
+        return
+    data = re.compile(r"listening_event|exported_playlist")
+    logs = re.compile(r"\b(println!|eprintln!|print!|eprint!|dbg!|log::\w+!|tracing::\w+!)")
+    interp = re.compile(r"\{[^{}\"]*\b(access|refresh|token|client_id|verifier|code|secret)\w*[^{}\"]*\}")
+    # audit M5: the same names passed as positional args after the format string (`"{}", t.refresh`)
+    positional = re.compile(r"\"\s*,.*\b(access|refresh|access_token|refresh_token|client_id|verifier|code_verifier|secret)\b")
+    bad = []
+    # examples run against the real credential: same data + interpolation rules (they may print)
+    examples = list((TAURI / "examples").glob("*.rs")) if (TAURI / "examples").exists() else []
+    for p in list(d.rglob("*.rs")) + examples:
+        rel = p.relative_to(ROOT).as_posix()
+        in_spotify = p.parent.name == "spotify"
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if in_spotify and data.search(line):
+                bad.append(f"{rel}:{i}: spotify/ must not reference listening_event / exported_playlist")
+            if in_spotify and logs.search(line):
+                bad.append(f"{rel}:{i}: no logging in spotify/ (tokens, client id)")
+            if re.search(r"format!|panic!|assert\w*!|with_detail|AppError|e?print(ln)?!", line) and (
+                    interp.search(line) or positional.search(line)):
+                bad.append(f"{rel}:{i}: secret-looking value interpolated into a string")
+            # audit M5: a Credential Manager read error is not "signed out" (it must not be cached
+            # or trigger the sweeper's cache delete); keep the Err
+            if in_spotify and re.search(r"load_tokens\([^)]*\)\.ok\(\)", line):
+                bad.append(f"{rel}:{i}: load_tokens(..).ok() turns a read error into 'signed out'")
+            # audit M5: examples never share the app's credential (a refresh there rotates the
+            # app's refresh token and signs the app out)
+            if not in_spotify and "cleanup::CREDENTIAL" in line:
+                bad.append(f"{rel}:{i}: examples must not use the app's credential (cleanup::CREDENTIAL)")
+    # Studio: every fn that writes a playlist (calls replace(..)) holds studio_lock across the
+    # whole check -> snapshot -> chunks sequence, so two applies/undos never interleave.
+    studio = d / "studio.rs"
+    if studio.exists():
+        fn_re = r"\n(?:pub(?:\(crate\))? )?(?:async )?fn (\w+)[^\n]*\{(.*?)\n\}"
+        for m in re.finditer(fn_re, studio.read_text(encoding="utf-8"), re.S):
+            if m.group(1) != "replace" and re.search(r"\breplace\(", m.group(2)) and "studio_lock" not in m.group(2):
+                bad.append(f"{studio.relative_to(ROOT).as_posix()}: {m.group(1)} calls replace( without sp.studio_lock")
+            # audit M5: a failed playlist write may still have landed (timeout, 5xx): replace must
+            # look at the error (re-read snapshot_id) instead of `?`-ing it away
+            if m.group(1) == "replace" and re.search(r"send_json\([^;]*?\)\s*\.await\?", m.group(2), re.S):
+                bad.append(f"{studio.relative_to(ROOT).as_posix()}: replace `?`s a write error (it may have landed; re-read)")
+    # audit M5: status never turns a Credential Manager read error into 'disconnected'
+    spmod = d / "mod.rs"
+    if spmod.exists():
+        fn_re = r"\n    pub (?:async )?fn (status_now|status)\b[^\n]*\{(.*?)\n    \}"
+        for m in re.finditer(fn_re, spmod.read_text(encoding="utf-8"), re.S):
+            if "self.tokens()" in m.group(2):
+                bad.append(f"{spmod.relative_to(ROOT).as_posix()}: {m.group(1)} uses self.tokens(); use load_tokens()?")
+    if bad:
+        failures.append("spotify rules")
+        print("--- spotify rules: FAIL\n" + "\n".join(bad))
+
+
+def check_boundary_values_kept():
+    # audit M5: check_uri trims; a call whose result is thrown away validates one value and uses another.
+    pat = re.compile(r"^\s*(?:spotify::)?check_uri\(.*\)\?;\s*$")
+    bad = [f"{p.relative_to(ROOT).as_posix()}:{i}: check_uri(..)?; discards the trimmed URI; use its result"
+           for p in (TAURI / "src").rglob("*.rs")
+           for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if pat.search(line)]
+    if bad:
+        failures.append("boundary values kept")
+        print("--- boundary values kept: FAIL\n" + "\n".join(bad))
+
+
+def check_cache_schema_in_tsd():
+    # audit M5 / CLAUDE.md flow step 5: every spotify_cache.db column (spotify/cache.rs MIGRATIONS:
+    # CREATE TABLE + ADD COLUMN) is named in TSD §3's spotify_cache.db block.
+    cache, tsd = TAURI / "src/spotify/cache.rs", ROOT / "docs/TSD.md"
+    if not cache.exists():
+        return
+    src = cache.read_text(encoding="utf-8")
+    m = re.search(r"^`spotify_cache\.db`[^\n]*:\n```sql\n(.*?)```", tsd.read_text(encoding="utf-8"), re.S | re.M)
+    block = m.group(1) if m else ""
+    want = []
+    for table, body in re.findall(r"CREATE TABLE (\w+)\((.*?)\);", src, re.S):
+        want += [(table, c) for c in re.findall(r"(?:^|,)\s*(\w+)\s+[A-Z]", body)]
+    want += re.findall(r"ALTER TABLE (\w+) ADD COLUMN (\w+)", src)
+    rows = dict(re.findall(r"^(\w+)\((.*)$", block, re.M))
+    bad = [f"TSD §3 spotify_cache.db: {t}.{c} missing" for t, c in want
+           if not re.search(rf"\b{c}\b", rows.get(t, ""))]
+    if not want:
+        bad.append("no columns parsed from spotify/cache.rs MIGRATIONS (format changed?)")
+    if bad:
+        failures.append("cache schema in TSD")
+        print("--- cache schema in TSD: FAIL\n" + "\n".join(bad))
+
+
+def check_mock_conflicts():
+    # audit M5 / G-9: every API.md §5 command whose notes promise `conflict` fails with it in the
+    # mocks' "conflict" dev state (CONFLICT map in src/mocks/index.ts), so the screen is reachable.
+    mock = ROOT / "src/mocks/index.ts"
+    sec = re.search(r"^## 5\..*?(?=^## )", (ROOT / "docs/API.md").read_text(encoding="utf-8"), re.S | re.M)
+    if not (mock.exists() and sec):
+        return
+    m = re.search(r"const CONFLICT[^=]*=\s*\{(.*?)\n\};", mock.read_text(encoding="utf-8"), re.S)
+    keys = set(re.findall(r"^\s*(\w+):", m.group(1), re.M)) if m else set()
+    bad = []
+    for cmds, notes in re.findall(r"^\| (`[a-z_]+`(?: / `[a-z_]+`)*) \|(.*)$", sec.group(0), re.M):
+        if "`conflict`" in notes:
+            bad += [f"src/mocks/index.ts CONFLICT lacks '{c}' (API.md §5 says it returns conflict)"
+                    for c in re.findall(r"`([a-z_]+)`", cmds) if c not in keys]
+    if bad:
+        failures.append("mock conflicts")
+        print("--- mock conflicts: FAIL\n" + "\n".join(bad))
 
 
 def check_insights_no_cache():
@@ -213,7 +325,7 @@ def check_contract_and_attribution():
 
 
 # API.md sections whose commands must be registered in commands.rs. M4 adds "4", M5 adds "5".
-COMMAND_SECTIONS = ["3"]
+COMMAND_SECTIONS = ["3", "5"]
 
 
 def check_commands():
@@ -291,6 +403,28 @@ def check_link_parity():
         print("--- link parity: FAIL\n" + "\n".join(bad))
 
 
+def check_no_committed_client_id():
+    # M5 plan step 0: the Spotify client ID is never in the repo. Scan every tracked or new
+    # (not ignored) text file for a 32-hex value or an assigned RUNOUT_SPOTIFY_CLIENT_ID.
+    r = subprocess.run("git ls-files --cached --others --exclude-standard", cwd=ROOT, shell=True,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    pat = re.compile(r"\b[0-9a-f]{32}\b|RUNOUT_SPOTIFY_CLIENT_ID\s*[=:]\s*[\"']?[0-9A-Za-z]{32}")
+    skip = {".lock", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".icns", ".woff", ".woff2", ".zip", ".docx", ".pdf"}
+    bad = []
+    for rel in r.stdout.splitlines():
+        p = ROOT / rel
+        if p.suffix.lower() in skip or p.name == "package-lock.json" or not p.is_file():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        bad += [f"{rel}:{i}" for i, line in enumerate(text.splitlines(), 1) if pat.search(line)]
+    if bad:
+        failures.append("no client id in repo")
+        print("--- no client id in repo: FAIL (32-hex value or assigned client ID)\n" + "\n".join(bad))
+
+
 def check_source_map():
     # docs/SOURCE_MAP.md: every source file is mapped; every `built` row exists.
     rows = [line for line in (ROOT / "docs/SOURCE_MAP.md").read_text(encoding="utf-8").splitlines()
@@ -299,6 +433,12 @@ def check_source_map():
     bad = [f"built but missing: {p}" for p, r in zip(mapped, rows)
            if r.rstrip(" |").endswith("built") and not (ROOT / p).exists()]
     bad += [f"duplicate row: {p}" for p in sorted({p for p in mapped if mapped.count(p) > 1})]
+    # every example named in the examples row exists, unless its note says "planned"/"not in repo"
+    for p, r in zip(mapped, rows):
+        if p == "src-tauri/examples":
+            for m in re.finditer(r"`([\w.-]+\.rs)`([^`]*)", r):
+                if not (ROOT / p / m.group(1)).exists() and not re.search(r"planned|not in repo", m.group(2)):
+                    bad.append(f"named in the {p}/ row but missing: {m.group(1)}")
     for d in (TAURI / "src", TAURI / "migrations", ROOT / "src"):
         if d.exists():
             for f in (f for f in d.rglob("*") if f.is_file()):
@@ -380,6 +520,11 @@ check_events()
 check_settings_paths()
 check_restore_marker_guards()
 check_insights_no_cache()
+check_spotify_rules()
+check_boundary_values_kept()
+check_cache_schema_in_tsd()
+check_mock_conflicts()
+check_no_committed_client_id()
 check_listening_event_reads()
 check_settings_clone_then_assign()
 check_ui_purity()

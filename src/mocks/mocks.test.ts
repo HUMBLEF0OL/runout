@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createItem, getCounts, getDashboard, getItem, getTakeInsights, listPlays, linkItems, listItems, listSavedFilters, listTags, renameTag, saveFilter, setStatus, unlinkItems, updateItem, type AppError } from "../api";
+import { applyStudioDraft, getLastApply, undoLastApply, createItem, listSpotifyPlaylists, loadStudioDraft, getCounts, getDashboard, getItem, getTakeInsights, listPlays, linkItems, listItems, listSavedFilters, listTags, renameTag, saveFilter, setStatus, unlinkItems, updateItem, type AppError } from "../api";
 import { setDev } from "./devState";
 
 describe("mock commands (API.md)", () => {
@@ -78,6 +78,24 @@ describe("mock commands (API.md)", () => {
     setDev({ view: "error" });
     await expect(listItems({})).rejects.toMatchObject({ code: "io" });
     setDev({ view: "normal" });
+  });
+  it("G-9: the conflict dev state makes apply_studio_draft fail with conflict, other calls work", async () => {
+    setDev({ view: "conflict" });
+    const pl = (await listSpotifyPlaylists())[0];
+    const d = await loadStudioDraft(pl.uri);
+    await expect(applyStudioDraft(d, d.tracks.map((t) => t.uri))).rejects.toMatchObject({ code: "conflict" });
+    setDev({ view: "normal" });
+    await expect(applyStudioDraft(d, d.tracks.map((t) => t.uri))).resolves.toBeTruthy();
+  });
+  it("G-9: undo in the conflict dev state fails with conflict and drops the dead undo", async () => {
+    const pl = (await listSpotifyPlaylists())[0];
+    const d = await loadStudioDraft(pl.uri);
+    await applyStudioDraft(d, d.tracks.map((t) => t.uri));
+    expect(await getLastApply(pl.uri)).not.toBeNull();
+    setDev({ view: "conflict" });
+    await expect(undoLastApply(pl.uri)).rejects.toMatchObject({ code: "conflict" });
+    setDev({ view: "normal" });
+    expect(await getLastApply(pl.uri)).toBeNull();
   });
   it("G-1/G-7/G-8: track plays, album rating on plays, uncheckable albums count", async () => {
     const take = (await getTakeInsights()).data;

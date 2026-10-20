@@ -16,17 +16,18 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M7 Integration: R2 and R3 | integration | R2, R3 | CAP-18–34 | — | 3–4 h |
 | M8 Future candidates | — | — | per item | per item | as needed |
 
-### Status (19 Oct 2026)
+### Status (20 Oct 2026)
 - **Phase:** backend phase; M3 done, M4 ∥ M5 next. Branch `dev` → merge to `master`; commits only, no remote.
 - **M0** done. **M1** designs approved (U-9, 18 Oct 2026); its other acceptance lines were never ticked on the boards themselves, and M2 met them in code (states per screen, `tokens.test.ts` contrast, compliance review with no open findings).
 - **M2** done and closed: all 13 screens + design-system page on mock data, Tailwind v4, `src/api.ts` = full API.md contract behind mocks, input sanitization, T4 verified in the real window. Proof: `python scripts/check.py` (92 Vitest tests) and `node scripts/journeys.mjs` (30/30 keyboard-only steps, journeys A–H). Commits `9cd6c2e`, `df6b155`, `fc12844`.
 - **Contract additions made in M2** (backend must implement): `create_playlist_from_items`; dashboard tile fields; `Unmatched.candidates`; `CollectionInsights` stat fields; `NewItem.artist_name/notes/promoted_fields`; `ItemPatch.artist_name`; `ItemSummary.album_name/added_via/recommended_by`; `ItemDetail.track_list` (all in API.md).
 - **Known gaps:** see [Known gaps](#known-gaps) below (G-2 to G-5 closed in M3; G-1, G-7, G-8 filled in Rust in M4).
-- **Your open hard stops:** U-1/U-2 done 19 Oct 2026 (Extended Streaming History only; Account data export not yet received, needed for M4 WI 7); U-6/U-7 by M5; U-3/U-4/U-5 by M6.
+- **Your open hard stops:** U-1/U-2 done 19 Oct 2026 (Extended Streaming History only; Account data export not yet received, needed for M4 WI 7); U-6/U-7 done (live Studio round trip needs a test playlist, see U-7); U-3/U-4/U-5 by M6.
 - **M3 closed** 18 Oct 2026: all 8 acceptance lines ticked with evidence; four external spec reviews, every finding fixed. Contract changes in M3: `ItemSummary.notes`, `NewItem.album_id`, `ItemPatch.type`, `search` `type`, `recent_activity` dropped.
 - **M3 post-close audit** 19 Oct 2026: 3 rounds of parallel spec reviews + 2 verification passes, 36 findings fixed (FTS secure-delete migration `0002`, restore/move safety copies, capture off mid-request, link-retry races, settings load, input clamps); check.py + journeys 30/30 green.
 - **M4 in progress** 19 Oct 2026: logger, importer and insights merged on `dev` (`d0ea598`), check.py green; WI 9 perf `4ad5a14`; external audit fixes `4f53129`. Acceptance: 4/9 ticked with evidence (minimization query, overlap, hand-verified insights + year review, insights-no-cache). G-17 closed (all-time reads via 0005 rollup). BRD O2 partly resolved (S14: export took ~1 day; frequency open). Open: SMTC 3 live tracks, real lifetime import + re-import 0, 20-play spot-check, 24 h logger run.
-- **Next:** real import + spot-check (reading the export needs your OK) → live SMTC run (3 tracks, pause, repeat: G-21) and 24 h logger run → `close-milestone`. M5 gate passed 19 Oct 2026 (U-6, U-7 done; O1 premium works; T3 dynamic loopback port) — M5 WI 1 next; BRD O1 text needs `change-spec`.
+- **M5 code done** 19 Oct 2026: WI 1–7 built on `dev` (`src-tauri/src/spotify/`, stub-tested, never the real API); 3 external audit rounds, 40 confirmed findings fixed (single-flight refresh, disconnect/revoke purge the cache, reconnect marker survives restart, Studio lock, undo conflict check + unclear-write handling, one undo per playlist); check.py green. Acceptance 4/6 ticked (O1, code check, refresh rotation/reconnect, disconnect). G-24 (duplicates across playlists) and G-25 (undo-conflict UI) deferred to M7.
+- **Next:** M4: real import + spot-check (reading the export needs your OK) → live SMTC run (3 tracks, pause, repeat: G-21) and 24 h logger run → `close-milestone`. M5: **live Studio round trip pending** on your test playlist (`examples/studio_roundtrip.rs`, see USER_ACTIONS U-7) for the two remaining acceptance lines; BRD O1/S1 text needs `change-spec`; then `close-milestone`.
 
 ### Known gaps
 Found while building and closing M2 (18 Oct 2026). None blocks a release criterion. "Contract" = needs an API.md change first (API.md §7), then `api.ts`, the mock and Rust together. Remove a row when it's fixed; say in the commit which G-n it closes.
@@ -34,15 +35,17 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 | # | Gap | Where | Why it's open | Fix in |
 |---|---|---|---|---|
 | G-6 | Rediscover "New shelf" saves a saved filter (chip) rather than a separate shelf type | `src/pages/Rediscover.tsx` | No shelf entity in the contract; saved filter covers it for now | M8 candidate |
-| G-9 | Playlist Studio `conflict` error ("playlist changed on Spotify, reload draft") never seen on screen | `src/pages/Playlists.tsx` | The mock never returns `conflict`; add a dev-switcher trigger or test it against the real API | M5 |
 | G-10 | Quick add prefills a title only for the sample links | `src/mocks/index.ts` | Mock oEmbed is a fixed table; Rust `prefill_title` (oEmbed, M3) is built, check it with a real link when Quick add switches to it | M6 |
 | G-11 | Embeds in mock data show Spotify's "page not found" | mock data | Mock Spotify IDs are random by rule (no real IDs committed); a real pasted link renders fine | won't fix (by design) |
 | G-12 | Embeds play 30-second previews, not full tracks | WebView2 InPrivate | Incognito keeps no Spotify login (T4, `docs/kb/windows-tauri.md`); accepted trade-off for no disk cache | accepted |
 | G-13 | Digits 1–5 don't set status while focus is on the rating slider | `src/hooks/useShortcuts.ts` | Arrow keys own the slider; digits there would be ambiguous | by design |
 | G-14 | Tray menu and uninstall dialog have no React screens | native (Rust tray, NSIS) | They aren't WebView UI (DESIGN §6 reference only) | M6 |
-| G-15 | Spotify credential must be created with target exactly `Runout/spotify` (`keyring` `Entry::new_with_target`) or `--uninstall-cleanup` won't find it | `src-tauri/src/spotify/`, `cleanup.rs` | Credential is written in M5; cleanup (M3) deletes by that target ([KB](kb/windows-tauri.md)) | M5 |
 | G-16 | Success metric "moved after 14 days" can't see items that left the backlog while planned | `src-tauri/src/usage.rs` | Nothing records when an item entered or left the backlog; exact needs a backlog-history migration | M8 candidate |
 | G-21 | Logger replay detection relies on Spotify moving the SMTC timeline position on repeat; if it doesn't, a repeat is one long play (old behaviour) | `src-tauri/src/logger/accumulator.rs` | Not yet exercised in the running app | M4 (SMTC live check) |
+| G-22 | Library sync sends URIs as a `?uris=` comma list with no body on `PUT/DELETE /me/library` and `GET /me/library/contains`; Spotify's expected shape isn't recorded in the KB | `src-tauri/src/spotify/library_sync.rs` (`paths()`/`write()`) | Stub-tested only; no real call yet | M7 (verify-assumption or first real call, then KB entry) |
+| G-23 | Album expansion for "create playlist" calls `GET /albums/{id}/tracks`, which TSD §5.2's endpoint list doesn't name; Dev Mode availability unverified. The Studio's `items`/`tracks` field-name fallback is also unconfirmed | `src-tauri/src/spotify/create.rs`, `studio.rs` | Stub-tested only | M7 (verify, or switch to `GET /albums/{id}` + `tracks.next`; `studio_roundtrip` example confirms the field names) |
+| G-24 | Studio flags duplicates within the loaded playlist only, not across the user's other playlists (BRD R3-1 "duplicates across playlists", M5 WI 3) | `src-tauri/src/spotify/studio.rs` (`dupes()`) | `dupe_of` is a track URI of the same list and the UI resolves it by position; naming another playlist needs a contract change (API.md §7) and one `items` read per playlist | M7 (spec decision on `dupe_of` shape, then implement) |
+| G-25 | An undo `conflict` shows the apply-conflict copy ("Reload to see the new version", retry = reload draft) and doesn't re-fetch `get_last_apply`, so the Undo banner stays until the page reloads (Rust and the mock now drop the dead snapshot; a second press says "no recent change to undo") | `src/pages/Playlists.tsx` (`undo`, conflict `ErrorBanner`) | M5 audit fix was Rust/mock only (no UI page edits in M5); the mock's "conflict" dev state now reaches this screen | M7 (react-ui: undo-specific conflict copy, `last.reload()` on undo error) |
 
 ---
 
@@ -159,21 +162,21 @@ Acceptance
 Gate (before any R3 code): **U-6** developer app created → one API call → confirms the Student Premium plan works (**O1**). If it fails, R3 stops and the decision returns to you. Optional **U-8** (O7).
 
 Work items
-1. Re-check **T3**; PKCE login with dynamic loopback port (**U-7** first login); Credential Manager incl. refresh-token rotation; status; reconnect on `invalid_grant`; disconnect deletes `spotify_cache.db`.
-2. `spotify_cache.db` (cache entries + playlist snapshots); 7-day cache / 30-day snapshot sweeper (O4, O5).
-3. Playlist Studio logic: list own/collab playlists → import → duplicates within/across → draft → diff → re-read `snapshot_id` and abort on mismatch → apply → 30-day undo snapshot. Ratings and tags only, no listening data (BRD 11.1, D27).
-4. Playlist from saved filter.
-5. Autofill (cache → confirm → promote); album track bulk-add.
-6. Top items and recent plays commands (display only; add-to-backlog via promotion rule).
-7. Save to / remove from Spotify library.
+1. Re-check **T3**; PKCE login with dynamic loopback port (**U-7** first login); Credential Manager incl. refresh-token rotation; status; reconnect on `invalid_grant`; disconnect deletes `spotify_cache.db`. *(done 19 Oct 2026)*
+2. `spotify_cache.db` (cache entries + playlist snapshots); 7-day cache / 30-day snapshot sweeper (O4, O5). *(done 19 Oct 2026)*
+3. Playlist Studio logic: list own/collab playlists → import → duplicates within/across → draft → diff → re-read `snapshot_id` and abort on mismatch → apply → 30-day undo snapshot. Ratings and tags only, no listening data (BRD 11.1, D27). *(done 19 Oct 2026; duplicates across playlists deferred: G-24)*
+4. Playlist from saved filter. *(done 19 Oct 2026)*
+5. Autofill (cache → confirm → promote); album track bulk-add. *(done 19 Oct 2026)*
+6. Top items and recent plays commands (display only; add-to-backlog via promotion rule). *(done 19 Oct 2026)*
+7. Save to / remove from Spotify library. *(done 19 Oct 2026)*
 
 Acceptance
-- [ ] O1 resolved.
-- [ ] Playlist round-trip on a **test playlist**: cut 3, dedupe 1, apply, verify in Spotify, undo, verify restored.
-- [ ] Change the playlist in Spotify after drafting → apply blocked (pre-apply check).
-- [ ] Code check: Playlist Studio never queries `listening_event` or `exported_playlist*`.
-- [ ] Refresh that returns a new refresh token stores it; revoked token → reconnect state.
-- [ ] Disconnect → cache DB (incl. snapshots) gone immediately; backups contain no Spotify-provided data.
+- [x] O1 resolved. Student Premium works: PKCE login + `GET /me` → 200 `product=premium`, 19 Oct 2026 (KB spotify.md, commit `5b92162`). BRD O1/S1 text still needs `change-spec`.
+- [ ] Playlist round-trip on a **test playlist**: cut 3, dedupe 1, apply, verify in Spotify, undo, verify restored. *(Live run pending: needs your test playlist + login, `cargo run --example studio_roundtrip -- spotify:playlist:<id>`; stub-tested by `studio::tests::snapshot_is_stored_before_the_write_and_undo_restores_it`.)*
+- [ ] Change the playlist in Spotify after drafting → apply blocked (pre-apply check). *(Live run pending: `studio_roundtrip` needs a pause between draft and apply first; stub-tested by `studio::tests::changed_snapshot_is_a_conflict_and_writes_nothing`.)*
+- [x] Code check: Playlist Studio never queries `listening_event` or `exported_playlist*`. `scripts/check.py` `check_spotify_rules` fails on either name anywhere in `src-tauri/src/spotify/`; green 20 Oct 2026.
+- [x] Refresh that returns a new refresh token stores it; revoked token → reconnect state. Tests `auth::tests::expired_token_refreshes_and_stores_the_rotated_refresh_token`, `invalid_grant_deletes_tokens_and_asks_to_reconnect`, `concurrent_callers_share_one_refresh`, `stale_invalid_grant_keeps_newer_tokens`, `mod::tests::reconnect_survives_restart_and_purges_the_cache`.
+- [x] Disconnect → cache DB (incl. snapshots) gone immediately; backups contain no Spotify-provided data. Tests `cache::tests::disconnect_leaves_no_file_and_no_tokens`, `backup_zip_contains_no_cache_content`, `mod::tests::disconnect_during_a_request_leaves_no_file_and_no_tokens`, `refresh_answer_after_disconnect_is_dropped`, `studio::tests::disconnect_waits_for_a_running_apply`.
 
 ## M6 — Integration: MVP release
 

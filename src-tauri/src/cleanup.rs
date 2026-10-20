@@ -10,6 +10,8 @@ pub const CONFIRM: &str = "DELETE";
 /// Credential Manager target holding the Spotify tokens (TSD §2). M5 must write exactly this target.
 pub const CREDENTIAL: &str = "Runout/spotify";
 pub const CACHE_DB: &str = "spotify_cache.db";
+/// Empty marker: Spotify revoked the sign-in, so the app shows "Reconnect" after a restart.
+pub const RECONNECT_MARKER: &str = "spotify_reconnect";
 pub const WEBVIEW_DIR: &str = "EBWebView";
 
 /// Empty every table in library.db (schema kept), then VACUUM and truncate the WAL so deleted
@@ -58,7 +60,7 @@ fn remove(p: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Always-run uninstall step: `spotify_cache.db` (+ WAL files), the `EBWebView` folder (both in
+/// Always-run uninstall step: `spotify_cache.db` (+ journal files), the reconnect marker, the `EBWebView` folder (all in
 /// `%LOCALAPPDATA%\app.runout.desktop`) and the `Runout/spotify` credential. Missing = fine.
 /// Every step runs; the first error is returned.
 pub fn uninstall_cleanup(local_data_dir: &Path) -> Result<()> {
@@ -70,8 +72,10 @@ fn cleanup(local_data_dir: &Path, credential: &str) -> Result<()> {
     let mut first: Option<AppError> = None;
     for name in [
         CACHE_DB.to_string(),
+        format!("{CACHE_DB}-journal"),
         format!("{CACHE_DB}-wal"),
         format!("{CACHE_DB}-shm"),
+        RECONNECT_MARKER.to_string(),
         WEBVIEW_DIR.to_string(),
     ] {
         if let Err(e) = remove(&local_data_dir.join(name)) {
@@ -84,8 +88,9 @@ fn cleanup(local_data_dir: &Path, credential: &str) -> Result<()> {
     first.map_or(Ok(()), Err)
 }
 
+/// Delete the generic credential `target`; missing is fine. Also used by `spotify::Spotify`.
 #[cfg(windows)]
-fn delete_credential(target: &str) -> Result<()> {
+pub(crate) fn delete_credential(target: &str) -> Result<()> {
     use windows::Win32::Foundation::ERROR_NOT_FOUND;
     use windows::Win32::Security::Credentials::{CRED_TYPE_GENERIC, CredDeleteW};
     use windows::core::HSTRING;
@@ -100,7 +105,7 @@ fn delete_credential(target: &str) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-fn delete_credential(_target: &str) -> Result<()> {
+pub(crate) fn delete_credential(_target: &str) -> Result<()> {
     Ok(())
 }
 
@@ -224,10 +229,12 @@ mod tests {
         std::fs::create_dir_all(d.join(WEBVIEW_DIR).join("Default")).unwrap();
         std::fs::write(d.join(CACHE_DB), b"x").unwrap();
         std::fs::write(d.join(format!("{CACHE_DB}-wal")), b"x").unwrap();
+        std::fs::write(d.join(RECONNECT_MARKER), b"").unwrap();
         std::fs::write(d.join("library.db"), b"keep").unwrap();
         let target = "Runout/test-uninstall-cleanup";
         cleanup(&d, target).unwrap();
         assert!(!d.join(CACHE_DB).exists() && !d.join(WEBVIEW_DIR).exists());
+        assert!(!d.join(RECONNECT_MARKER).exists());
         assert!(
             d.join("library.db").exists(),
             "library is the NSIS checkbox's job"

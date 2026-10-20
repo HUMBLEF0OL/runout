@@ -19,7 +19,7 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 | U-4 | Allow the app through Windows Firewall | M6 | 10 s | Phone capture |
 | U-5 | Use the app daily for 2 weeks, then say go/no-go | End of M6 | 2 weeks | M7 integration |
 | U-6 | Create the Spotify developer app | Start of M5 | 5 min | Release 3 · **done 19 Oct 2026** (redirect `http://127.0.0.1:8888/callback`; client ID kept out of the repo) |
-| U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 · **done 19 Oct 2026** (gate login) |
+| U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 · **done 19 Oct 2026** (gate login); live Studio check on a test playlist still open |
 | U-8 | *(Optional)* Ask Spotify developer support one question | Before M5 | 5 min | Nothing |
 
 ---
@@ -141,6 +141,14 @@ This repeats **every 6 months**, which is Spotify's rule (BRD S7).
 
 **Send back:** nothing. The app confirms the connection.
 
+**Still to do for M5 (live Studio check, ~10 min):**
+1. In Spotify, make a **test playlist** you don't care about: ~15 tracks, with one track added twice.
+2. Set `RUNOUT_SPOTIFY_CLIENT_ID` to your Client ID in your environment (it stays out of the repo).
+3. Run `cargo run --example studio_roundtrip -- spotify:playlist:<id>` in `src-tauri`, approve the login in the browser, check the cut in Spotify, press Enter, check it's restored.
+   The "edited in Spotify after drafting → apply blocked" check needs a pause before apply that the example doesn't have yet; I'll add it before you run it.
+
+**Send back:** the playlist link, or just "done" with what you saw.
+
 ## U-8 — *(Optional)* Ask Spotify developer support (before M5)
 
 **Why only you:** it has to come from your developer account.
@@ -160,7 +168,7 @@ If you want certainty, post on the Spotify for Developers community or contact s
 - Tech decisions, design, code, tests and docs.
 - Installing project packages (npm and Rust crates). You may see a tool-permission prompt.
 - Building and installing the app locally. Locally built files carry no "downloaded from internet" mark, so Windows SmartScreen shouldn't appear.
-- Creating a **test playlist** for Playlist Studio checks. This uses your Spotify connection after U-7; I never edit a real playlist first.
+- Running Playlist Studio checks, only ever on the **test playlist** you make (U-7); I never edit a real playlist.
 - Reading the Windows "now playing" data while you listen.
 
 ## When I will stop and come back to you

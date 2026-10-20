@@ -13,6 +13,7 @@ pub mod links;
 pub mod logger;
 pub mod net;
 pub mod settings;
+pub mod spotify;
 pub mod state;
 pub mod text;
 pub mod usage;
@@ -23,6 +24,8 @@ use tauri::{Emitter, Manager};
 
 /// Re-probe `net::online()` this often so `online-changed` fires when the network comes back.
 const ONLINE_POLL: Duration = Duration::from_secs(30);
+/// Spotify cache sweeper period (TSD §5.2: startup + daily).
+const SWEEP_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// One embedded context (assets) shared by `run` and `uninstall_cleanup`.
 fn context() -> tauri::Context {
@@ -124,6 +127,12 @@ Settings file: {file}",
             ));
             usage::record(&st.db.lock().unwrap(), usage::Kind::AppOpen, None, None)?;
             let capture_file = st.paths.config_dir.join(capture::FILE);
+            let sp = spotify::Spotify::new(&st.paths.local_data_dir);
+            let h_sp = app.handle().clone();
+            sp.on_status(move |s| {
+                let _ = h_sp.emit("spotify-status", s);
+            });
+            app.manage(sp);
             app.manage(st);
             let (h_save, h_emit) = (app.handle().clone(), app.handle().clone());
             let listener = capture::Listener::new(
@@ -144,6 +153,14 @@ Settings file: {file}",
             backup::spawn_scheduler(app.handle().clone());
             app.manage(std::sync::Mutex::new(logger::Logger::default()));
             logger::poll::spawn(app.handle().clone());
+            // spotify_cache.db sweeper: at startup, then daily (TSD §5.2)
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                loop {
+                    let _ = handle.state::<spotify::Spotify>().sweep();
+                    std::thread::sleep(SWEEP_EVERY);
+                }
+            });
             let handle = app.handle().clone();
             net::on_online_change(move |on| {
                 let _ = handle.emit("online-changed", on);
