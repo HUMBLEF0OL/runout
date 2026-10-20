@@ -80,5 +80,5 @@ describe("M6 MVP transport", () => {
     await import("../mocks");
     const { today } = await import("../lib/format");
     expect(today().getTime()).toBeGreaterThanOrEqual(before);
-  });
+  }, 30_000); // fresh imports of Testing Library and the mock dataset after resetModules: ~7 s under a loaded check.py
 });
