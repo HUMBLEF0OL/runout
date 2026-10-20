@@ -37,6 +37,15 @@ impl Drop for RemoveOnExit {
     }
 }
 
+async fn snap_now(sp: &Spotify, pl: &str) -> String {
+    let id = pl.rsplit(':').next().unwrap_or_default();
+    let v: serde_json::Value = sp
+        .get_json(&format!("/playlists/{id}?fields=snapshot_id"))
+        .await
+        .unwrap_or_default();
+    v["snapshot_id"].as_str().unwrap_or("?").to_string()
+}
+
 fn main() {
     let arg = std::env::args().nth(1).unwrap_or_default();
     let conflict = std::env::args().any(|a| a == "--conflict");
@@ -64,8 +73,14 @@ fn main() {
         if dupe.is_none() {
             println!("no duplicate in this playlist: add one copy of a track to test dedupe");
         }
+        // Never cut either copy of the duplicated song: dedupe removes exactly one.
+        let twin = dupe.map(|d| (draft.tracks[d].uri.clone(), draft.tracks[d].dupe_of.clone()));
         let cut: Vec<usize> = (0..draft.tracks.len())
-            .filter(|i| Some(*i) != dupe)
+            .filter(|i| {
+                let u = &draft.tracks[*i].uri;
+                twin.as_ref()
+                    .is_none_or(|(a, b)| u != a && Some(u) != b.as_ref())
+            })
             .take(3)
             .chain(dupe)
             .collect();
@@ -114,7 +129,24 @@ fn main() {
             "applied: undo_id {} (expires {}). Check the playlist in Spotify, then press Enter to undo.",
             applied.undo_id, applied.expires_at
         );
+        // Diagnostics for the undo conflict check: Spotify's GET snapshot_id after our write.
+        let recorded: Option<String> =
+            rusqlite::Connection::open(dir.join(runout_lib::cleanup::CACHE_DB))
+                .and_then(|c| {
+                    c.query_row(
+                    "SELECT applied_snapshot_id FROM playlist_snapshot ORDER BY id DESC LIMIT 1",
+                    [],
+                    |r| r.get(0),
+                )
+                })
+                .ok()
+                .flatten();
+        println!("write-response snapshot_id (recorded): {recorded:?}");
+        println!("GET snapshot_id now: {}", snap_now(&sp, &pl).await);
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        println!("GET snapshot_id +3 s: {}", snap_now(&sp, &pl).await);
         wait_enter();
+        println!("GET snapshot_id before undo: {}", snap_now(&sp, &pl).await);
         studio::undo_last_apply(&sp, &pl).await.unwrap();
         let after = studio::load_studio_draft(&sp, &db, &pl).await.unwrap();
         let same = after
