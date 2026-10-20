@@ -5,7 +5,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowsClockwiseIcon, BooksIcon, ChartBarIcon, ClockCounterClockwiseIcon, CompassIcon, GearSixIcon, HouseIcon, PlaylistIcon, QueueIcon,
 } from "@phosphor-icons/react";
-import { getCapture, getCounts, getFreshness, getLoggerStatus, recordPageVisit } from "../api";
+import { getCapture, getCounts, getFreshness, getLoggerStatus, MOCK, recordPageVisit } from "../api";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { useShortcuts, type ShortcutAction } from "../hooks/useShortcuts";
@@ -15,7 +15,7 @@ import QuickAdd from "./QuickAdd";
 import { pl } from "../lib/format";
 
 // Dev builds only: a shipped build drops the switcher. The mocks themselves go only when VITE_MOCK=0 (api.ts).
-const DevSwitcher = import.meta.env.DEV ? lazy(() => import("./DevSwitcher")) : () => null;
+const DevSwitcher = import.meta.env.DEV && MOCK ? lazy(() => import("./DevSwitcher")) : () => null;
 
 const NAV: { to: string; label: string; icon: ReactNode; count?: "backlog" | "library" | "revisit"; rel?: "r2" | "r3" }[] = [
   { to: "/home", label: "Home", icon: <HouseIcon size={20} /> },

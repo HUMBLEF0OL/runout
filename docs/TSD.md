@@ -309,6 +309,6 @@ spotify-companion/
 | # | Item | Resolve in |
 |---|---|---|
 | T1 | ~~Export file and field names (4.8)~~ Resolved 19 Oct 2026 for streaming history ([KB](kb/spotify.md#extended-streaming-history-format-t1--verified-2026-10-19)). Account data `Playlist*.json` not received, still ⚑ in 4.8 | M4 |
-| T2 | ~~NSIS checkbox relabel and update-mode detection in the pre-uninstall hook (4.11)~~ Resolved 20 Oct 2026 ([KB windows-tauri.md](kb/windows-tauri.md#nsis-update-mode-t2--verified-2026-10-20)) | M6 |
+| T2 | ~~NSIS checkbox relabel and update-mode detection in the pre-uninstall hook (4.11)~~ Resolved 20 Oct 2026 ([KB windows-tauri.md](kb/windows-tauri.md#tauri-2)) | M6 |
 | T3 | Re-check redirect-URI rules just before registering the app (5.2); confirmed 18 Oct 2026; dynamic loopback port verified with a real login 19 Oct 2026 (registered `:8888`, `:58163` accepted) | M5 |
 | T4 | ~~Incognito (InPrivate) WebView2 works with Spotify embeds and keeps no disk cache (§1)~~ Resolved 18 Oct 2026: yes ([KB](kb/windows-tauri.md#webview2)); re-check in the real app window in M2 | M2 |

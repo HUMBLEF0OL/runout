@@ -33,7 +33,18 @@ describe("M6 MVP transport", () => {
     ];
     await Promise.all(calls);
     expect(invoke).toHaveBeenCalledTimes(calls.length);
-    expect(mockCall).not.toHaveBeenCalled();
+    expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual([
+      "get_counts", "get_dashboard", "list_items", "get_item", "create_item", "update_item", "set_status",
+      "delete_item", "link_items", "unlink_items", "reorder_backlog", "parse_link", "resolve_link", "prefill_title",
+      "list_unresolved", "retry_unresolved", "discard_unresolved", "search", "list_tags", "rename_tag", "merge_tags",
+      "delete_tag", "list_saved_filters", "save_filter", "delete_saved_filter", "get_rediscover", "get_online",
+      "get_settings", "update_settings", "get_capture", "set_capture_enabled", "new_pairing_code", "export_library",
+      "list_backups", "backup_now", "pick_backup", "check_backup", "restore_backup", "choose_backup_dir",
+      "move_library", "delete_library", "record_page_visit", "get_success_metrics",
+    ]);
+    await Promise.all([api.getLoggerStatus(), api.getSpotifyStatus()]);
+    expect(invoke).toHaveBeenCalledTimes(calls.length);
+    expect(mockCall).toHaveBeenCalledTimes(2);
   });
 
   it("uses Rust for MVP events while leaving the R2 logger event mocked", async () => {
@@ -42,14 +53,30 @@ describe("M6 MVP transport", () => {
     const listen = vi.fn(async () => () => undefined);
     api.__setTransportForTests({ invoke, listen });
     const mockListen = vi.spyOn(await import("../mocks"), "mockListen");
+    const offOnline = api.onEvent("online-changed", () => undefined);
     const offCapture = api.onEvent("capture-received", () => undefined);
+    const offDisabled = api.onEvent("capture-disabled", () => undefined);
     const offBackup = api.onEvent("backup-finished", () => undefined);
+    const offResolved = api.onEvent("unresolved-resolved", () => undefined);
     const offLogger = api.onEvent("logger-status", () => undefined);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(listen).toHaveBeenCalledTimes(2);
+    expect(listen).toHaveBeenCalledTimes(5);
     expect(mockListen).toHaveBeenCalledTimes(1);
+    offOnline();
     offCapture();
+    offDisabled();
     offBackup();
+    offResolved();
     offLogger();
+  });
+
+  it("hides R2/R3 screens and keeps the real clock when mocks are off", async () => {
+    const { renderHook } = await import("@testing-library/react");
+    const { useRelease } = await import("../hooks/useRelease");
+    expect(renderHook(() => useRelease()).result.current).toEqual({ release: "mvp", r2: false, r3: false });
+    const before = Date.now();
+    await import("../mocks");
+    const { today } = await import("../lib/format");
+    expect(today().getTime()).toBeGreaterThanOrEqual(before);
   });
 });

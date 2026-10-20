@@ -7,7 +7,7 @@ import type {
   AppError, Backup, Counts, Draft, ItemDetail, ItemFilter, ItemSummary, LinkKind, NewItem, Page, Play, Range, Source,
   SpotifyEntry, Status, Unresolved, ItemPatch, SavedFilter, Tag, LoggerStatus, Freshness,
 } from "../api";
-import { invalidate } from "../api";
+import { invalidate, MOCK } from "../api";
 import { dev, onDevChange } from "./devState";
 import { parseLink } from "../lib/link";
 import { setToday } from "../lib/format";
@@ -15,7 +15,8 @@ import { setToday } from "../lib/format";
 const D: any = raw;
 const L = D.listening;
 const TODAY = D.meta.today as string;
-setToday(TODAY);
+// Pin "today" only when mocks drive the whole UI: real MVP data (M6) keeps the real clock.
+if (MOCK) setToday(TODAY);
 const DELAY = 150;
 
 /* ------------------------------------------------------------------ store */

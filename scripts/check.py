@@ -489,6 +489,29 @@ def check_commands():
         print("--- commands: FAIL" + chr(10) + chr(10).join(bad))
 
 
+def check_release_build():
+    # M6 audit: the installed build ran on mocks (no VITE_MOCK=0 for `vite build`); a custom NSIS language
+    # file replaces Tauri's whole table (27 strings in cli 2.12.3); the pre-uninstall hook runs before the
+    # template closes the app, so the hook must close it before cleaning up.
+    bad = []
+    env = ROOT / ".env.production"
+    if not (env.exists() and re.search(r"^VITE_MOCK=0\s*$", env.read_text(encoding="utf-8"), re.M)):
+        bad.append(".env.production must set VITE_MOCK=0 (tauri build -> npm run build)")
+    lang = TAURI / "windows" / "English.nsh"
+    if lang.exists():
+        keys = re.findall(r"^LangString (\w+) ", lang.read_text(encoding="utf-8"), re.M)
+        if len(keys) < 27 or "addOrReinstall" not in keys:
+            bad.append(f"{lang.relative_to(ROOT)}: {len(keys)} LangStrings; copy Tauri's full English table")
+    hook = TAURI / "windows" / "hooks.nsh"
+    if hook.exists():
+        h = hook.read_text(encoding="utf-8")
+        if "ExecWait" in h and not (0 <= h.find("CheckIfAppIsRunning") < h.find("ExecWait")):
+            bad.append(f"{hook.relative_to(ROOT)}: close the app (CheckIfAppIsRunning) before --uninstall-cleanup")
+    if bad:
+        failures.append("release build")
+        print("--- release build: FAIL\n" + "\n".join(bad))
+
+
 def check_link_parity():
     # TSD §4.1: every row of src/lib/link.test.ts TABLE is in links.rs parse_table with the same state,
     # so the mock parser and the real one agree. `${A}` <-> `{A}`; any other `${...}` <-> a `{}` arg.
@@ -661,6 +684,7 @@ check_settings_clone_then_assign()
 check_ui_purity()
 check_contract_and_attribution()
 check_commands()
+check_release_build()
 check_link_parity()
 check_source_map()
 check_design()
