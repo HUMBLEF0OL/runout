@@ -132,6 +132,15 @@ fn status_error(r: &HttpResp) -> AppError {
     }
 }
 
+/// A write that failed with this error definitely didn't land: Spotify refused it with a 4xx (incl.
+/// 429). Anything else (offline/timeout/reset, 5xx, unreadable 2xx) may still have landed (TSD §5.2).
+pub fn refused(e: &AppError) -> bool {
+    matches!(
+        e.code,
+        Code::SpotifyAuth | Code::SpotifyForbidden | Code::NotFound | Code::SpotifyBusy
+    ) || e.detail.as_deref().is_some_and(|d| d.starts_with("HTTP 4"))
+}
+
 impl Spotify {
     /// Send one authorised request; returns the JSON body (`Null` when empty).
     /// Writes (anything but GET) hold the write lock for the whole exchange.

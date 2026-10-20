@@ -134,10 +134,16 @@ async fn create(
             )
             .await;
         if let Err(e) = sent {
+            // Only a 4xx proves the failed chunk didn't land (TSD §5.2).
             let added = n * CHUNK;
+            let count = if super::client::refused(&e) {
+                format!("only {added}")
+            } else {
+                format!("at least {added}")
+            };
             return Err(AppError {
                 message: format!(
-                    "The playlist was created on Spotify, but only {added} of {} tracks were added. {}",
+                    "The playlist was created on Spotify, but {count} of {} tracks were added. {}",
                     uris.len(),
                     e.message
                 ),
@@ -296,7 +302,17 @@ mod tests {
             e.detail.as_deref(),
             Some("spotify:playlist:PlaylistId000000000000")
         );
-        assert!(e.message.contains("100 of 150"), "{}", e.message);
+        assert!(e.message.contains("at least 100 of 150"), "{}", e.message);
+        // A 4xx refusal proves the chunk didn't land: the count is exact.
+        let d = temp_dir("create-partial-4xx");
+        let db = lib(&d);
+        let ids: Vec<i64> = (0..150)
+            .map(|n| add(&db, "track", Some(format!("spotify:track:{}", id22(n)))))
+            .collect();
+        let stub = Stub::new(&[(201, PL), (201, "{}"), (400, "")]);
+        let sp = connected(&d, &stub);
+        let e = block(create_playlist_from_items(&sp, &db, &ids, "Big", true)).unwrap_err();
+        assert!(e.message.contains("only 100 of 150"), "{}", e.message);
     }
 
     #[test]

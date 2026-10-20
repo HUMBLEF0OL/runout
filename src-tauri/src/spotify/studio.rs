@@ -185,10 +185,10 @@ async fn current_uris(sp: &Spotify, playlist_uri: &str) -> Result<Vec<String>> {
 /// Replace the playlist's items (`from` now) with `uris`: PUT replaces with the first chunk, POST
 /// appends the rest. Every write that lands sets `landed` and records the list the playlist now
 /// holds (the cumulative prefix) as snapshot `undo_id`'s expected list at once, so after a write
-/// fails partway undo (or a retried undo) compares against the app's own last write. A failed
-/// write may still have landed (timeout, reset, 5xx, unreadable 2xx), so the items are re-read:
-/// the list before this chunk = it didn't land; the list after = it did; anything else or a failed
-/// re-read = unknown, so `landed` is set and both lists are expected.
+/// fails partway undo (or a retried undo) compares against the app's own last write. Only a 4xx
+/// refusal proves a failed write didn't land; any other failure (timeout, reset, 5xx, unreadable
+/// 2xx) may land even after an immediate re-read showed the old list, so `landed` is set and both
+/// the lists before and after it are expected (no re-read decides it, TSD §5.2).
 /// Callers hold `sp.studio_lock` so no other apply/undo's chunks land in between (check.py).
 async fn replace(
     sp: &Spotify,
@@ -211,17 +211,10 @@ async fn replace(
             .send_json(method, &path, Some(json!({ "uris": c })))
             .await;
         if let Err(e) = sent {
-            match current_uris(sp, playlist_uri).await {
-                Ok(now) if now == before => {}
-                Ok(now) if now == after => {
-                    *landed = true;
-                    let _ = sp.with_cache(|db| cache::set_expected(db, undo_id, &json!([after])));
-                }
-                _ => {
-                    *landed = true;
-                    let _ = sp
-                        .with_cache(|db| cache::set_expected(db, undo_id, &json!([before, after])));
-                }
+            if !super::client::refused(&e) {
+                *landed = true;
+                let _ =
+                    sp.with_cache(|db| cache::set_expected(db, undo_id, &json!([before, after])));
             }
             return Err(e);
         }
@@ -306,7 +299,7 @@ pub async fn preview_studio_apply(
 /// multiplicity): different → `conflict`, nothing written. Never `snapshot_id`: a stale GET id
 /// would hide an edit and a content-neutral bump would block (TSD §5.2; check.py keeps the order
 /// read → compare → snapshot → write). Then the snapshot is stored first and the write runs. A
-/// first write that definitely didn't land changed nothing, so its snapshot is dropped (no undo is
+/// first write Spotify refused (4xx) changed nothing, so its snapshot is dropped (no undo is
 /// offered); once anything (maybe) landed, it is the playlist's only undo and older ones are dropped.
 pub async fn apply_studio_draft(sp: &Spotify, draft: &Draft, keep: &[String]) -> Result<Applied> {
     let _one = sp.studio_lock.lock().await;
@@ -365,14 +358,19 @@ pub async fn undo_last_apply(sp: &Spotify, playlist_uri: &str) -> Result<()> {
         .with_cache(|c| cache::last_snapshot(c, playlist_uri, chrono::Utc::now()))?
         .ok_or_else(|| AppError::not_found("There's no recent change to undo."))?;
     let expected: Vec<Vec<String>> = serde_json::from_value(expected)?;
-    let now = current_uris(sp, playlist_uri).await?;
-    if !expected.contains(&now) {
+    // A playlist that now holds local files/episodes or is over the ceiling was edited on Spotify
+    // since: same as any other edit (conflict, dropped), not a `validation` that keeps a dead undo.
+    let now = match current_uris(sp, playlist_uri).await {
+        Err(e) if e.code == Code::Validation => None,
+        r => Some(r?),
+    };
+    let Some(now) = now.filter(|n| expected.contains(n)) else {
         sp.with_cache(|c| cache::delete_snapshot(c, snap.undo_id))?;
         return Err(AppError::new(
             Code::Conflict,
             "This playlist changed on Spotify since you applied, so undo would erase those changes. The undo was dropped.",
         ));
-    }
+    };
     let uris: Vec<String> = serde_json::from_value(items)?;
     replace(sp, playlist_uri, &now, &uris, snap.undo_id, &mut false).await?;
     sp.with_cache(|c| cache::delete_snapshot(c, snap.undo_id))
@@ -625,7 +623,6 @@ mod tests {
             (200, &pg(&orig)),
             (200, r#"{"snapshot_id":"s2"}"#), // PUT lands
             (500, ""),                        // POST fails
-            (200, &pg(&keep[..100])),         // re-read: the POST didn't land
         ]);
         let sp = connected(&d, &stub);
         let e = block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).unwrap_err();
@@ -639,7 +636,7 @@ mod tests {
         stub.push(201, r#"{"snapshot_id":"s4"}"#);
         block(undo_last_apply(&sp, PL)).unwrap();
         let reqs = stub.requests.lock().unwrap();
-        let writes: Vec<_> = reqs.iter().skip(5).collect();
+        let writes: Vec<_> = reqs.iter().skip(4).collect();
         assert_eq!(writes.len(), 2);
         assert_eq!(
             (writes[0].method.clone(), writes[1].method.clone()),
@@ -656,18 +653,16 @@ mod tests {
         );
     }
 
-    /// The first write fails and the re-read shows the playlist unchanged: no undo is offered.
+    /// Spotify refuses the first write (4xx): nothing changed, so no undo is offered.
     #[test]
-    fn failed_first_write_drops_the_snapshot() {
-        let d = temp_dir("studio-first-fail");
-        let stub = Stub::new(&[
-            (200, &pg(&v("AB"))),
-            (500, ""),
-            (200, &pg(&v("AB"))), // re-read: didn't land
-        ]);
-        let sp = connected(&d, &stub);
-        assert!(block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("A"))).is_err());
-        assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
+    fn refused_first_write_drops_the_snapshot() {
+        for (name, status) in [("studio-first-400", 400), ("studio-first-403", 403)] {
+            let stub = Stub::new(&[(200, &pg(&v("AB"))), (status, "")]);
+            let sp = connected(&temp_dir(name), &stub);
+            assert!(block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("A"))).is_err());
+            assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None, "{status}");
+            assert_eq!(stub.calls().len(), 2, "no re-read after a refusal");
+        }
     }
 
     /// An undo that fails after its PUT landed: the retry expects that PUT's list, not the
@@ -682,7 +677,6 @@ mod tests {
             (200, &pg(&v("A"))),              // undo's read
             (200, r#"{"snapshot_id":"s5"}"#), // undo PUT lands
             (500, ""),                        // undo POST fails
-            (200, &pg(&orig[..100])),         // re-read: the POST didn't land
         ]);
         let sp = connected(&d, &stub);
         block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &v("A"))).unwrap();
@@ -695,15 +689,14 @@ mod tests {
         assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
-    /// The first write's answer is lost but the re-read shows the written list: the snapshot
-    /// stays (the playlist did change) and expects that list, so undo goes through.
+    /// The first write's answer is lost (502) but it ran: the snapshot stays and expects the
+    /// written list, so undo goes through.
     #[test]
     fn unanswered_first_write_that_landed_keeps_the_undo() {
         let d = temp_dir("studio-lost-answer");
         let stub = Stub::new(&[
             (200, &pg(&v("AB"))),
-            (502, ""),           // PUT: gateway error, but it ran
-            (200, &pg(&v("A"))), // re-read: landed
+            (502, ""), // PUT: gateway error, but it ran
         ]);
         let sp = connected(&d, &stub);
         assert!(block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("A"))).is_err());
@@ -714,9 +707,10 @@ mod tests {
         assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None);
     }
 
-    /// No answer and the re-read fails too (offline): the snapshot stays and expects either the
-    /// list before that write or the list it sent; a later undo that finds either restores, and
-    /// anything else (someone's edit) is still a conflict.
+    /// A 502/timeout only means the client stopped waiting: the PUT may land after any re-read
+    /// (GETs are eventually consistent, 20 Oct 2026). So no re-read decides it: the snapshot stays
+    /// and expects the list before that write or the list it sent; a later undo that finds either
+    /// restores, and anything else (someone's edit) is still a conflict.
     #[test]
     fn unknown_write_outcome_keeps_the_undo_and_undo_recognises_it() {
         let orig = many(150);
@@ -724,14 +718,18 @@ mod tests {
         let unknown = |name: &str, found: &[String]| {
             let stub = Stub::new(&[
                 (200, &pg(&orig)),
-                (502, ""), // PUT: unknown
-                (502, ""), // re-read fails too
+                (502, ""), // PUT: unknown, maybe still landing
             ]);
             let sp = connected(&temp_dir(name), &stub);
             assert!(block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).is_err());
             assert!(
                 block(get_last_apply(&sp, PL)).unwrap().is_some(),
                 "undo dropped"
+            );
+            assert_eq!(
+                stub.calls().len(),
+                2,
+                "no re-read decides a maybe-landed write"
             );
             stub.push(200, &pg(found));
             stub.push(200, r#"{"snapshot_id":"s3"}"#);
@@ -747,6 +745,33 @@ mod tests {
             unknown("studio-unknown-edit", &v("Z")).unwrap_err().code,
             Code::Conflict
         );
+    }
+
+    /// After an apply the user adds an episode or a local file on Spotify (or grows it past the
+    /// ceiling): that's an edit, so undo is a `conflict` and drops the snapshot (no dead Undo).
+    #[test]
+    fn undo_on_a_playlist_studio_cant_read_is_a_conflict() {
+        let local = json!({"items": [{"is_local": true, "item": {"uri": "spotify:local:a:b:c:1", "name": "x", "artists": []}}], "next": null});
+        let episode = json!({"items": [{"is_local": false, "item": {"uri": format!("spotify:episode:{}", "E".repeat(22)), "name": "x", "artists": []}}], "next": null});
+        for (name, page) in [
+            ("studio-undo-local", local),
+            ("studio-undo-episode", episode),
+        ] {
+            let stub = Stub::new(&[(200, &pg(&v("AB"))), (200, r#"{"snapshot_id":"s2"}"#)]);
+            let sp = connected(&temp_dir(name), &stub);
+            block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("B"))).unwrap();
+            stub.push(200, &page.to_string());
+            assert_eq!(
+                block(undo_last_apply(&sp, PL)).unwrap_err().code,
+                Code::Conflict
+            );
+            assert_eq!(stub.calls().len(), 3, "nothing written");
+            assert_eq!(
+                block(get_last_apply(&sp, PL)).unwrap(),
+                None,
+                "dead undo kept"
+            );
+        }
     }
 
     /// Apply, apply, undo: the older apply's snapshot doesn't come back as a dead Undo (one

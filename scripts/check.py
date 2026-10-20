@@ -206,6 +206,33 @@ def check_cache_schema_in_tsd():
         print("--- cache schema in TSD: FAIL\n" + "\n".join(bad))
 
 
+def check_dropped_cache_columns():
+    # M5 audit r1: examples/studio_roundtrip.rs kept querying a column cache migration 4 dropped and
+    # .ok() hid the error. No file under src-tauri/ but cache.rs names a dropped/renamed column.
+    cache = TAURI / "src/spotify/cache.rs"
+    if not cache.exists():
+        return
+    gone = set(re.findall(r"(?:DROP COLUMN|RENAME COLUMN) (\w+)", cache.read_text(encoding="utf-8")))
+    bad = [f"{p.relative_to(ROOT).as_posix()}: names {c} (dropped/renamed by a cache migration)"
+           for d in ("src", "examples", "tests") if (TAURI / d).exists()
+           for p in (TAURI / d).rglob("*.rs") if p != cache
+           for c in gone if re.search(rf"\b{c}\b", p.read_text(encoding="utf-8"))]
+    if bad:
+        failures.append("dropped cache columns")
+        print("--- dropped cache columns: FAIL\n" + "\n".join(bad))
+
+
+def check_no_snapshot_id_compare_in_docs():
+    # M5 audit r1: the M5 plan still said "compare snapshot_id" after the live 2026-10-20 result
+    # (GET serves a stale one); a session following the plan would bring the check back (TSD §5.2).
+    bad = [f"{p.relative_to(ROOT).as_posix()}:{i}" for p in (ROOT / "docs").rglob("*.md")
+           for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+           if re.search(r"compar\w*\s+(?:the\s+)?`?snapshot_id", line, re.I)]
+    if bad:
+        failures.append("no snapshot_id compare in docs")
+        print("--- no snapshot_id compare in docs: FAIL (Studio checks track content, TSD §5.2)\n" + "\n".join(bad))
+
+
 def check_mock_conflicts():
     # audit M5 / G-9: every API.md §5 command whose notes promise `conflict` fails with it in the
     # mocks' "conflict" dev state (CONFLICT map in src/mocks/index.ts), so the screen is reachable.
@@ -575,6 +602,8 @@ check_boundary_values_kept()
 check_cache_schema_in_tsd()
 check_mock_conflicts()
 check_mock_r3_parity()
+check_dropped_cache_columns()
+check_no_snapshot_id_compare_in_docs()
 check_no_committed_client_id()
 check_deferrals_tracked()
 check_listening_event_reads()

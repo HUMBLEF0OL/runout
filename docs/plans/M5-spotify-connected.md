@@ -13,7 +13,7 @@ Agents: `spotify-researcher` (gate + T3), `rust-core`, `spec-reviewer` after ste
    - Tests: PKCE challenge vector; token store round-trip with a test credential target; refresh-rotation handler with a stubbed response.
 2. **Cache DB (WI 2).** `spotify/cache.rs`: separate `spotify_cache.db` (`cache_entry`, `playlist_snapshot`), own tiny migration; sweeper at startup + daily (cache 7 d, snapshots 30 d); `disconnect_spotify` closes the connection and deletes the file + tokens.
    - Tests: expired entry gone after sweep; disconnect leaves no file; backup zip contains no `spotify_cache` content.
-3. **Playlist Studio (WI 3).** `spotify/studio.rs`: list own/collab playlists → load draft (items + current `snapshot_id`, join **only** `item` ratings/tags by URI, dupes within/across) → `preview_studio_apply` diff → apply: re-`GET` playlist, compare `snapshot_id`, mismatch → `conflict`; else store 30-day undo snapshot in cache DB, then replace items in chunks of 100 → `undo_last_apply` restores from snapshot.
+3. **Playlist Studio (WI 3).** `spotify/studio.rs`: list own/collab playlists → load draft (items + current `snapshot_id`, informational only; join **only** `item` ratings/tags by URI, dupes within/across) → `preview_studio_apply` diff → apply: re-read the playlist's items (`studio::current_uris`, the one track-list read) and check them against the draft's tracks, never `snapshot_id` (GET serves a stale one, TSD §5.2); different → `conflict`; else store 30-day undo snapshot in cache DB, then replace items in chunks of 100 → `undo_last_apply` restores from snapshot.
    - Tests: diff function table; conflict path with stubbed GET; grep check in `check.py`: `spotify/` never references `listening_event` or `exported_playlist`.
 4. **Playlist from filter (WI 4).** Resolve `SavedFilter` via M3 `filters.rs` → URIs (skip items without one, count them) → `POST /me/playlists` + add items.
 5. **Autofill (WI 5).** `autofill(uri)`: cache hit or `GET /albums|tracks|artists/{id}` → cache entry; return fields without writing. Confirm path = M3 `update_item`/`create_item` with `promoted_fields`. `bulk_add_album_tracks` creates promoted track items linked `on_album`.
@@ -36,7 +36,7 @@ Agents: `spotify-researcher` (gate + T3), `rust-core`, `spec-reviewer` after ste
 |---|---|
 | O1 fails (Premium plan not accepted) | R3 stops; user decides (USER_ACTIONS); M6 unaffected |
 | Endpoint names change (Feb 2026 Dev Mode guide) | Re-verify each endpoint in step 0; KB holds checked date |
-| Snapshot race between GET and write | Accepted (TSD §5.2); undo snapshot covers recovery |
+| Edit on Spotify between the items read and the write | Accepted (TSD §5.2); undo snapshot covers recovery |
 
 ## Done when
 MILESTONES M5 acceptance passes; `python scripts/check.py` exits 0.

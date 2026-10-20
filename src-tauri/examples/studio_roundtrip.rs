@@ -39,15 +39,6 @@ impl Drop for RemoveOnExit {
     }
 }
 
-async fn snap_now(sp: &Spotify, pl: &str) -> String {
-    let id = pl.rsplit(':').next().unwrap_or_default();
-    let v: serde_json::Value = sp
-        .get_json(&format!("/playlists/{id}?fields=snapshot_id"))
-        .await
-        .unwrap_or_default();
-    v["snapshot_id"].as_str().unwrap_or("?").to_string()
-}
-
 /// Replace the playlist with `uris` (PUT the first 100, POST the rest). Returns the last write's
 /// snapshot_id. Used to restore the test playlist when undo fails, and by --probe.
 async fn put_all(sp: &Spotify, pl: &str, uris: &[String]) -> String {
@@ -225,24 +216,28 @@ fn main() {
             "applied: undo_id {} (expires {}). Check the playlist in Spotify, then press Enter to undo.",
             applied.undo_id, applied.expires_at
         );
-        // Diagnostics for the undo conflict check: Spotify's GET snapshot_id after our write.
-        let recorded: Option<String> =
+        // Diagnostics for undo's conflict check: the track lists it will accept (expected_json).
+        let expected: Option<String> =
             rusqlite::Connection::open(dir.join(runout_lib::cleanup::CACHE_DB))
                 .and_then(|c| {
                     c.query_row(
-                    "SELECT applied_snapshot_id FROM playlist_snapshot ORDER BY id DESC LIMIT 1",
-                    [],
-                    |r| r.get(0),
-                )
+                        "SELECT expected_json FROM playlist_snapshot ORDER BY id DESC LIMIT 1",
+                        [],
+                        |r| r.get(0),
+                    )
                 })
-                .ok()
-                .flatten();
-        println!("write-response snapshot_id (recorded): {recorded:?}");
-        println!("GET snapshot_id now: {}", snap_now(&sp, &pl).await);
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        println!("GET snapshot_id +3 s: {}", snap_now(&sp, &pl).await);
+                .ok();
+        let lens: Vec<usize> = expected
+            .and_then(|j| serde_json::from_str::<Vec<Vec<String>>>(&j).ok())
+            .unwrap_or_default()
+            .iter()
+            .map(Vec::len)
+            .collect();
+        println!(
+            "undo accepts track lists of length {lens:?} (expected {}).",
+            keep.len()
+        );
         wait_enter();
-        println!("GET snapshot_id before undo: {}", snap_now(&sp, &pl).await);
         if let Err(e) = studio::undo_last_apply(&sp, &pl).await {
             println!("FAIL: undo refused: {e:?}");
             println!("Restoring the test playlist from this program's own copy…");
