@@ -1,6 +1,6 @@
 //! The only outbound HTTP in Runout (TSD §7): one shared client, host allow-list checked before every
 //! request and on every redirect hop, `online()` cached 30 s with an `online-changed` hook (TSD §4.3).
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -82,6 +82,8 @@ static ON_CHANGE: Mutex<Option<OnChange>> = Mutex::new(None);
 static ONLINE: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
 /// Set by an OS network change: the next `online()` probes even inside the 30 s cache.
 static STALE: AtomicBool = AtomicBool::new(false);
+/// Number of the newest probe started: an older probe that finishes later (OS events come in bursts) is dropped.
+static PROBE_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Register the `online-changed` emitter (lib.rs wires it to the AppHandle).
 pub fn on_online_change(f: impl Fn(bool) + Send + Sync + 'static) {
@@ -97,11 +99,28 @@ pub async fn online() -> bool {
     {
         return v;
     }
+    let probe = PROBE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let now = send(Method::HEAD, ONLINE_PROBE, |r| r.timeout(TIMEOUT))
         .await
         .is_ok();
-    record_online(now);
+    record_probe(probe, now);
     now
+}
+
+/// Last probe said offline: lib.rs keeps re-probing then (the network can come back with no OS event).
+pub fn known_offline() -> bool {
+    matches!(*ONLINE.lock().unwrap(), Some((_, false)))
+}
+
+/// Record probe `probe`'s answer unless a newer probe has started since.
+fn record_probe(probe: u64, now: bool) {
+    if is_latest(probe) {
+        record_online(now);
+    }
+}
+
+fn is_latest(probe: u64) -> bool {
+    PROBE_GEN.load(Ordering::SeqCst) == probe
 }
 
 /// Call `f` on every OS network change (Windows `NetworkStatusChanged`), after marking the cached
@@ -201,5 +220,13 @@ mod tests {
         *ONLINE.lock().unwrap() = None;
         record_online(false); // startup offline → nothing to report
         assert_eq!(FIRED.lock().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn a_slow_older_probe_never_overwrites_a_newer_one() {
+        // Pure check: no ONLINE writes, so it can't race the hook test above.
+        let old = PROBE_GEN.fetch_add(1, Ordering::SeqCst) + 1; // event 1: probe hangs
+        let new = PROBE_GEN.fetch_add(1, Ordering::SeqCst) + 1; // event 2: probe answers
+        assert!(is_latest(new) && !is_latest(old)); // the hung one's late answer is dropped
     }
 }

@@ -41,7 +41,7 @@ tauri = { version = "2", features = ["test"] }
 [target.'cfg(windows)'.dependencies]
 # Credential Manager delete for --uninstall-cleanup (TSD §4.11); start-up error box (TSD §6); SMTC logger (TSD §4.5).
 # Win32_System_Time: export UTC → local with the zone's rules for that year (TSD §4.8, importer/streaming.rs).
-windows = { version = "0.62.2", features = ["Win32_Security_Credentials", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Networking_Connectivity", "Win32_System_Time", "Foundation", "Foundation_Collections", "Media_Control"] }
+windows = { version = "0.62.2", features = ["Win32_Security_Credentials", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Networking_Connectivity", "Win32_System_Com", "Win32_System_Time", "Foundation", "Foundation_Collections", "Media_Control"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

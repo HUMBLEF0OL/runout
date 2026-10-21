@@ -25,13 +25,30 @@ pub fn targets(url: &Url) -> Vec<String> {
 
 /// `on_new_window` handler: open outside, never create a WebView window.
 pub fn handle<R: Runtime>(url: Url) -> NewWindowResponse<R> {
-    for t in targets(&url) {
-        if shell_open(&t) {
-            break;
+    let targets = targets(&url);
+    // Off the WebView2 UI thread: starting the Store Spotify app can take seconds.
+    std::thread::spawn(move || {
+        com_init();
+        for t in targets {
+            if shell_open(&t) {
+                break;
+            }
         }
-    }
+    });
     NewWindowResponse::Deny
 }
+
+/// ShellExecute may hand off to shell extensions, which need COM on the calling thread.
+#[cfg(windows)]
+fn com_init() {
+    use windows::Win32::System::Com::{
+        COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx,
+    };
+    let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) };
+}
+
+#[cfg(not(windows))]
+fn com_init() {}
 
 /// Open with the registered handler; false when nothing handles it (no Spotify app for `spotify:`).
 #[cfg(windows)]
@@ -107,5 +124,18 @@ mod tests {
         assert!(t("https://localhost/open.spotify.com").is_empty());
         assert!(t("https://127.0.0.1/").is_empty());
         assert!(t("file:///C:/Windows/System32/calc.exe").is_empty());
+        // Tricks on or around the host: browser-only or refused, never an app URI from attacker text.
+        assert!(t("https://open.spotify.com.localhost/album/x").is_empty());
+        assert!(t("https://localhost\\@open.spotify.com/album/x").is_empty());
+        assert_eq!(
+            t("https://OPEN.SPOTIFY.COM/album/4aawyAB9vmqN3uQ7FjRGTy")[0],
+            "spotify:album:4aawyAB9vmqN3uQ7FjRGTy"
+        );
+        for odd in [
+            "https://u:p@open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy",
+            "https://open.spotify.com:8443/album/4aawyAB9vmqN3uQ7FjRGTy",
+        ] {
+            assert!(t(odd).iter().all(|x| x.starts_with("https://")), "{odd}");
+        }
     }
 }

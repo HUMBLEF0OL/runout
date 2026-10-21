@@ -92,7 +92,8 @@ describe("M6 MVP transport", () => {
     const off = api.invalidateOnDataEvents();
     await new Promise((resolve) => setTimeout(resolve, 0));
     for (const e of ["capture-received", "capture-disabled", "unresolved-resolved", "backup-finished"]) handlers.get(e)!({ payload: {} });
-    expect(refetch).toHaveBeenCalledTimes(4);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(refetch).toHaveBeenCalledTimes(1); // one burst, one refetch
     off();
   });
 });

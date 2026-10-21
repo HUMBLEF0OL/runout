@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use tauri::{Emitter, Manager};
 
-/// While a short-link retry is pending, re-probe `net::online()` this often.
+/// While a short-link retry is pending or the app is offline, re-probe `net::online()` this often.
 const ONLINE_POLL: Duration = Duration::from_secs(30);
 /// Spotify cache sweeper period (TSD §5.2: startup + daily).
 const SWEEP_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -48,6 +48,13 @@ pub fn uninstall_cleanup() -> i32 {
 
 /// Retry the offline queue and emit `capture-received` / `unresolved-resolved` (TSD §4.1).
 fn retry_queued(h: &tauri::AppHandle) {
+    // Single-flight: the online hook and the poll loop can both start one; a second run would resolve the
+    // same rows again (double spotify.link requests, duplicate capture-received).
+    static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    use std::sync::atomic::Ordering::SeqCst;
+    if RUNNING.swap(true, SeqCst) {
+        return;
+    }
     let st = h.state::<state::AppState>();
     if let Ok((n, new)) = tauri::async_runtime::block_on(links::retry_unresolved(&st.db)) {
         commands::emit_resolved(h, &st, &new);
@@ -55,6 +62,7 @@ fn retry_queued(h: &tauri::AppHandle) {
             let _ = h.emit("unresolved-resolved", serde_json::json!({ "resolved": n }));
         }
     }
+    RUNNING.store(false, SeqCst);
 }
 
 /// Blocking native error box; works before any window or event loop exists.
@@ -205,9 +213,11 @@ Settings file: {file}",
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 loop {
-                    // Only while a spotify.link request is waiting (it timed out with no OS event to
-                    // follow): an idle app makes no outbound connections (NFR-07, M6 network capture).
-                    if links::retry_pending()
+                    // Only with a reason: a spotify.link request is waiting, or the last probe said offline
+                    // (the network can return with no OS event: VPN, captive portal, Spotify down). Online
+                    // and idle -> nothing goes out (NFR-07, M6 network capture). A flip to online fires the
+                    // hook above, which retries the queue.
+                    if (links::retry_pending() || net::known_offline())
                         && tauri::async_runtime::block_on(net::online())
                         && links::take_retry_pending()
                     {

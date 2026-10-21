@@ -42,8 +42,10 @@ def source_files():
 
 def check_hosts():
     # TSD §7: only allow-listed outbound hosts may appear in code.
+    # Rust test modules are skipped: hostile test inputs (open.rs) are never contacted.
+    code = lambda p: re.split(r"#\[cfg\(test\)\]\s*mod tests\b", p.read_text(encoding="utf-8"))[0] if p.suffix == ".rs" else p.read_text(encoding="utf-8")
     bad = [f"{p.relative_to(ROOT)}: {h}" for p in source_files()
-           for h in re.findall(r"https?://([\w.-]+)", p.read_text(encoding="utf-8"))
+           for h in re.findall(r"https?://([\w.-]+)", code(p))
            if h not in ALLOWED_HOSTS]
     if bad:
         failures.append("allowed hosts")
@@ -513,6 +515,8 @@ def check_release_build():
     for flag in ("msSmartScreenProtection", "--disable-background-networking", "--disable-component-update"):
         if flag not in wv2:
             bad.append(f"tauri.conf.json additionalBrowserArgs lacks {flag} (M6 network capture)")
+    if any(w.get("create") is False for w in conf["app"]["windows"]) and not ("from_config" in lib and "on_new_window" in lib):
+        bad.append("tauri.conf.json window has create:false but lib.rs never builds it (from_config + on_new_window)")
     lang = TAURI / "windows" / "English.nsh"
     if lang.exists():
         keys = re.findall(r"^LangString (\w+) ", lang.read_text(encoding="utf-8"), re.M)
