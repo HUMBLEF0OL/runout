@@ -15,7 +15,7 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 | U-1 | Request your two Spotify data exports | **Now (M0)** | 2 min | M4 import · **done** (Extended Streaming History arrived 19 Oct 2026; Account data not seen yet) |
 | U-2 | Download the exports and tell me where they are | When Spotify's emails arrive | 5 min | M4 import · **done 19 Oct 2026** (`Downloads\my_spotify_data.zip`) |
 | U-9 | Approve the screen designs | End of M1 | ~30 min | UI build (M2) · **done 18 Oct 2026** |
-| U-3 | *(Optional, D33)* Create the iPhone Shortcut | Any time | 5 min | Nothing (Wi-Fi fallback; phone capture is the Runout Inbox, M7) |
+| U-3 | ~~Create the iPhone Shortcut~~ **dropped 21 Oct 2026** (your decision: phone capture is the Runout Inbox, D33) | — | — | Nothing |
 | U-4 | *(Optional, D33)* Allow the app through Windows Firewall | With U-3 | 10 s | Nothing · **done 20 Oct 2026** |
 | U-5 | Use the app daily for 2 weeks, then sign off the MVP | From the M6 install, in parallel with M7 | 2 weeks | Nothing (MVP final sign-off; D32) |
 | U-6 | Create the Spotify developer app | Start of M5 | 5 min | Release 3 · **done 19 Oct 2026** (redirect `http://127.0.0.1:8888/callback`; client ID kept out of the repo) |
