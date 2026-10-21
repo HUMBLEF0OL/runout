@@ -29,6 +29,7 @@
 | P4 | O4 and O5 resolved by the technical design and built in M5: playlist snapshots kept 30 days, Spotify cache entries 7 days, both swept at startup and daily; disconnect deletes both at once. |
 | P5 | U-5 no longer gates M7 (D32, user decision 20 Oct 2026): M7 starts once M6 code, installer and U-3/U-4 pass. Two weeks of daily use and the section 15 metrics run in parallel; their review is the MVP’s final sign-off. |
 | P6 | Phone capture moves to the Runout Inbox playlist (D33, FR-046, user decision 20 Oct 2026): works on any network; the iOS Shortcut over home Wi-Fi (FR-018) becomes an optional fallback and leaves the MVP release criteria. |
+| P7 | Last.fm relay dropped from future candidates (D34, user decision 21 Oct 2026); replaced by deep listening analytics built into Runout on its own logged and imported plays. |
 
 ### 0.2 Changes in Version 0.6 (design-first delivery)
 
@@ -198,7 +199,7 @@ A listener who regularly discovers music on desktop and phone, wants to explore 
 - Paid APIs, paid databases, paid subscriptions to the app.
 ### 4.4 Future candidates (not committed)
 
-- Last.fm relay for near-real-time phone listening history.
+- Deep listening analytics built into Runout, of the kind Last.fm offers (for example trends over time, streaks, charts by period, listening clock, discovery rate), computed locally from logged and imported plays (sources U, S, E; never Web API data, section 4.3). No Last.fm account or relay (D34).
 - Progressive web app (PWA) companion served over local Wi-Fi.
 - Cross-device sync via user-owned storage (iCloud Drive / OneDrive file).
 - Custom fields; per-track tracking inside albums.
@@ -717,6 +718,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | D31 | How is effort estimated? | Agentic development: build and review hours per milestone, plus the real-world waits agents cannot shorten (user actions, 24 h logger run, 2 weeks of daily use). Calibrated on M3: about 3 hours against a 3–4 week estimate |
 | D32 | Does daily use gate R2/R3 integration? | No (user decision 20 Oct 2026). M7 starts once M6 code, installer and U-3/U-4 pass. U-5 (2 weeks of daily use, section 15 metrics) runs in parallel and is the MVP’s final sign-off; findings feed fixes, not a gate |
 | D33 | How is music captured from the phone? | Through a private “Runout Inbox” Spotify playlist that Runout creates on connect and empties as it imports (R3), because a Wi-Fi listener needs the phone and PC on the same network. The iOS Shortcut stays as an optional fallback (user decision 20 Oct 2026) |
+| D34 | Is phone listening history relayed through Last.fm? | No (user decision 21 Oct 2026). Last.fm-style deep analytics are a future candidate built into Runout on its own data (desktop logger and data export, sources U, S, E); no Last.fm account or scrobbling |
 
 ## 18. Remaining Open Items
 
@@ -751,4 +753,3 @@ Its value is not playing music. Its value is helping the user remember, organize
 - Embeds Terms of Use — https://developer.spotify.com/documentation/embeds/terms
 - Understanding my data — https://support.spotify.com/us/article/understanding-my-data/
 - Spotify User Guidelines — https://www.spotify.com/us/legal/user-guidelines/
-- Last.fm scrobbling documentation — https://www.last.fm/api/scrobbling
