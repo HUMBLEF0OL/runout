@@ -551,6 +551,33 @@ def check_no_mocks_in_build():
         print("--- no mocks in build: FAIL (src/mocks reached the VITE_MOCK=0 bundle)\n" + "\n".join(bad))
 
 
+SPOTIFY_WRITES = re.compile(
+    r'invoke\(\s*"(apply_studio_draft|undo_last_apply|save_to_spotify_library|remove_from_spotify_library|check_inbox|create_inbox)"'
+    r'|(activate|byName|nameStarts)\(.*"(Check now|Create Inbox|Undo last apply|Saved in your Spotify library|Apply \d)'
+    r'|activate\(.*Apply \\+d')
+
+
+def check_installed_spotify_writes():
+    # M7 review r3: the installed journeys run on the user's real Spotify account. Every Spotify write (a command or
+    # the UI control that sends it) sits under a top-level `if (` that names PLAYLIST (RUNOUT_TEST_PLAYLIST) or INBOX
+    # (RUNOUT_INBOX). Heuristic: the nearest column-0 `if (` above the line is its gate.
+    bad = []
+    for f in sorted((ROOT / "scripts" / "installed").glob("*.mjs")):
+        lines = f.read_text(encoding="utf-8").splitlines()
+        text = "\n".join(lines)
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("//") or not SPOTIFY_WRITES.search(line):
+                continue
+            gate = next((lines[j] for j in range(i, -1, -1) if lines[j].startswith("if (")), "")
+            ok = (re.search(r"\bPLAYLIST\b", gate) and "process.env.RUNOUT_TEST_PLAYLIST" in text) or \
+                 (re.search(r"\bINBOX\b", gate) and "process.env.RUNOUT_INBOX" in text)
+            if not ok:
+                bad.append(f"{f.relative_to(ROOT)}:{i + 1}: Spotify write not gated by RUNOUT_TEST_PLAYLIST/RUNOUT_INBOX: {line.strip()[:90]}")
+    if bad:
+        failures.append("installed journeys gate Spotify writes")
+        print("--- installed journeys gate Spotify writes: FAIL\n" + "\n".join(bad))
+
+
 def check_link_parity():
     # TSD §4.1: every row of src/lib/link.test.ts TABLE is in links.rs parse_table with the same state,
     # so the mock parser and the real one agree. `${A}` <-> `{A}`; any other `${...}` <-> a `{}` arg.
@@ -735,6 +762,7 @@ check_contract_and_attribution()
 check_commands()
 check_release_build()
 check_no_mocks_in_build()
+check_installed_spotify_writes()
 check_link_parity()
 check_source_map()
 check_design()

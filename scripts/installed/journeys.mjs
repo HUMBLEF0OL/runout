@@ -7,10 +7,17 @@
 //    RUNOUT_TEST_PLAYLIST  name of a throwaway playlist you own (>= 4 tracks, >= 1 duplicate); journey G runs only when
 //                          set and Spotify is connected. G writes to that playlist (apply, then undo), saves then removes
 //                          one album in your Spotify library (FR-042) and adds top/recent items to the backlog (FR-041).
+//    RUNOUT_INBOX=1        journey B on the Runout Inbox (opt-in, see the warning below)
 //    RUNOUT_CAPTURE_POST=1 journey B posts to the Wi-Fi capture listener (the old Shortcut path) instead of the Inbox
-//    RUNOUT_JOURNEYS       letters to run (default ABCDEH, plus F/G when their env is set)
+//    RUNOUT_JOURNEYS       letters to run (default ACDEH, plus B/F/G when their env is set); a letter named here whose
+//                          steps all skip counts as a failure
+// Every Spotify write (Studio apply/undo, library save/remove, Inbox check/create) sits in a block gated by
+// RUNOUT_TEST_PLAYLIST or RUNOUT_INBOX (check.py "installed journeys gate Spotify writes").
 // Needs network (prefill, embeds). Writes to the live library: use a test library, never the user's own.
-// B: Settings → Runout Inbox → Check now (add a track to the Inbox on the phone first; skipped when not connected).
+// B (RUNOUT_INBOX=1): Settings → Runout Inbox → Check now. WARNING: Check now imports EVERYTHING in the signed-in
+//   account's real "Runout Inbox" playlist into the library under test and removes it from the Inbox. No command reads
+//   the Inbox's contents first (get_inbox is status only), so before running: open the Inbox on the phone and make sure
+//   it holds only the throwaway track(s) you added for this test. Skipped when Spotify isn't connected.
 // Screenshots go to %TEMP%/runout-installed-journeys (real catalog content: never committed).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -143,7 +150,10 @@ import http from "node:http";
 const OFFLINE = !!process.env.RUNOUT_OFFLINE;
 const EXPORT = process.env.RUNOUT_EXPORT;
 const PLAYLIST = process.env.RUNOUT_TEST_PLAYLIST;
-const J = new Set(OFFLINE ? ["O"] : (process.env.RUNOUT_JOURNEYS ?? `ABCDEH${EXPORT ? "F" : ""}${PLAYLIST ? "G" : ""}`).toUpperCase());
+const INBOX = !!process.env.RUNOUT_INBOX;
+const POST = !!process.env.RUNOUT_CAPTURE_POST;
+const NAMED = new Set((process.env.RUNOUT_JOURNEYS ?? "").toUpperCase()); // a named journey must not skip entirely
+const J = new Set(OFFLINE ? ["O"] : (process.env.RUNOUT_JOURNEYS ?? `AC${INBOX || POST ? "B" : ""}DEH${EXPORT ? "F" : ""}${PLAYLIST ? "G" : ""}`).toUpperCase());
 const IDS = process.env.RUNOUT_IDS ? JSON.parse(readFileSync(process.env.RUNOUT_IDS)) : { album: [], track: [], artist: [] };
 if (["A", "D"].some((x) => J.has(x)) && !process.env.RUNOUT_IDS) { console.log("FAIL journeys A and D need RUNOUT_IDS"); done(1); }
 const invoke = (cmd, args = {}) => js(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(cmd)}, ${JSON.stringify(args)})`);
@@ -222,8 +232,9 @@ await step("A7 unsupported (podcast episode) link", async () => {
 /* B — capture from phone. Default: the Runout Inbox (D33, TSD §5.3): the phone adds to the Inbox playlist, Check now
    imports it. RUNOUT_CAPTURE_POST=1: a real LAN POST to the Wi-Fi capture listener (what the Shortcut sends, TSD §5.1). */
 let needBefore = 0; let bImported = 0;
-if (J.has("B") && !process.env.RUNOUT_CAPTURE_POST) await step("B1 Settings → Runout Inbox → Check now → the phone's adds are Name needed in the backlog", async () => {
+if (J.has("B") && INBOX && !POST) await step("B1 Settings → Runout Inbox → Check now → the phone's adds are Name needed in the backlog", async () => {
   if (!CONNECTED) throw new Skip("Spotify not connected");
+  console.log("     B1 imports everything in the real Runout Inbox (see the header warning)");
   await go("Backlog", "#/backlog");
   needBefore = await js(`$$(".badge.need").length`);
   await go("Settings", "#/settings");
@@ -238,7 +249,8 @@ if (J.has("B") && !process.env.RUNOUT_CAPTURE_POST) await step("B1 Settings → 
   await waitFor(`$$(".badge.need").length === ${needBefore + bImported}`, 8000);
   await shot("B1-share-name-needed");
 });
-if (J.has("B") && process.env.RUNOUT_CAPTURE_POST) await step("B1 phone share (LAN POST /capture) → backlog shows it as Name needed", async () => {
+if (J.has("B") && !INBOX && !POST) await step("B1 Runout Inbox", async () => { throw new Skip("set RUNOUT_INBOX=1 (or RUNOUT_CAPTURE_POST=1)"); });
+if (J.has("B") && POST) await step("B1 phone share (LAN POST /capture) → backlog shows it as Name needed", async () => {
   await invoke("set_capture_enabled", { on: true }); // POST mode only
   const cap = await invoke("get_capture");
   if (!cap.on || !cap.address) throw new Error(`capture not on: ${JSON.stringify(cap)}`);
@@ -477,7 +489,8 @@ await step("F4 unmatched plays: link one to its record", async () => {
 }
 
 /* G — Spotify (R3) on a throwaway playlist: Studio, Check other playlists, FR-041, FR-042 (M7 WI 2, journey G) */
-if (J.has("G")) {
+if (J.has("G") && !PLAYLIST) await step("G1 Spotify journey", async () => { throw new Skip("RUNOUT_TEST_PLAYLIST unset"); });
+if (J.has("G") && PLAYLIST) {
 const gSkip = () => { if (!PLAYLIST) throw new Skip("RUNOUT_TEST_PLAYLIST unset"); if (!CONNECTED) throw new Skip("Spotify not connected"); };
 let PL = null; let ORIG = []; let CUT = new Set();
 const uris = async () => (await invoke("load_studio_draft", { playlistUri: PL.uri })).tracks.map((t) => t.uri);
@@ -567,28 +580,36 @@ for (const [n, label, read] of [["G5", "top tracks", () => invoke("get_top_items
     if (it.provenance.display_name !== "promoted") throw new Error(`display_name provenance is ${it.provenance.display_name}, not promoted`);
   });
 }
-await step("G7 an album: Saved in your Spotify library on, then off (FR-042)", async () => {
+await step("G7 an album not yet in your Spotify library: Saved in your Spotify library on, then off (FR-042)", async () => {
   gSkip();
-  const al = (await invoke("list_items", { filter: { type: "album", limit: 1000 } })).rows.find((r) => r.spotify_uri && r.display_name && r.display_name === NAME)
-    ?? (await invoke("list_items", { filter: { type: "album", limit: 1000 } })).rows.find((r) => r.spotify_uri && r.display_name);
-  if (!al) throw new Skip("no album with a Spotify link in the library");
-  await key("Ctrl+k"); await waitFor(`document.activeElement.id === "top-field"`);
-  await type(al.display_name); await key("Enter");
-  await waitFor(`location.hash.startsWith("#/search/")`);
-  await activate(`el.tagName === "A" && el.getAttribute("href") === "#/item/${al.id}"`, { what: "album search result" });
-  await waitFor(`document.querySelector("h1")?.textContent === ${JSON.stringify(al.display_name)}`);
-  const box = `el.type === "checkbox" && ${byName("Saved in your Spotify library")}`;
-  await waitFor(`$$("input[type=checkbox]").some((el) => ${box} && !el.disabled)`, 15000);
-  const was = (await invoke("library_contains", { uris: [al.spotify_uri] }))[0];
-  for (const want of [!was, was]) {
-    await tabTo(box, { what: "Saved in your Spotify library" });
-    await key(" ");
-    await toast(want ? /saved in your Spotify library/ : /removed from your Spotify library/);
-    let got;
-    for (let n = 0; n < 10 && got !== want; n++) { got = (await invoke("library_contains", { uris: [al.spotify_uri] }))[0]; if (got !== want) await sleep(1500); }
-    if (got !== want) throw new Error(`library_contains says ${got}, expected ${want}`);
+  // Only an album the account does NOT already save, so a real saved album is never removed and re-saved.
+  const albums = (await invoke("list_items", { filter: { type: "album", limit: 1000 } })).rows.filter((r) => r.spotify_uri && r.display_name);
+  const pref = [...albums.filter((r) => r.display_name === NAME), ...albums.filter((r) => r.display_name !== NAME)].slice(0, 40);
+  if (!pref.length) throw new Skip("no album with a Spotify link in the library");
+  const saved = await invoke("library_contains", { uris: pref.map((r) => r.spotify_uri) });
+  const al = pref.find((_, i) => !saved[i]);
+  if (!al) throw new Skip("every candidate album is already saved in your Spotify library");
+  try {
+    await key("Ctrl+k"); await waitFor(`document.activeElement.id === "top-field"`);
+    await type(al.display_name); await key("Enter");
+    await waitFor(`location.hash.startsWith("#/search/")`);
+    await activate(`el.tagName === "A" && el.getAttribute("href") === "#/item/${al.id}"`, { what: "album search result" });
+    await waitFor(`document.querySelector("h1")?.textContent === ${JSON.stringify(al.display_name)}`);
+    const box = `el.type === "checkbox" && ${byName("Saved in your Spotify library")}`;
+    await waitFor(`$$("input[type=checkbox]").some((el) => ${box} && !el.disabled && !el.checked)`, 15000);
+    for (const want of [true, false]) {
+      await tabTo(box, { what: "Saved in your Spotify library" });
+      await key(" ");
+      await toast(want ? /saved in your Spotify library/ : /removed from your Spotify library/);
+      let got;
+      for (let n = 0; n < 10 && got !== want; n++) { got = (await invoke("library_contains", { uris: [al.spotify_uri] }))[0]; if (got !== want) await sleep(1500); }
+      if (got !== want) throw new Error(`library_contains says ${got}, expected ${want}`);
+      if (want) await shot("G6-saved-in-spotify");
+    }
+  } finally {
+    // Leave the account as it was: the album was not saved before this step.
+    if ((await invoke("library_contains", { uris: [al.spotify_uri] }).catch(() => [false]))[0]) await invoke("remove_from_spotify_library", { uris: [al.spotify_uri] });
   }
-  await shot("G6-saved-in-spotify");
 });
 }
 
@@ -655,7 +676,7 @@ await step("H2 restore: pick latest → check verifies counts → restore", asyn
   await shot("H3-restored");
 });
 }
-if (J.has("B") && process.env.RUNOUT_CAPTURE_POST) await invoke("set_capture_enabled", { on: false });
+if (J.has("B") && POST) await invoke("set_capture_enabled", { on: false });
 
 /* Motion and focus checks */
 await step("M2 every rendered <button> on visited routes has an accessible name", async () => {
@@ -666,7 +687,13 @@ await step("M3 every keyboard stop reached showed a focus ring", async () => {
   if (bad.length) throw new Error(JSON.stringify(bad));
 });
 
+// A journey named in RUNOUT_JOURNEYS whose steps all skipped (or that has none) proved nothing: a failure.
+for (const l of NAMED) {
+  const mine = results.filter((r) => r[0].startsWith(l));
+  if (mine.every((r) => r[2] === "skip")) results.push([`${l} (named in RUNOUT_JOURNEYS)`, false, "every step skipped"]);
+}
 const failed = results.filter((r) => !r[1]);
+failed.filter((r) => r[2] === "every step skipped").forEach((r) => console.log(`FAIL ${r[0]} — every step skipped`));
 const skipped = results.filter((r) => r[2] === "skip").length;
-console.log(`\n${results.length - failed.length}/${results.length} steps passed (${skipped} skipped); ${focusRings.length} keyboard stops checked for a focus ring; ${shots.length} screenshots in ${SHOTS}`);
+console.log(`\n${results.length - failed.length - skipped} passed, ${skipped} skipped, ${failed.length} failed; ${focusRings.length} keyboard stops checked for a focus ring; ${shots.length} screenshots in ${SHOTS}`);
 done(failed.length ? 1 : 0);

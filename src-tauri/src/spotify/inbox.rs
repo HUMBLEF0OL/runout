@@ -191,11 +191,18 @@ struct Plan {
 
 /// Removal chunks of ≤ [`CHUNK`] URIs, a group never split unless it alone is over [`CHUNK`]. If
 /// the second DELETE failed after the first removed part of a batch, the next check would see
-/// under 80 % of the album and import the rest as stray tracks.
+/// under 80 % of the album and import the rest as stray tracks. A URI in two groups (a batch track
+/// re-added later on its own) is sent once, in its first group (one DELETE removes every copy).
 fn chunks(groups: &[Vec<String>]) -> Vec<Vec<String>> {
     let mut out: Vec<Vec<String>> = vec![];
     let mut cur: Vec<String> = vec![];
+    let mut sent = HashSet::new();
     for g in groups {
+        let g: Vec<String> = g
+            .iter()
+            .filter(|u| sent.insert((*u).clone()))
+            .cloned()
+            .collect();
         if !cur.is_empty() && cur.len() + g.len() > CHUNK {
             out.push(std::mem::take(&mut cur));
         }
@@ -216,10 +223,11 @@ fn chunks(groups: &[Vec<String>]) -> Vec<Vec<String>> {
 /// album's `total_tracks` (≥ 2 tracks) become one album item.
 // ponytail: album size from the entry's `album.total_tracks`, not a track-list read (TSD §5.3).
 fn plan(entries: &[Value]) -> Plan {
-    let mut groups: Vec<((String, String), Vec<String>, i64)> = vec![];
+    // Groups by (album, minute) of (uri, added_at). A URI is in each group it was added in: a batch
+    // track re-added later on its own is planned again as a single (the DELETE takes every copy).
+    #[allow(clippy::type_complexity)]
+    let mut groups: Vec<((String, String), Vec<(String, Option<String>)>, i64)> = vec![];
     let mut at: HashMap<(String, String), usize> = HashMap::new();
-    let mut seen = HashSet::new(); // a URI is planned (and removed) once, in its first group
-    let mut when: HashMap<String, String> = HashMap::new();
     let mut p = Plan::default();
     for e in entries {
         let t = either(e, "item", "track");
@@ -228,12 +236,6 @@ fn plan(entries: &[Value]) -> Plan {
         };
         if e["is_local"] == true {
             continue;
-        }
-        if !seen.insert(uri.clone()) {
-            continue;
-        }
-        if let Some(a) = added_at(e) {
-            when.insert(uri.clone(), a);
         }
         let album = t["album"]["uri"].as_str().unwrap_or_default().to_string();
         let minute: String = e["added_at"]
@@ -251,7 +253,9 @@ fn plan(entries: &[Value]) -> Plan {
             ));
             groups.len() - 1
         });
-        groups[i].1.push(uri);
+        if !groups[i].1.iter().any(|(u, _)| *u == uri) {
+            groups[i].1.push((uri, added_at(e)));
+        }
     }
     for ((album, _), tracks, total) in groups {
         let batch = total >= 2
@@ -262,33 +266,37 @@ fn plan(entries: &[Value]) -> Plan {
         if batch {
             p.add.push((ItemType::Album, album, None));
         } else {
-            p.add.extend(tracks.iter().map(|u| {
-                let cover = al.clone().zip(when.get(u).cloned());
-                (ItemType::Track, u.clone(), cover)
-            }));
+            p.add.extend(
+                tracks
+                    .iter()
+                    .map(|(u, when)| (ItemType::Track, u.clone(), al.clone().zip(when.clone()))),
+            );
         }
-        p.remove.push(tracks);
+        p.remove.push(tracks.into_iter().map(|(u, _)| u).collect());
     }
     p
 }
 
 /// Insert each item not already in the library (one transaction). A track that was already in the
-/// Inbox when its album was imported from it (entry `added_at` ≤ the album item's `created_at`, the
-/// album `added_via = inbox`) counts as skipped: a leftover of that batch (a batch over 100 tracks
-/// spans DELETEs, or a removal failed). A track added later is imported (FR-046); so is one with
-/// no `added_at`.
-// ponytail: second-resolution timestamps from two clocks (Spotify's, this PC's). Clock skew, or a
-// track added in the same check's minute after the batch, can tip a deliberate add into "skipped"
-// (or a leftover into a stray track); the upgrade is storing the batch's entry times with the album.
-fn import(st: &AppState, add: &[Add], out: &mut Checked) -> Result<()> {
+/// Inbox when its album was imported from it by an *earlier* check (album `added_via = inbox`,
+/// entry `added_at` ≤ its `created_at` < `started`, this check's start) counts as skipped: a
+/// leftover of that batch (a batch over 100 tracks spans DELETEs, or a removal failed). Within one
+/// check a batch is one group, so an album created by this check covers nothing: a single track of
+/// it added after the batch is imported. A track added later, or with no `added_at`, is imported
+/// (FR-046).
+// ponytail: second-resolution timestamps from two clocks (Spotify's, this PC's). Clock skew can tip
+// an entry added within seconds of an earlier check's import either way (a deliberate add skipped,
+// or a leftover imported as a stray track); the upgrade is storing the batch's entry URIs with the album.
+fn import(st: &AppState, add: &[Add], started: &str, out: &mut Checked) -> Result<()> {
     let mut db = st.db.lock().unwrap();
     let tx = db.transaction()?;
     for (kind, uri, album) in add {
         let covered = match album {
             Some((a, at)) => tx
                 .query_row(
-                    "SELECT 1 FROM item WHERE spotify_uri = ?1 AND added_via = 'inbox' AND created_at >= ?2",
-                    [a, at],
+                    "SELECT 1 FROM item WHERE spotify_uri = ?1 AND added_via = 'inbox'
+                     AND created_at >= ?2 AND created_at < ?3",
+                    [a.as_str(), at.as_str(), started],
                     |_| Ok(()),
                 )
                 .optional()?
@@ -352,7 +360,7 @@ pub async fn check(st: &AppState, sp: &Spotify) -> Result<Checked> {
     }
 
     let p = plan(&entries);
-    import(st, &p.add, &mut out)?;
+    import(st, &p.add, &started, &mut out)?;
     // Imported (or skipped) entries leave the Inbox; a failed removal waits for the next check
     // (import is idempotent by URI). Every copy of a URI goes (kb/spotify.md).
     for c in chunks(&p.remove) {
@@ -408,7 +416,7 @@ async fn saved_albums(st: &AppState, sp: &Spotify, after: &str, out: &mut Checke
         newer
     })
     .await?;
-    import(st, &add, out)
+    import(st, &add, "", out) // albums only: no track cover rule
 }
 
 /// Artists followed since the previous read, diffed against the cached baseline. No baseline (just
@@ -437,7 +445,7 @@ async fn followed(st: &AppState, sp: &Spotify, out: &mut Checked) -> Result<()> 
             .filter_map(|a| check_uri(&format!("spotify:artist:{a}"), &["artist"]).ok())
             .map(|u| (ItemType::Artist, u, None))
             .collect();
-        import(st, &add, out)?;
+        import(st, &add, "", out)?; // artists only: no track cover rule
     }
     sp.with_cache(|c| cache::put(c, FOLLOWED, "inbox_followed", &json!(ids), t))
 }
@@ -706,6 +714,15 @@ mod tests {
             _ => 0,
         };
         assert_eq!((n(2), n(3)), (98, 5), "the batch goes in one DELETE");
+        // the next check runs ~15 min later: the album was created before it started
+        st.db
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE item SET created_at = '2020-06-01T00:00:00Z' WHERE type = 'album'",
+                [],
+            )
+            .unwrap();
         // what a split chunk would have left (3 of 5 = 60 %): still no stray tracks
         stub.push(200, &listed());
         stub.push(200, &page(batch[2..].to_vec()));
@@ -723,6 +740,39 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tracks, 0);
+    }
+
+    /// Re-review r3 of db03606: within one check, a batch and a later single of the same album (a
+    /// new track, and a batch track re-added on its own) → the album item and both track items.
+    #[test]
+    fn batch_and_later_single_in_one_check_keep_both() {
+        let d = temp_dir("inbox-same-check");
+        let (m, later) = ("2020-01-01T09:15:30Z", "2020-01-01T09:20:00Z");
+        let mut e: Vec<Value> = (1..=4)
+            .map(|n| entry(&format!("A{n}"), "AL1", 5, m))
+            .collect();
+        e.push(entry("A5", "AL1", 5, later));
+        e.push(entry("A2", "AL1", 5, later)); // re-added on its own: the DELETE takes both copies
+        let stub = Stub::new(&[(200, &listed()), (200, &page(e)), (200, "{}")]);
+        let (sp, st) = (connected(&d, &stub), state(&d));
+        ready(&st);
+        let got = block(check(&st, &sp)).unwrap();
+        assert_eq!((got.imported, got.albums, got.skipped), (3, 1, 0));
+        let r: Vec<String> = rows(&st).into_iter().map(|r| r.1).collect();
+        let track = |n: &str| format!("spotify:track:{}", id(n));
+        assert_eq!(
+            r,
+            [
+                format!("spotify:album:{}", id("AL1")),
+                track("A5"),
+                track("A2")
+            ]
+        );
+        let sent = match &stub.requests.lock().unwrap()[2].body {
+            Some(crate::spotify::Body::Json(b)) => b["items"].as_array().unwrap().len(),
+            _ => 0,
+        };
+        assert_eq!(sent, 5, "each URI once");
     }
 
     /// Re-review of 74bcce6 (FR-046): a track of an album imported from the Inbox, added to the
