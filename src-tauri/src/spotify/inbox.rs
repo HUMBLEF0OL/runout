@@ -170,8 +170,16 @@ async fn each(
     Ok(())
 }
 
-/// One item to import: kind, URI and, for a track, its album URI (see [`import`]).
-type Add = (ItemType, String, Option<String>);
+/// One item to import: kind, URI and, for an Inbox track, `(album URI, added_at)` with `added_at`
+/// in the stored UTC format (see [`import`]); `None` when either is unknown.
+type Add = (ItemType, String, Option<(String, String)>);
+
+/// An entry's `added_at` as `YYYY-MM-DDTHH:MM:SSZ` (`item.created_at`'s format); `None` if absent
+/// (very old playlist entries) or unreadable.
+fn added_at(e: &Value) -> Option<String> {
+    let t = chrono::DateTime::parse_from_rfc3339(e["added_at"].as_str()?).ok()?;
+    Some(crate::insights::utc(t.with_timezone(&chrono::Utc)))
+}
 
 /// What one Inbox read asks for: the new items, and the track URIs to remove, grouped as planned
 /// (an album batch is one group) so [`chunks`] never splits a batch across two DELETEs.
@@ -211,6 +219,7 @@ fn plan(entries: &[Value]) -> Plan {
     let mut groups: Vec<((String, String), Vec<String>, i64)> = vec![];
     let mut at: HashMap<(String, String), usize> = HashMap::new();
     let mut seen = HashSet::new(); // a URI is planned (and removed) once, in its first group
+    let mut when: HashMap<String, String> = HashMap::new();
     let mut p = Plan::default();
     for e in entries {
         let t = either(e, "item", "track");
@@ -222,6 +231,9 @@ fn plan(entries: &[Value]) -> Plan {
         }
         if !seen.insert(uri.clone()) {
             continue;
+        }
+        if let Some(a) = added_at(e) {
+            when.insert(uri.clone(), a);
         }
         let album = t["album"]["uri"].as_str().unwrap_or_default().to_string();
         let minute: String = e["added_at"]
@@ -250,30 +262,33 @@ fn plan(entries: &[Value]) -> Plan {
         if batch {
             p.add.push((ItemType::Album, album, None));
         } else {
-            p.add.extend(
-                tracks
-                    .iter()
-                    .map(|u| (ItemType::Track, u.clone(), al.clone())),
-            );
+            p.add.extend(tracks.iter().map(|u| {
+                let cover = al.clone().zip(when.get(u).cloned());
+                (ItemType::Track, u.clone(), cover)
+            }));
         }
         p.remove.push(tracks);
     }
     p
 }
 
-/// Insert each item not already in the library (one transaction). A track whose album is already
-/// an Inbox-imported album item counts as skipped: it is a leftover of that batch (a batch over 100
-/// tracks spans DELETEs, or a removal failed), not a new track of its own.
-// ponytail: also skips a later deliberate single track of such an album; its album is in the backlog.
+/// Insert each item not already in the library (one transaction). A track that was already in the
+/// Inbox when its album was imported from it (entry `added_at` ≤ the album item's `created_at`, the
+/// album `added_via = inbox`) counts as skipped: a leftover of that batch (a batch over 100 tracks
+/// spans DELETEs, or a removal failed). A track added later is imported (FR-046); so is one with
+/// no `added_at`.
+// ponytail: second-resolution timestamps from two clocks (Spotify's, this PC's). Clock skew, or a
+// track added in the same check's minute after the batch, can tip a deliberate add into "skipped"
+// (or a leftover into a stray track); the upgrade is storing the batch's entry times with the album.
 fn import(st: &AppState, add: &[Add], out: &mut Checked) -> Result<()> {
     let mut db = st.db.lock().unwrap();
     let tx = db.transaction()?;
     for (kind, uri, album) in add {
         let covered = match album {
-            Some(a) => tx
+            Some((a, at)) => tx
                 .query_row(
-                    "SELECT 1 FROM item WHERE spotify_uri = ?1 AND added_via = 'inbox'",
-                    [a],
+                    "SELECT 1 FROM item WHERE spotify_uri = ?1 AND added_via = 'inbox' AND created_at >= ?2",
+                    [a, at],
                     |_| Ok(()),
                 )
                 .optional()?
@@ -498,11 +513,11 @@ mod tests {
         e.push(json!({"is_local": true, "item": {"uri": "spotify:local:x:y:z:1"}}));
         e.push(json!({"item": {"uri": format!("spotify:episode:{}", id("E1"))}}));
         let p = plan(&e);
-        let t = |n: &str, al: &str| {
+        let t = |n: &str, al: &str, at: &str| {
             (
                 ItemType::Track,
                 format!("spotify:track:{}", id(n)),
-                Some(format!("spotify:album:{}", id(al))),
+                Some((format!("spotify:album:{}", id(al)), at.to_string())),
             )
         };
         assert_eq!(
@@ -513,11 +528,11 @@ mod tests {
                     format!("spotify:album:{}", id("AL1")),
                     None
                 ),
-                t("B1", "AL2"),
-                t("C1", "AL3"),
-                t("C2", "AL3"),
-                t("D1", "AL4"),
-                t("D2", "AL4"),
+                t("B1", "AL2", at),
+                t("C1", "AL3", at),
+                t("C2", "AL3", "2026-10-21T09:15:59Z"),
+                t("D1", "AL4", at),
+                t("D2", "AL4", "2026-10-21T09:16:00Z"),
             ]
         );
         let all = p.remove.concat();
@@ -669,7 +684,7 @@ mod tests {
     #[test]
     fn batch_never_straddles_a_failed_delete() {
         let d = temp_dir("inbox-straddle");
-        let at = "2026-10-21T09:15:30Z";
+        let at = "2020-01-01T09:15:30Z"; // before the album item's created_at (this run's clock)
         let singles: Vec<Value> = (0..98)
             .map(|n| entry(&format!("S{n}"), &format!("SA{n}"), 10, at))
             .collect();
@@ -708,6 +723,36 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tracks, 0);
+    }
+
+    /// Re-review of 74bcce6 (FR-046): a track of an album imported from the Inbox, added to the
+    /// Inbox *after* that import, is a deliberate add and is imported; one with no `added_at` too.
+    #[test]
+    fn later_track_of_an_imported_album_is_imported() {
+        let d = temp_dir("inbox-later");
+        let old = "2020-01-01T09:15:30Z";
+        let batch: Vec<Value> = (1..=5)
+            .map(|n| entry(&format!("A{n}"), "AL1", 5, old))
+            .collect();
+        let stub = Stub::new(&[(200, &listed()), (200, &page(batch)), (200, "{}")]);
+        let (sp, st) = (connected(&d, &stub), state(&d));
+        ready(&st);
+        assert_eq!(block(check(&st, &sp)).unwrap().albums, 1);
+        let mut undated = entry("A3", "AL1", 5, old);
+        undated["added_at"] = Value::Null;
+        stub.push(200, &listed());
+        stub.push(
+            200,
+            &page(vec![entry("A2", "AL1", 5, "2999-01-01T00:00:00Z"), undated]),
+        );
+        stub.push(200, "{}");
+        let got = block(check(&st, &sp)).unwrap();
+        assert_eq!((got.imported, got.skipped), (2, 0));
+        assert_eq!(
+            added_at(&json!({"added_at": "2026-10-21T09:15:30.123+02:00"})).as_deref(),
+            Some("2026-10-21T07:15:30Z"),
+            "normalised to created_at's format"
+        );
     }
 
     /// A failing optional read (followed artists, scope revoked) never hides the Inbox import.

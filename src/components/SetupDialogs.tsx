@@ -28,7 +28,8 @@ export function ShortcutDialog({ onClose }: { onClose: () => void }) {
 /* ------------------------------------------------------------------ SC-13c connect / disconnect */
 export function ConnectDialog({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<"start" | "wait" | "done" | "fail">("start");
-  const follow = useApi(getInbox).data?.followed_artists;
+  const inbox = useApi(getInbox).data;
+  const follow = inbox?.followed_artists;
   const [error, setError] = useState<AppError>();
   const go = async () => {
     setStep("wait");
@@ -52,7 +53,7 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
     <Dialog title="Connect Spotify" onClose={onClose} footer={<><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={go} autoFocus>Open Spotify sign-in</button></>}>
       <Attribution />
       <span className="text-text-2 leading-[1.55]">Runout opens Spotify’s sign-in page in your browser. It asks to read and edit your playlists, read your top items and recent plays, and save to your library.</span>
-      <span className="text-text-2 leading-[1.55]">Connecting also creates a private “Runout Inbox” playlist in your Spotify account, for saving music from your phone.{follow ? " Because you import artists you follow, it also asks to read who you follow." : ""}</span>
+      {(inbox?.state === "none" || follow) && <span className="text-text-2 leading-[1.55]">{inbox?.state === "none" ? "Connecting also creates a private “Runout Inbox” playlist in your Spotify account, for saving music from your phone." : ""}{follow ? `${inbox?.state === "none" ? " " : ""}Because you import artists you follow, it also asks to read who you follow.` : ""}</span>}
       <span className="help">Nothing Runout gets from Spotify feeds your insights. Disconnecting deletes it right away.</span>
     </Dialog>
   );
