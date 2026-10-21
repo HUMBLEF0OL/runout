@@ -106,7 +106,7 @@ export default function Backlog() {
         <span className="truncate text-muted text-xs">{sub(it)}</span>
       </Link>
       <span className="text-text-2 text-sm">{TYPE[it.type]}</span>
-      <span className="text-text-2 truncate text-sm">{it.recommended_by || (it.added_via === "phone" ? "Phone" : "You")}</span>
+      <span className="text-text-2 truncate text-sm">{it.recommended_by || (it.added_via === "pc" ? "You" : "Phone")}</span>
       <span className="font-mono text-faint text-xs">{age(it.added_at)}</span>
       <span className="justify-self-end">{it.status === "in_progress" ? <StatusBadge>In progress</StatusBadge>
         : <button className="btn btn-secondary s" onClick={() => start(it)} aria-label={`Start ${nameOf(it)}`}>Start</button>}</span>

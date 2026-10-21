@@ -13,6 +13,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0003_listening.sql"),
     include_str!("../../migrations/0004_listening_perf.sql"),
     include_str!("../../migrations/0005_listening_rollup.sql"),
+    include_str!("../../migrations/0006_added_via_inbox.sql"),
 ];
 
 /// Schema version a fully migrated library has.
@@ -53,16 +54,39 @@ fn configure(conn: &mut Connection) -> Result<(), AppError> {
     migrate(conn)
 }
 
-/// Run every migration newer than `user_version`, each in its own transaction.
+/// Run every migration newer than `user_version`, each in its own transaction. Foreign keys are
+/// off meanwhile (a table rebuild's DROP TABLE must not cascade, 0006) and `legacy_alter_table` on
+/// (its rename must not rewrite views/triggers); a migration that leaves a dangling reference
+/// fails `foreign_key_check` and rolls back. Both pragmas are restored either way.
 pub fn migrate(conn: &mut Connection) -> Result<(), AppError> {
     let current: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-    for (i, sql) in MIGRATIONS.iter().enumerate().skip(current.max(0) as usize) {
-        let tx = conn.transaction()?;
-        tx.execute_batch(sql)?;
-        tx.pragma_update(None, "user_version", (i + 1) as i64)?;
-        tx.commit()?;
+    if current >= SCHEMA_VERSION {
+        return Ok(());
     }
-    Ok(())
+    let fk: bool = conn.pragma_query_value(None, "foreign_keys", |r| r.get(0))?;
+    conn.pragma_update(None, "foreign_keys", "OFF")?; // no-op inside a transaction, so outside
+    conn.pragma_update(None, "legacy_alter_table", "ON")?;
+    let run = |conn: &mut Connection| -> Result<(), AppError> {
+        for (i, sql) in MIGRATIONS.iter().enumerate().skip(current.max(0) as usize) {
+            let tx = conn.transaction()?;
+            tx.execute_batch(sql)?;
+            let dangling: i64 =
+                tx.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| {
+                    r.get(0)
+                })?;
+            if dangling > 0 {
+                return Err(AppError::internal("A library upgrade left broken links.")
+                    .with_detail(format!("migration {} foreign_key_check", i + 1)));
+            }
+            tx.pragma_update(None, "user_version", (i + 1) as i64)?;
+            tx.commit()?;
+        }
+        Ok(())
+    };
+    let r = run(conn);
+    conn.pragma_update(None, "legacy_alter_table", "OFF")?;
+    conn.pragma_update(None, "foreign_keys", fk)?;
+    r
 }
 
 /// Synthetic library for tests (TSD §8: never real values): random 22-char ids, made-up names.
@@ -264,6 +288,85 @@ mod tests {
             )
             .unwrap();
         assert_eq!(item, None, "deleting an item keeps its plays");
+    }
+
+    /// 0006 rebuilds `item` to widen `added_via`: with data, nothing that points at items is lost
+    /// (no cascade), search and the FTS triggers still work, 'inbox' is accepted.
+    #[test]
+    fn v5_with_data_upgrades_to_v6_keeping_everything() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        for m in &MIGRATIONS[..5] {
+            c.execute_batch(m).unwrap();
+        }
+        c.pragma_update(None, "user_version", 5).unwrap();
+        fixture(&c, 6);
+        c.execute_batch(
+            "INSERT INTO listening_event(source, ended_at_utc, ms_played, dedupe_hash, item_id)
+               VALUES ('export', '2026-01-01T00:00:00Z', 40000, 'v6', 2);",
+        )
+        .unwrap();
+        let tables = [
+            "item",
+            "item_link",
+            "item_tag",
+            "field_provenance",
+            "status_history",
+            "item_fts",
+            "listening_event WHERE item_id IS NOT NULL",
+        ];
+        let counts = |c: &Connection| -> Vec<i64> {
+            tables
+                .iter()
+                .map(|t| {
+                    c.query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get(0))
+                        .unwrap()
+                })
+                .collect()
+        };
+        let before = counts(&c);
+        assert!(
+            c.execute(
+                "INSERT INTO item(type, added_via) VALUES ('track', 'inbox')",
+                []
+            )
+            .is_err()
+        );
+        migrate(&mut c).unwrap();
+        assert_eq!(version(&c), MIGRATIONS.len() as i64);
+        assert_eq!(counts(&c), before);
+        let fk: bool = c
+            .pragma_query_value(None, "foreign_keys", |r| r.get(0))
+            .unwrap();
+        assert!(fk, "foreign keys back on");
+        c.execute(
+            "INSERT INTO item(type, added_via) VALUES ('track', 'inbox')",
+            [],
+        )
+        .unwrap();
+        assert!(
+            c.execute(
+                "INSERT INTO item(type, added_via) VALUES ('track', 'bus')",
+                []
+            )
+            .is_err()
+        );
+        c.execute(
+            "UPDATE item SET display_name = 'Renamedzz' WHERE id = 2",
+            [],
+        )
+        .unwrap();
+        assert_eq!(search(&c, "Renamedzz"), vec![2]);
+        c.execute("DELETE FROM item WHERE id = 2", []).unwrap(); // cascades work again
+        assert_eq!(search(&c, "Renamedzz"), Vec::<i64>::new());
+        let links: i64 = c
+            .query_row(
+                "SELECT count(*) FROM item_link WHERE from_id = 2 OR to_id = 2",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(links, 0);
     }
 
     #[test]

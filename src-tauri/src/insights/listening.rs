@@ -85,7 +85,8 @@ fn rank(
     arg: &dyn ToSql,
     limit: usize,
 ) -> Result<Vec<RankRow>> {
-    // (group key, name, by, record lookup); names are fixed SQL, never user input.
+    // (group key, name, by, record lookup); names are fixed SQL, never user input. `by` is '' for an
+    // all-NULL artist, as the rollup stores it (G-29).
     let (group, name, by, item) = match kind {
         Kind::Artist => (
             "+lower(artist_name)",
@@ -96,13 +97,13 @@ fn rank(
         Kind::Album => (
             "+lower(album_name)",
             "MAX(album_name)",
-            "MAX(artist_name)",
+            "IFNULL(MAX(artist_name), '')",
             "(SELECT id FROM item WHERE type = 'album' AND display_name = g.name COLLATE NOCASE ORDER BY id LIMIT 1)",
         ),
         Kind::Track => (
             "+norm_key",
             "MAX(track_name)",
-            "MAX(artist_name)",
+            "IFNULL(MAX(artist_name), '')",
             "(SELECT id FROM item WHERE id = g.iid AND type = 'track')",
         ),
     };
@@ -270,7 +271,7 @@ pub fn listening(
         format!(
         "{b} SELECT (CAST(strftime('%w', local) AS INT) + 6) % 7, CAST(strftime('%H', local) AS INT),
                     SUM(ms_played)
-             FROM base WHERE {in_range} GROUP BY 1, 2"
+             FROM base WHERE {in_range} AND strftime('%w', local) IS NOT NULL GROUP BY 1, 2"
     )
     })?;
     for r in st.query_map([&start], |r| {
@@ -429,6 +430,26 @@ mod tests {
             hours(200_000 + 100_000 + 20_000 + 90_000)
         );
         assert_eq!(s.sources, vec!["U", "E"]);
+    }
+
+    /// G-29: a local time SQLite can't parse is left out of the heatmap, not an error.
+    #[test]
+    fn heatmap_skips_unparseable_local_time() {
+        let (c, _) = fixture::build();
+        let before = listening(&c, Range::Week, false, fixture::now()).unwrap();
+        c.execute(
+            "INSERT INTO listening_event(source, ended_at_utc, ended_at_local, ms_played, track_name,
+               artist_name, album_name, norm_key, dedupe_hash)
+             VALUES ('export', '2026-10-17T09:00:00Z', 'not a time', 999000, 'Song One', 'Zorblax',
+                     'Album One', 'zorblax|song one', 'g29-heat')",
+            [],
+        )
+        .unwrap();
+        for range in [Range::Week, Range::All] {
+            listening(&c, range, false, fixture::now()).unwrap();
+        }
+        let after = listening(&c, Range::Week, false, fixture::now()).unwrap();
+        assert_eq!(after.data.heatmap, before.data.heatmap);
     }
 
     #[test]

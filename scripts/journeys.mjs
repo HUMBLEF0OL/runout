@@ -199,14 +199,18 @@ await step("A8 quick add offline: short link → Save for later → queued", asy
   await waitFor(`!txt().includes("You’re offline.")`);
 });
 
-/* B — capture from phone (the share itself is outside the app: dev panel "iPhone share", reached by keyboard) */
+/* B — capture from phone via the Runout Inbox (D33): the phone's add to the Inbox playlist is outside the app (mock dataset) */
 let needBefore = 0;
-await step("B1 iPhone share arrives → backlog shows it as Name needed", async () => {
+await step("B1 Settings → Runout Inbox → Check now → backlog shows it as Name needed", async () => {
   await go("Backlog", "#/backlog");
   needBefore = await js(`$$(".badge.need").length`);
-  await devPanel(true);
-  await activate(`el.matches("details.proto a") && el.textContent === "iPhone share"`, { what: "dev panel iPhone share" });
-  await devPanel(false);
+  await go("Settings", "#/settings");
+  await waitFor(`txt().includes("Runout Inbox · ready")`);
+  await activate(byName("Check now"), { what: "Inbox Check now" });
+  await toast(/1 item from your Inbox saved to the backlog as Name needed/);
+  await waitFor(`txt().includes("1 item imported")`);
+  await shot("B0-inbox-checked");
+  await go("Backlog", "#/backlog");
   await waitFor(`$$(".badge.need").length === ${needBefore + 1}`);
   await shot("B1-share-name-needed");
 });

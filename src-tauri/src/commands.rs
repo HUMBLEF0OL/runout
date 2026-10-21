@@ -37,6 +37,7 @@ use crate::settings::{self, Settings};
 use crate::spotify::autofill::{self as sp_autofill, Autofill, NewTrack};
 use crate::spotify::create::{self as sp_create, CreatedPlaylist};
 use crate::spotify::discover::{self as sp_discover, RecentPlay, SpotifyEntry, TopKind, TopRange};
+use crate::spotify::inbox::{self as sp_inbox, Checked, InboxStatus};
 use crate::spotify::library_sync as sp_library;
 use crate::spotify::studio::{
     self as sp_studio, Applied, ApplyRecord, Draft, SpotifyPlaylist, StudioDiff,
@@ -131,6 +132,11 @@ pub fn handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + 
         library_contains,
         save_to_spotify_library,
         remove_from_spotify_library,
+        find_cross_playlist_dupes,
+        get_inbox,
+        create_inbox,
+        check_inbox,
+        set_inbox_options,
     ]
 }
 
@@ -715,9 +721,14 @@ pub async fn get_spotify_status(sp: Sp<'_>) -> Result<SpotifyStatus> {
     sp.status().await
 }
 
+/// Asks for `user-follow-read` only while the Inbox's followed-artists option is on; creates the
+/// Inbox after the first successful sign-in (TSD §5.3).
 #[tauri::command]
-pub async fn connect_spotify(sp: Sp<'_>) -> Result<SpotifyStatus> {
-    sp.connect().await
+pub async fn connect_spotify(sp: Sp<'_>, st: St<'_>) -> Result<SpotifyStatus> {
+    let follow = st.settings.lock().unwrap().inbox.followed_artists;
+    let s = sp.connect(follow).await?;
+    sp_inbox::ensure_on_connect(&st, &sp).await;
+    Ok(s)
 }
 
 #[tauri::command]
@@ -726,7 +737,6 @@ pub async fn disconnect_spotify(sp: Sp<'_>) -> Result<()> {
 }
 
 const ITEM_URIS: &[&str] = &["album", "track", "artist"];
-const LIBRARY_URIS: &[&str] = &["album", "track", "artist"];
 
 fn check_uris(uris: &[String], kinds: &[&str]) -> Result<Vec<String>> {
     uris.iter().map(|u| spotify::check_uri(u, kinds)).collect()
@@ -874,22 +884,66 @@ pub async fn get_recent_plays_api(sp: Sp<'_>, st: St<'_>) -> Result<Vec<RecentPl
 #[tauri::command]
 pub async fn library_contains(sp: Sp<'_>, uris: Vec<String>) -> Result<Vec<bool>> {
     sp.require_connected()?;
-    let uris = check_uris(&uris, LIBRARY_URIS)?;
+    // validated in library_sync: tracks and albums only (artist → validation, TSD §5.2)
     sp_library::library_contains(&sp, &uris).await
 }
 
 #[tauri::command]
 pub async fn save_to_spotify_library(sp: Sp<'_>, uris: Vec<String>) -> Result<()> {
     sp.require_connected()?;
-    let uris = check_uris(&uris, LIBRARY_URIS)?;
+    // validated in library_sync: tracks and albums only (artist → validation, TSD §5.2)
     sp_library::save_to_spotify_library(&sp, &uris).await
 }
 
 #[tauri::command]
 pub async fn remove_from_spotify_library(sp: Sp<'_>, uris: Vec<String>) -> Result<()> {
     sp.require_connected()?;
-    let uris = check_uris(&uris, LIBRARY_URIS)?;
+    // validated in library_sync: tracks and albums only (artist → validation, TSD §5.2)
     sp_library::remove_from_spotify_library(&sp, &uris).await
+}
+
+#[tauri::command]
+pub async fn find_cross_playlist_dupes(
+    sp: Sp<'_>,
+    playlist_uri: String,
+) -> Result<Vec<sp_studio::CrossDupe>> {
+    sp.require_connected()?;
+    let uri = spotify::check_uri(&playlist_uri, &["playlist"])?;
+    sp_studio::find_cross_playlist_dupes(&sp, &uri).await
+}
+
+/* ------------------------------------------------------------- Runout Inbox (API.md §5, TSD §5.3) */
+
+/// Settings only: no connection needed, no request.
+#[tauri::command]
+pub async fn get_inbox(sp: Sp<'_>, st: St<'_>) -> Result<InboxStatus> {
+    Ok(sp_inbox::status(&st, &sp))
+}
+
+#[tauri::command]
+pub async fn create_inbox(sp: Sp<'_>, st: St<'_>) -> Result<InboxStatus> {
+    sp.require_connected()?;
+    sp_inbox::create(&st, &sp).await
+}
+
+/// Check now; emits `inbox-imported` when something came in (as the background check does).
+#[tauri::command]
+pub async fn check_inbox<R: Runtime>(app: AppHandle<R>, sp: Sp<'_>, st: St<'_>) -> Result<Checked> {
+    let got = sp_inbox::check(&st, &sp).await?;
+    if got.imported > 0 {
+        let _ = app.emit("inbox-imported", &got);
+    }
+    Ok(got)
+}
+
+#[tauri::command]
+pub async fn set_inbox_options(
+    sp: Sp<'_>,
+    st: St<'_>,
+    saved_albums: bool,
+    followed_artists: bool,
+) -> Result<InboxStatus> {
+    sp_inbox::set_options(&st, &sp, saved_albums, followed_artists).await
 }
 
 #[cfg(test)]
@@ -1069,6 +1123,12 @@ mod tests {
         assert_eq!(e["code"], json!("validation"));
 
         // R3 (API.md §5): disconnected → status says so, every other command is spotify_auth
+        // the Inbox state is settings only: answered disconnected, no request
+        let i = call(&w, "get_inbox", json!({})).unwrap();
+        assert_eq!(
+            (&i["state"], &i["needs_reconnect"]),
+            (&json!("none"), &json!(false))
+        );
         let s = call(&w, "get_spotify_status", json!({})).unwrap();
         assert_eq!(
             s,
@@ -1101,6 +1161,13 @@ mod tests {
             ("library_contains", json!({"uris": []})),
             ("save_to_spotify_library", json!({"uris": []})),
             ("remove_from_spotify_library", json!({"uris": []})),
+            ("find_cross_playlist_dupes", json!({"playlistUri": pl})),
+            ("create_inbox", json!({})),
+            ("check_inbox", json!({})),
+            (
+                "set_inbox_options",
+                json!({"savedAlbums": true, "followedArtists": false}),
+            ),
         ] {
             let e = call(&w, cmd, args).unwrap_err();
             assert_eq!(e["code"], json!("spotify_auth"), "{cmd}");

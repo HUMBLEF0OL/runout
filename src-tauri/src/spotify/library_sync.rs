@@ -7,18 +7,25 @@ use reqwest::Method;
 /// Spotify's per-call cap (TSD §5.2).
 pub const BATCH: usize = 40;
 
-/// Library items are tracks, albums and artists (TSD §4.1); checked again here.
-const KINDS: &[&str] = &["track", "album", "artist"];
+/// Only tracks and albums (BRD R3-6): an artist URI here means follow, which needs the follow
+/// scopes Runout doesn't request (kb/spotify.md G-22). Checked here, at the command boundary.
+const KINDS: &[&str] = &["track", "album"];
+
+fn check(uri: &str) -> Result<String> {
+    if check_uri(uri, &["artist"]).is_ok() {
+        return Err(AppError::validation(
+            "Spotify's library takes tracks and albums. Follow artists in Spotify.",
+        ));
+    }
+    check_uri(uri, KINDS)
+}
 
 /// One `?uris=a,b,c` path per batch of ≤ 40, in input order. Validates every URI first,
 /// so nothing reaches Spotify if one is bad.
 // ponytail: `uris` as a comma-separated query param (Feb 2026 Dev Mode guide shape, not yet
 // recorded in docs/kb/spotify.md); switch to a JSON body here if Spotify rejects it.
 fn paths(base: &str, uris: &[String]) -> Result<Vec<String>> {
-    let uris = uris
-        .iter()
-        .map(|u| check_uri(u, KINDS))
-        .collect::<Result<Vec<_>>>()?;
+    let uris = uris.iter().map(|u| check(u)).collect::<Result<Vec<_>>>()?;
     Ok(uris
         .chunks(BATCH)
         .map(|c| format!("{base}?uris={}", enc(&c.join(","))))
@@ -143,6 +150,15 @@ mod tests {
         assert!(block(save_to_spotify_library(&sp, &input)).is_err());
         input[40] = "spotify:track:short".into();
         assert!(block(library_contains(&sp, &input[..41])).is_err());
+        // artists: validation for save, remove and contains, before any request
+        let artist = vec!["spotify:artist:0000000000000000000000".to_string()];
+        for e in [
+            block(save_to_spotify_library(&sp, &artist)).unwrap_err(),
+            block(remove_from_spotify_library(&sp, &artist)).unwrap_err(),
+            block(library_contains(&sp, &artist)).unwrap_err(),
+        ] {
+            assert_eq!(e.code, crate::error::Code::Validation);
+        }
         assert!(stub.calls().is_empty());
     }
 }

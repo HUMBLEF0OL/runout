@@ -29,6 +29,25 @@ pub struct Settings {
     pub logger_paused: bool,
     /// ISO-8601 UTC end of a timed pause.
     pub paused_until: Option<String>,
+    /// Runout Inbox (TSD §5.3); changed only by the inbox commands.
+    pub inbox: Inbox,
+}
+
+/// The user's pointer to their own Inbox playlist plus its options (not Spotify content, so here
+/// and not in `spotify_cache.db`, TSD §5.3).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Inbox {
+    /// Spotify playlist id (22 base62) of the Inbox; `None` = never created.
+    pub playlist_id: Option<String>,
+    /// The stored playlist was gone at the last check (404 / not in `/me/playlists`).
+    pub missing: bool,
+    pub last_check: Option<String>,
+    pub imported_last: i64,
+    pub saved_albums: bool,
+    /// Albums saved after this time are imported (set when the option is turned on, then each check).
+    pub albums_after: Option<String>,
+    pub followed_artists: bool,
 }
 
 impl Settings {
@@ -50,6 +69,7 @@ impl Settings {
             logger_apps: vec!["Spotify".into()],
             logger_paused: false,
             paused_until: None,
+            inbox: Inbox::default(),
         }
     }
 }
@@ -67,6 +87,7 @@ pub fn merge(base: &Settings, patch: &Value) -> Result<Settings> {
         ("logger_apps", LOGGER),
         ("logger_paused", LOGGER),
         ("paused_until", LOGGER),
+        ("inbox", "Use the Runout Inbox controls for this setting."),
     ] {
         if patch.get(key).is_some() {
             return Err(AppError::validation(what));
@@ -169,6 +190,7 @@ mod tests {
             "include_private",
             "logger_paused",
             "paused_until",
+            "inbox",
         ] {
             let e = merge(&d, &json!({ key: "x" })).unwrap_err();
             assert_eq!(e.code, crate::error::Code::Validation, "{key}");

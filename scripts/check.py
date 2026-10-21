@@ -306,7 +306,7 @@ def check_mock_r3_parity():
     bad = []
     cmds = re.findall(r"`([a-z_]+)`", " ".join(re.findall(r"^\| (`[a-z_]+`(?: / `[a-z_]+`)*) \|", sec.group(0), re.M))) if sec else []
     for c in cmds:
-        if c in ("get_spotify_status", "connect_spotify", "disconnect_spotify"):
+        if c in ("get_spotify_status", "connect_spotify", "disconnect_spotify", "get_inbox"):  # get_inbox: settings only
             continue
         m = re.search(rf"^  {c}: (.*?)(?=^  \w+: |^}};)", mock, re.S | re.M)
         if not m or "spotifyOn()" not in m.group(1):
@@ -440,8 +440,8 @@ def check_contract_and_attribution():
         print("--- contract + attribution: FAIL\n" + "\n".join(sorted(set(bad))))
 
 
-# API.md sections whose commands must be registered in commands.rs. M4 adds "4", M5 adds "5".
-COMMAND_SECTIONS = ["3", "5"]
+# API.md sections whose commands must be registered in commands.rs.
+COMMAND_SECTIONS = ["3", "4", "5"]
 
 
 def check_commands():
@@ -530,6 +530,25 @@ def check_release_build():
     if bad:
         failures.append("release build")
         print("--- release build: FAIL\n" + "\n".join(bad))
+
+
+def check_no_mocks_in_build():
+    # M7 plan step 6: the shipped (VITE_MOCK=0) bundle graph holds nothing from src/mocks. Every module that
+    # contributes code is listed in the sourcemaps' `sources`; build them into a temp dir, never dist/.
+    if not (ROOT / "src" / "mocks").exists():
+        return
+    import tempfile
+    with tempfile.TemporaryDirectory() as out:
+        r = subprocess.run(f'npx vite build --mode production --sourcemap --outDir "{out}" --emptyOutDir --logLevel error',
+                           cwd=ROOT, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        maps = list(Path(out).rglob("*.js.map"))
+        bad = [f"{m.name}: {src}" for m in maps for src in json.loads(m.read_text(encoding="utf-8"))["sources"]
+               if re.search(r"(^|[\/])src[\/]mocks[\/]", src)]
+        if r.returncode or not maps:
+            bad.append("production vite build failed or wrote no sourcemaps: " + (r.stdout + r.stderr)[-2000:])
+    if bad:
+        failures.append("no mocks in build")
+        print("--- no mocks in build: FAIL (src/mocks reached the VITE_MOCK=0 bundle)\n" + "\n".join(bad))
 
 
 def check_link_parity():
@@ -675,6 +694,16 @@ def check_design():
         print("--- design: FAIL\n" + "\n".join(bad))
 
 
+def check_exit_flush():
+    # G-36 review: the RunEvent::Exit hook (also Windows shutdown/sign-out via tao's WM_ENDSESSION) must
+    # save the play in progress; no test sees lib.rs's run closure, so check the wiring here.
+    p = TAURI / "src/lib.rs"
+    m = re.search(r"\.run\(\|[^|]*\|[^)]*?RunEvent::Exit.*?tray::flush_on_exit\(", p.read_text(encoding="utf-8"), re.S) if p.exists() else None
+    if not m:
+        failures.append("exit flush")
+        print("--- exit flush: FAIL (lib.rs .run(|app, e| ...) must call tray::flush_on_exit on RunEvent::Exit)")
+
+
 if (TAURI / "Cargo.toml").exists():
     run("cargo fmt", "cargo fmt --check", TAURI)
     run("cargo clippy", "cargo clippy --all-targets -- -D warnings", TAURI)
@@ -705,9 +734,11 @@ check_ui_purity()
 check_contract_and_attribution()
 check_commands()
 check_release_build()
+check_no_mocks_in_build()
 check_link_parity()
 check_source_map()
 check_design()
+check_exit_flush()
 
 if HOOK and not failures:
     sys.exit(0)

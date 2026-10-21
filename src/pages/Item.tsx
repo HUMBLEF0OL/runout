@@ -61,7 +61,9 @@ function Detail({ it }: { it: ItemDetail }) {
   useShortcuts(useCallback((a: ShortcutAction) => { if (typeof a === "object" && !edit) changeStatus(STATUS_ORDER[a.status - 1]); }, [changeStatus, edit]));
 
   const listening = useApi(() => (r2 ? getItemListening(it.id) : Promise.resolve(null)), [r2, it.id]);
-  const saved = useApi(() => (r3 && online && it.spotify_uri ? libraryContains([it.spotify_uri]) : Promise.resolve(null)), [r3, online, it.spotify_uri]);
+  // Spotify library save/remove takes track and album URIs only (API.md §5): never for artists.
+  const savable = r3 && !!it.spotify_uri && it.type !== "artist";
+  const saved = useApi(() => (savable && online ? libraryContains([it.spotify_uri!]) : Promise.resolve(null)), [savable, online, it.spotify_uri]);
 
   const artistLink = it.links.find((l) => l.kind === "by_artist" && l.direction === "from")?.item;
   const albumLink = it.links.find((l) => l.kind === "on_album" && l.direction === "from")?.item;
@@ -72,7 +74,7 @@ function Detail({ it }: { it: ItemDetail }) {
 
   const head = edit ? <EditForm it={it} artistName={artistName} onDone={() => nav(`/item/${it.id}`)} /> : (
     <div className="flex flex-col gap-1.5">
-      <span className="text-muted text-sm">{TYPE[it.type]}, added {day(it.added_at)}{it.added_via === "phone" ? " from your iPhone" : ""}</span>
+      <span className="text-muted text-sm">{TYPE[it.type]}, added {day(it.added_at)}{it.added_via === "phone" ? " from your iPhone" : it.added_via === "inbox" ? " from your Runout Inbox" : ""}</span>
       <div className="flex flex-wrap gap-2 items-center">
         <h1 className="text-[34px] font-extrabold tracking-[-0.025em]">{name}</h1>
         <Link className="btn btn-secondary s" to={`/item/${it.id}?edit=1`} aria-label={`Edit ${name}`}>Edit</Link>
@@ -86,7 +88,7 @@ function Detail({ it }: { it: ItemDetail }) {
     </div>
   );
 
-  const spotifySave = !r3 || !it.spotify_uri ? null
+  const spotifySave = !savable ? null
     : !online ? <span className="text-faint text-xs">Saved in Spotify can’t change while you’re offline</span>
     : saved.error ? <span className="text-faint text-xs">Saved in Spotify isn’t available. {saved.error.message}</span>
     : <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" checked={!!saved.data?.[0]} disabled={saved.loading} onChange={async (e) => {

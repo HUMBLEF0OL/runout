@@ -115,3 +115,23 @@ describe("Studio selection", () => {
     await screen.findAllByRole("radiogroup", { name: /^Keep or cut / }, { timeout: 3000 });
   });
 });
+
+describe("Studio: Check other playlists (G-24)", () => {
+  it("marks each track the other playlists also hold, naming them", async () => {
+    let n = -1; let want: api.CrossDupe[] = [];
+    for (const [i, u] of uris.entries()) { want = await api.findCrossPlaylistDupes(u); if (want.length) { n = i; break; } }
+    expect(n).toBeGreaterThanOrEqual(0); // the mock dataset shares tracks across playlists
+    await studio(n);
+    expect(screen.queryByText(/also in /)).toBeNull(); // only on request
+    fireEvent.click(screen.getByRole("button", { name: "Check other playlists" }));
+    await screen.findByText(/also in other playlists, marked in the list\./, {}, { timeout: 3000 });
+    expect(screen.getAllByText(new RegExp(`also in .*${want[0].playlists[0].name}`)).length).toBeGreaterThan(0);
+  });
+  it("a failed check keeps the draft and offers a retry (offline: the whole Studio shows its connection state)", async () => {
+    await studio(0);
+    setDev({ view: "error" });
+    fireEvent.click(screen.getByRole("button", { name: "Check other playlists" }));
+    await alert(/Couldn't check your other playlists\./);
+    expect(screen.getAllByRole("radiogroup", { name: /^Keep or cut / }).length).toBeGreaterThan(0);
+  });
+});

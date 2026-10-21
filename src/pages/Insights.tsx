@@ -1,10 +1,10 @@
 // SC-09 Insights (CAP-23–27). Built only from your records, the desktop log and the Spotify export:
 // never Spotify Top items or API recent plays (FR-031). Every card carries its source tag (FR-032).
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import * as api from "../api";
-import type { Freshness, Range, RankRow as Rank, Source } from "../api";
-import { Empty, ErrorBanner, FreshnessNote, Seg, SkelBlock, SkelRows, SourceTag, Stat } from "../components/ui";
+import type { Freshness, Range, RankRow as Rank, Sourced } from "../api";
+import { Empty, ErrorBanner, FreshnessNote, InsightCard as Card, Seg, SkelBlock, SkelRows, SourcedTag, Stat } from "../components/ui";
 import { Topbar } from "../components/Shell";
 import { useApi, type ApiState } from "../hooks/useApi";
 import { day, daysSince, hm, monthName, nameOf, num, pl, STATUS, today } from "../lib/format";
@@ -12,15 +12,6 @@ import { day, daysSince, hm, monthName, nameOf, num, pl, STATUS, today } from ".
 type Tab = "listening" | "collection" | "take" | "year";
 const LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const initial = (ym: string) => monthName(ym)[0];
-
-function Card({ title, src, children, className = "", side }: { title: ReactNode; src: Source[]; children: ReactNode; className?: string; side?: boolean }) {
-  return (
-    <section className={`card flex flex-col gap-3 ${side ? "flex-[1_1_320px] min-w-0" : className}`}>
-      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">{title}</h2><SourceTag sources={src} /></div>
-      {children}
-    </section>
-  );
-}
 
 /** CSS bars (prototype .bars); the last bar is the one that needs attention. */
 function Bars({ values, labels, label }: { values: number[]; labels: string[]; label: string }) {
@@ -32,9 +23,9 @@ function Bars({ values, labels, label }: { values: number[]; labels: string[]; l
   );
 }
 
-function TopList({ title, rows, kind, src }: { title: string; rows: Rank[]; kind: string; src: Source[] }) {
+function TopList({ title, rows, kind, src }: { title: string; rows: Rank[]; kind: string; src: Sourced<unknown> }) {
   return (
-    <Card title={title} src={src} className="flex-[1_1_260px]">
+    <Card title={title} res={src} className="flex-[1_1_260px]">
       {rows.length ? rows.slice(0, 5).map((x, n) => (
         <div key={x.name + x.by} className="flex justify-between items-baseline gap-3 py-0.5">
           <span className="min-w-0"><span className="font-mono text-faint text-xs mr-2">{n + 1}</span>
@@ -55,10 +46,10 @@ function Listening({ range }: { range: Range }) {
   const yearMs = range === "12m" ? li.data?.data.totals.ms : year.data?.data.totals.ms;
   if (li.loading) return <Loading />;
   if (li.error) return <ErrorBanner error={li.error} title="Couldn't load insights." onRetry={li.reload} />;
-  const d = li.data!.data; const t = d.totals; const src = li.data!.sources;
+  const d = li.data!.data; const t = d.totals; const src = li.data!;
   return <>
     <div className="flex flex-wrap gap-7 items-start">
-      <Card title="Listening time by month" src={src} className="flex-[1.4_1_480px]">
+      <Card title="Listening time by month" res={src} className="flex-[1.4_1_480px]">
         <span className="font-mono text-text-2 text-sm">{yearMs != null ? `${hm(yearMs)} in the last 12 months` : ""}</span>
         <Bars values={d.monthly.map((m) => m.hours)} labels={d.monthly.map((m) => initial(m.month))} label="Listening hours per month for the last 12 months" />
       </Card>
@@ -67,11 +58,11 @@ function Listening({ range }: { range: Range }) {
         <Stat k="Listening time" v={hm(t.ms)} d="In this range" />
         <Stat k="Skip rate" v={`${d.skip_rate}%`} d="Of all plays" />
         <Stat k="From your phone" v={`${d.phone_share}%`} d="Of plays, from your export" />
-        <span className="col-span-full"><SourceTag sources={src} /></span>
+        <span className="col-span-full"><SourcedTag res={src} /></span>
       </section>
     </div>
     <div className="flex flex-wrap gap-7 items-start">
-      <Card title="When you listen" src={src} className="flex-[1.4_1_480px]">
+      <Card title="When you listen" res={src} className="flex-[1.4_1_480px]">
         <div className="heat" role="img" aria-label="Listening by weekday and hour">
           {d.heatmap.map((row, i) => (
             <div key={i} className="r"><span className="font-mono text-faint text-[11px]">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}</span>
@@ -80,7 +71,7 @@ function Listening({ range }: { range: Range }) {
           <div className="r"><span />{Array.from({ length: 24 }, (_, h) => <span key={h} className="font-mono text-faint text-[10px]">{h % 6 === 0 ? String(h).padStart(2, "0") : ""}</span>)}</div>
         </div>
       </Card>
-      <Card title="Unfinished albums" src={take.data?.sources ?? []} side>
+      <Card title="Unfinished albums" res={take.data} side>
         <span className="text-muted text-xs leading-[1.45]">Only albums whose tracks you've added.{take.data?.data.unfinished_unknown ? ` ${pl(take.data.data.unfinished_unknown, "other album")} can't be checked.` : ""}</span>
         {take.data?.data.unfinished_albums.length ? take.data.data.unfinished_albums.map((u) => (
           <Link key={u.item.id} to={`/item/${u.item.id}`} className="flex justify-between items-baseline gap-3 text-text py-[3px]">
@@ -101,7 +92,7 @@ function Collection() {
   const counts = useApi(api.getCounts);
   if (ci.loading) return <Loading />;
   if (ci.error) return <ErrorBanner error={ci.error} title="Couldn't load insights." onRetry={ci.reload} />;
-  const d = ci.data!.data; const c = counts.data; const src = ci.data!.sources;
+  const d = ci.data!.data; const c = counts.data; const src = ci.data!;
   const st = (s: api.Status) => d.completion.find((x) => x.status === s)?.count ?? 0;
   // Library size at the end of each month, walking back from today's total.
   const total = c?.library ?? 0; let after = 0;
@@ -114,12 +105,12 @@ function Collection() {
       <Stat k="Planned to explored" v={d.avg_days_to_explored == null ? "None yet" : pl(d.avg_days_to_explored, "day")} d="Average time" />
       <Stat k="Reviews written" v={num(d.reviews)} d={`${d.explored_without_review} explored without one`} act={d.explored_without_review > 0} />
     </div>
-    <SourceTag sources={src} />
+    <SourcedTag res={src} />
     <div className="flex flex-wrap gap-7 items-start">
-      <Card title="Library size over 12 months" src={src} className="flex-[1.5_1_520px]">
+      <Card title="Library size over 12 months" res={src} className="flex-[1.5_1_520px]">
         <Bars values={growth} labels={d.backlog_growth.map((m) => initial(m.month))} label={`Library grows from ${growth[0] ?? 0} to ${pl(growth[growth.length - 1] ?? 0, "record")}`} />
       </Card>
-      <Card title="How you rate" src={src} side>
+      <Card title="How you rate" res={src} side>
         {d.rating_spread.filter((r) => r.rating >= 1).map((r) => (
           <div key={r.rating} className="grid grid-cols-[40px_minmax(0,1fr)_28px] gap-2.5 items-center">
             <span className="font-mono text-text-2 text-xs">{r.rating}</span>
@@ -129,7 +120,7 @@ function Collection() {
         ))}
       </Card>
     </div>
-    <Card title="Your most used tags" src={src}>
+    <Card title="Your most used tags" res={src}>
       {d.tag_trends.length ? <div className="flex flex-wrap gap-2 items-center">{d.tag_trends.slice(0, 8).map((t) => <span key={t.tag} className="chip">{t.tag} <span className="font-mono text-faint">{t.count}</span></span>)}</div>
         : <span className="text-muted">No tags yet.</span>}
     </Card>
@@ -140,13 +131,13 @@ function Take() {
   const ti = useApi(api.getTakeInsights);
   if (ti.loading) return <Loading />;
   if (ti.error) return <ErrorBanner error={ti.error} title="Couldn't load insights." onRetry={ti.reload} />;
-  const d = ti.data!.data; const src = ti.data!.sources;
+  const d = ti.data!.data; const src = ti.data!;
   const groups: [string, api.Take[]][] = [["Loved, not played lately", d.loved_but_forgotten], ["Played a lot, never rated", d.rated_vs_played], ["In your backlog, never played", d.never_played_backlog]];
   return <>
     <p className="text-text-2 m-0">Where your opinions and your listening disagree.</p>
     <div className="flex flex-wrap gap-7 items-start">
       {groups.map(([title, rows]) => (
-        <Card key={title} title={title} src={src} className="flex-[1_1_300px]">
+        <Card key={title} title={title} res={src} className="flex-[1_1_300px]">
           {rows.length ? rows.map((x) => (
             <Link key={x.item.id} to={`/item/${x.item.id}`} className="flex flex-col gap-0.5 px-2.5 py-2 rounded-control bg-surface-2 text-text">
               <span className="font-semibold">{nameOf(x.item)}</span><span className="text-text-2 text-sm">{x.line}</span>
@@ -183,7 +174,7 @@ function Year() {
             <Stat k="Reviews" v={y.reviews} d="Written this year" />
           </div>
           <span className="text-text-2">Your busiest month was {LONG[Number(y.busiest_month.slice(5, 7)) - 1]}.</span>
-          <SourceTag sources={yr.data!.sources} />
+          <SourcedTag res={yr.data!} />
         </section>
       )}
   </>;

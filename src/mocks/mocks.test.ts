@@ -118,3 +118,26 @@ describe("mock commands (API.md)", () => {
     expect(rows.some((p) => p.album_rating != null)).toBe(true);
   });
 });
+
+describe("mock Runout Inbox, cross-playlist dupes, library URIs (API.md §5, M7)", () => {
+  it("check_inbox imports the waiting add as one name-needed item, then finds nothing", async () => {
+    const api = await import("../api");
+    expect((await api.getInbox()).state).toBe("ready");
+    const need = (await api.getCounts()).name_needed;
+    expect(await api.checkInbox()).toEqual({ imported: 1, albums: 1, skipped: 0 });
+    expect((await api.getCounts()).name_needed).toBe(need + 1);
+    const [it] = (await api.listItems({ name_needed: true, sort: "added_at", desc: true, limit: 50 })).rows.filter((i) => i.added_via === "inbox");
+    expect(it).toMatchObject({ display_name: null, in_backlog: true });
+    expect(await api.checkInbox()).toEqual({ imported: 0, albums: 0, skipped: 0 });
+    expect((await api.getInbox()).imported_last).toBe(0);
+  });
+  it("find_cross_playlist_dupes names only other playlists", async () => {
+    const api = await import("../api");
+    const [p] = await api.listSpotifyPlaylists();
+    for (const r of await api.findCrossPlaylistDupes(p.uri)) expect(r.playlists.every((x) => x.uri !== p.uri)).toBe(true);
+  });
+  it("library save/contains refuse an artist URI (validation), as Rust", async () => {
+    const api = await import("../api");
+    await expect(api.libraryContains(["spotify:artist:AAAAAAAAAAAAAAAAAAAAAA"])).rejects.toMatchObject({ code: "validation" });
+  });
+});

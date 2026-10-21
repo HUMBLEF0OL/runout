@@ -1,6 +1,7 @@
-//! System tray (TSD §2, §4.5, FR-026; DESIGN §6 `#/tray`): open, pause logging (1 h / until
-//! resumed), resume, quit. The tooltip and a status line follow `LoggerStatus`; closing the window
-//! hides it here and the logger keeps running.
+//! System tray (TSD §2, §4.5, FR-026; DESIGN §6 `#/tray` board): status line, pause (1 h / until
+//! resumed) or resume, Quick add, open, quit. The tooltip and status line follow `LoggerStatus`;
+//! while paused only Resume shows (the menu is rebuilt when that flips). Closing the window hides
+//! it here and the logger keeps running.
 use std::sync::Mutex;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -15,12 +16,64 @@ const ID: &str = "main";
 /// Windows `NOTIFYICONDATAW.szTip` holds 128 UTF-16 units including the NUL.
 const TIP_MAX: usize = 127;
 
-/// Items whose text or enabled state follows the logger.
+/// Items whose text or enabled state follows the logger, and which menu is shown.
 struct Items<R: Runtime> {
     status: MenuItem<R>,
-    pause_1h: MenuItem<R>,
-    pause: MenuItem<R>,
-    resume: MenuItem<R>,
+    pause: Vec<MenuItem<R>>,
+    paused: bool,
+}
+
+/// Menu entries below the status line, as on the `#/tray` board: `(id, label, accelerator)`;
+/// `None` = separator.
+fn entries(paused: bool) -> Vec<Option<(&'static str, &'static str, Option<&'static str>)>> {
+    let logging = if paused {
+        vec![Some(("resume", "Resume logging", None))]
+    } else {
+        vec![
+            Some(("pause_1h", "Pause for 1 hour", None)),
+            Some(("pause", "Pause until I resume", None)),
+        ]
+    };
+    [None]
+        .into_iter()
+        .chain(logging)
+        .chain([
+            Some(("quick_add", "Quick add", Some("CmdOrCtrl+N"))),
+            Some(("open", "Open Runout", None)),
+            None,
+            Some(("quit", "Quit Runout", None)),
+        ])
+        .collect()
+}
+
+fn menu<R: Runtime>(
+    app: &AppHandle<R>,
+    paused: bool,
+    tip: &str,
+) -> tauri::Result<(Menu<R>, Items<R>)> {
+    let status = MenuItem::with_id(app, "status", tip.replace('&', "&&"), false, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&status])?;
+    let mut pause = vec![];
+    for e in entries(paused) {
+        match e {
+            None => menu.append(&PredefinedMenuItem::separator(app)?)?,
+            Some((id, text, acc)) => {
+                let item = MenuItem::with_id(app, id, text, true, acc)?;
+                menu.append(&item)?;
+                if id.starts_with("pause") {
+                    pause.push(item);
+                }
+            }
+        }
+    }
+    Ok((
+        menu,
+        Items {
+            status,
+            pause,
+            paused,
+        },
+    ))
 }
 
 /// Tooltip (and menu status line) for a logger status.
@@ -61,12 +114,19 @@ pub fn emit_status<R: Runtime>(app: &AppHandle<R>, s: &LoggerStatus) {
     if let Some(t) = app.tray_by_id(ID) {
         let _ = t.set_tooltip(Some(&tip));
     }
-    if let Some(i) = app.try_state::<Items<R>>() {
+    if let Some(items) = app.try_state::<Mutex<Items<R>>>() {
         let paused = s.state == "paused";
+        let mut i = items.lock().unwrap();
+        if i.paused != paused
+            && let (Some(t), Ok((m, next))) = (app.tray_by_id(ID), menu(app, paused, &tip))
+            && t.set_menu(Some(m)).is_ok()
+        {
+            *i = next;
+        }
         let _ = i.status.set_text(tip.replace('&', "&&")); // a menu item reads `&` as an access key
-        let _ = i.resume.set_enabled(paused);
-        let _ = i.pause_1h.set_enabled(!paused && s.state != "off");
-        let _ = i.pause.set_enabled(!paused && s.state != "off");
+        for p in &i.pause {
+            let _ = p.set_enabled(s.state != "off");
+        }
     }
 }
 
@@ -94,48 +154,59 @@ fn change<R: Runtime>(app: &AppHandle<R>, minutes: Option<Option<i64>>) {
     });
 }
 
-/// Quit: write the play in progress (≥ 1 s), then exit.
+/// Write the play in progress (≥ 1 s). Tray Quit, and `RunEvent::Exit` (G-36). A second call
+/// finds no play and writes nothing.
+fn flush<R: Runtime>(app: &AppHandle<R>) {
+    let (Some(st), Some(lg)) = (
+        app.try_state::<AppState>(),
+        app.try_state::<Mutex<Logger>>(),
+    ) else {
+        return; // exit before setup managed them
+    };
+    let mut lg = lg.lock().unwrap(); // lock order logger → db
+    let db = st.db.lock().unwrap();
+    let _ = lg.close(&db, chrono::Utc::now());
+}
+
+/// `RunEvent::Exit` (lib.rs): runs on the main thread, also on Windows shutdown / sign-out (tao
+/// handles `WM_ENDSESSION` by firing it, then exits). The logger thread can hold its lock while it
+/// waits on the main thread (tray update), so the flush runs on a thread and is given `wait`.
+// ponytail: on that race the play in progress is lost, as before G-36.
+pub(crate) fn flush_on_exit<R: Runtime>(app: &AppHandle<R>, wait: std::time::Duration) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app = app.clone();
+    std::thread::spawn(move || {
+        flush(&app);
+        let _ = tx.send(());
+    });
+    let _ = rx.recv_timeout(wait);
+}
+
+/// Quit: write the play in progress, then exit (the `Exit` flush then finds nothing).
 fn quit<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     std::thread::spawn(move || {
-        {
-            let (st, lg) = (app.state::<AppState>(), app.state::<Mutex<Logger>>());
-            let mut lg = lg.lock().unwrap(); // lock order logger → db
-            let db = st.db.lock().unwrap();
-            let _ = lg.close(&db, chrono::Utc::now());
-        }
+        flush(&app);
         app.exit(0);
     });
 }
 
+/// Quick add (G-35): show the window and ask the UI to open its Quick add dialog (API.md §6).
+fn quick_add<R: Runtime>(app: &AppHandle<R>) {
+    show(app);
+    let _ = app.emit("open-quick-add", ());
+}
+
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let item = |id: &str, text: &str, on: bool| MenuItem::with_id(app, id, text, on, None::<&str>);
-    let items = Items {
-        status: item("status", "Runout", false)?,
-        pause_1h: item("pause_1h", "Pause logging for 1 hour", true)?,
-        pause: item("pause", "Pause logging until resumed", true)?,
-        resume: item("resume", "Resume logging", false)?,
-    };
-    let sep = || PredefinedMenuItem::separator(app);
-    let menu = Menu::with_items(
-        app,
-        &[
-            &items.status,
-            &sep()?,
-            &item("open", "Open Runout", true)?,
-            &items.pause_1h,
-            &items.pause,
-            &items.resume,
-            &sep()?,
-            &item("quit", "Quit Runout", true)?,
-        ],
-    )?;
+    // Starts as "logging"; the first `emit_status` switches to the paused menu if need be.
+    let (menu, items) = menu(app, false, "Runout")?;
     let mut b = TrayIconBuilder::with_id(ID)
         .tooltip("Runout")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, e| match e.id().as_ref() {
             "open" => show(app),
+            "quick_add" => quick_add(app),
             "pause_1h" => change(app, Some(Some(60))),
             "pause" => change(app, Some(None)),
             "resume" => change(app, None),
@@ -156,7 +227,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         b = b.icon(icon.clone());
     }
     b.build(app)?;
-    app.manage(items);
+    app.manage(Mutex::new(items));
     Ok(())
 }
 
@@ -209,6 +280,118 @@ mod tests {
             tooltip(&status("error")),
             "Runout: can't see what Spotify is playing"
         );
+    }
+
+    /// G-36: the exit flush writes the play in progress once, and never hangs on a held logger lock.
+    #[test]
+    fn exit_flush_writes_the_play_in_progress() {
+        use crate::logger::accumulator::{PlayState, Track};
+        use std::time::{Duration, Instant};
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let h = app.handle();
+        flush_on_exit(h, Duration::from_secs(1)); // nothing managed yet: no panic
+        let d = std::path::Path::new("d");
+        app.manage(AppState {
+            db: Mutex::new(crate::db::open_in_memory().unwrap()),
+            paths: crate::state::Paths {
+                config_dir: d.into(),
+                data_dir: d.into(),
+                local_data_dir: d.into(),
+            },
+            settings: Mutex::new(crate::settings::Settings::defaults(d, d)),
+        });
+        app.manage(Mutex::new(Logger::default()));
+        let track = Track {
+            title: "Fixture Song".into(),
+            artist: "Fixture Artist".into(),
+            album: "Fixture Album".into(),
+            duration_ms: 200_000,
+            position_ms: 0,
+        };
+        {
+            let st = app.state::<AppState>();
+            let s = st.settings.lock().unwrap().clone();
+            let started = chrono::Utc::now() - chrono::Duration::seconds(40);
+            app.state::<Mutex<Logger>>()
+                .lock()
+                .unwrap()
+                .observe(
+                    &st.db.lock().unwrap(),
+                    &s,
+                    Some((track, PlayState::Playing)),
+                    started,
+                )
+                .unwrap();
+        }
+        let plays = || -> Vec<(String, bool)> {
+            let st = app.state::<AppState>();
+            let db = st.db.lock().unwrap();
+            // unfiltered: the test reads every row the flush wrote
+            let mut q = db
+                .prepare("SELECT track_name, counts_as_play FROM listening_event")
+                .unwrap();
+            q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+        // logger lock held elsewhere (logger thread waiting on the main thread): gives up in time
+        {
+            let lg = app.state::<Mutex<Logger>>();
+            let _held = lg.lock().unwrap();
+            let t = Instant::now();
+            flush_on_exit(h, Duration::from_millis(200));
+            assert!(t.elapsed() < Duration::from_secs(1));
+        }
+        // lock freed: the stuck flush thread finishes; a later one finds nothing left
+        let t = Instant::now();
+        while plays().is_empty() && t.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        flush_on_exit(h, Duration::from_secs(5));
+        assert_eq!(plays(), vec![("Fixture Song".into(), true)]);
+    }
+
+    /// G-35, DESIGN §6 `#/tray` board: pause items while logging, only Resume while paused, then
+    /// Quick add (Ctrl+N), Open Runout, Quit Runout.
+    #[test]
+    fn menu_follows_the_tray_board() {
+        let labels = |p| {
+            entries(p)
+                .into_iter()
+                .map(|e| e.map_or("-", |(_, l, _)| l))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            labels(false),
+            [
+                "-",
+                "Pause for 1 hour",
+                "Pause until I resume",
+                "Quick add",
+                "Open Runout",
+                "-",
+                "Quit Runout"
+            ]
+        );
+        assert_eq!(
+            labels(true),
+            [
+                "-",
+                "Resume logging",
+                "Quick add",
+                "Open Runout",
+                "-",
+                "Quit Runout"
+            ]
+        );
+        let quick = entries(false)
+            .into_iter()
+            .flatten()
+            .find(|e| e.0 == "quick_add");
+        assert_eq!(quick.and_then(|e| e.2), Some("CmdOrCtrl+N"));
     }
 
     #[test]

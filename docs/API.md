@@ -44,7 +44,7 @@ interface ItemSummary {
   rating: number | null; favourite: boolean; revisit: boolean; in_backlog: boolean;
   backlog_order: number | null; tags: string[]; artist_names: string[];
   album_name: string | null;                                // tracks: "Artist, from Album" row subtitle (M2)
-  added_via: 'pc' | 'phone';                                // "From: Phone", "added from your iPhone" (M2)
+  added_via: 'pc' | 'phone' | 'inbox';                      // "From: Phone", "added from your iPhone" (M2); inbox = Runout Inbox (M7, TSD §5.3)
   recommended_by: string | null;                            // "Album, from Meera" row subtitle (M2)
   notes: string | null;                                     // in-progress artist cards show it (G-4, M3)
   added_at: string; modified_at: string;
@@ -167,7 +167,7 @@ interface PlaylistCheckup { tracks: { position: number; name: string; artist: st
 | Command | Args | Returns | Notes / spec |
 |---|---|---|---|
 | `get_spotify_status` | — | `{state: 'disconnected' \| 'connected' \| 'reconnect', display_name, renew_by}` | SC-13c |
-| `connect_spotify` | — | same | Opens browser, PKCE, loopback port (TSD §5.2) |
+| `connect_spotify` | — | same | Opens browser, PKCE, loopback port (TSD §5.2); adds scope `user-follow-read` only while the Inbox's followed-artists option is on; then creates the Runout Inbox if none was ever recorded (TSD §5.3) |
 | `disconnect_spotify` | — | `void` | Deletes tokens + `spotify_cache.db` at once |
 | `list_spotify_playlists` | — | `{uri, name, tracks, owned, collaborative}[]` | Own/collab only |
 | `load_studio_draft` | `playlist_uri` | `Draft` | `{playlist_uri, snapshot_id, tracks: {uri, name, artist, rating, tags, dupe_of}[]}`; ratings/tags only (D27). `validation` for a playlist over 10,000 entries or holding local files/episodes (TSD §5.2) |
@@ -181,11 +181,16 @@ interface PlaylistCheckup { tracks: { position: number; name: string; artist: st
 | `bulk_add_album_tracks` | `album_id, tracks: {uri, name}[]` | `ItemSummary[]` | Promoted + linked `on_album`; tracks already in the library are linked too but not returned (result = added) |
 | `get_top_items` | `kind: 'tracks' \| 'artists', range: '4w' \| '6m' \| '1y'` | `SpotifyEntry[]` | Display only; `{uri, name, artist, in_library_id}` |
 | `get_recent_plays_api` | — | `(SpotifyEntry & {played_at})[]` | Display only; never in insights |
-| `library_contains` / `save_to_spotify_library` / `remove_from_spotify_library` | `uris: string[]` | `boolean[]` / `void` / `void` | ≤ 40 per call, batched in Rust |
+| `library_contains` / `save_to_spotify_library` / `remove_from_spotify_library` | `uris: string[]` | `boolean[]` / `void` / `void` | ≤ 40 per call, batched in Rust. Track and album URIs only: an artist URI is `validation` before any request (follow needs scopes Runout doesn't request, TSD §5.2) |
+| `find_cross_playlist_dupes` | `playlist_uri` | `CrossDupe[]` | G-24, BRD R3-1: `{uri, playlists: {uri, name}[]}`, one row per track of that playlist that the user's **other** own/collab playlists also hold (by URI), in that playlist's order; tracks found nowhere else are left out. Only on an explicit "Check other playlists" (one items read per playlist; 429 waits like every call, a long one is `spotify_busy`). A playlist deleted meanwhile is skipped. Reads playlists only, never listening data (D27) |
+| `get_inbox` | — | `InboxStatus` | TSD §5.3. Settings only: no request, works disconnected. `{state: 'none' \| 'ready' \| 'missing', playlist_uri: string \| null, last_check: string \| null, imported_last: number, saved_albums: boolean, followed_artists: boolean, needs_reconnect: boolean}`; `missing` = the Inbox was deleted in Spotify (offer **Create Inbox**, never re-created silently); `needs_reconnect` = followed artists is on but the sign-in lacks `user-follow-read` (offer Reconnect: `connect_spotify` asks for it while the option is on) |
+| `create_inbox` | — | `InboxStatus` | Creates the private “Runout Inbox” when state is `none` or `missing`; a `ready` one is returned as is. `connect_spotify` also creates it after a sign-in when none was ever recorded |
+| `check_inbox` | — | `{imported, albums, skipped}` | **Check now**. `imported` = new “name needed” items (`added_via: 'inbox'`), `albums` = how many of those are albums (an album batch or a saved album), `skipped` = already in the library. Imported and skipped tracks leave the Inbox. `spotify_auth` when disconnected, `offline` offline. Also runs at start and every 15 min (skipped disconnected/offline) |
+| `set_inbox_options` | `saved_albums: boolean, followed_artists: boolean` | `InboxStatus` | Both off by default. Saved albums: albums saved after the option was turned on / the last check. Followed artists: the first check after turning it on only records who you follow (imports nothing); later checks import artists followed since |
 
 “Add to backlog” from SC-12 is `create_item` with `provenance: 'promoted'` (FR-041) — no separate command.
 
-**Planned, M7 WI 4 (BRD D33, FR-046):** Runout Inbox commands `get_inbox`, `create_inbox`, `check_inbox`, `set_inbox_options` and event `inbox-imported`, as drafted in TSD §5.3. Not part of the contract yet: they are added to this table, `src/api.ts`, `src/mocks/` and Rust in one change when M7 builds them (§7).
+`connect_spotify` creates the Runout Inbox after a successful sign-in when none was ever recorded (TSD §5.3, BRD D33, FR-046).
 
 ## 6. Events (Rust → UI)
 | Event | Payload | Release |
@@ -198,6 +203,8 @@ interface PlaylistCheckup { tracks: { position: number; name: string; artist: st
 | `logger-status` | `get_logger_status` shape | R2 |
 | `play-logged` | `Play` | R2 |
 | `spotify-status` | `get_spotify_status` shape | R3 |
+| `inbox-imported` | `check_inbox` shape (`{imported, albums, skipped}`), sent only when `imported > 0` (background check or Check now) | R3 |
+| `open-quick-add` | `null` | R2 · tray **Quick add** (G-35): the window is shown and focused, the UI opens Quick add |
 
 ## 7. Changing this contract
 Add or change a command here first, then `api.ts` types, the mock, and the Rust command in one change. `check.py` (from M3) compares the command names registered in `commands.rs` with the names exported by `api.ts`.

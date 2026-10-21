@@ -5,7 +5,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowsClockwiseIcon, BooksIcon, ChartBarIcon, ClockCounterClockwiseIcon, CompassIcon, GearSixIcon, HouseIcon, PlaylistIcon, QueueIcon,
 } from "@phosphor-icons/react";
-import { getCapture, getCounts, getFreshness, getLoggerStatus, invalidateOnDataEvents, MOCK, recordPageVisit } from "../api";
+import { getCapture, getCounts, getFreshness, getLoggerStatus, invalidateOnDataEvents, MOCK, onEvent, recordPageVisit } from "../api";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { useShortcuts, type ShortcutAction } from "../hooks/useShortcuts";
@@ -103,6 +103,7 @@ export default function Shell() {
   const [qa, setQa] = useState<QuickAddOpts | null>(null);
   const open = useCallback((o: QuickAddOpts = {}) => setQa(o), []);
   useEffect(invalidateOnDataEvents, []);
+  useEffect(() => onEvent("open-quick-add", () => setQa({})), []); // tray "Quick add" (G-35): Rust shows the window
   useEffect(() => {
     recordPageVisit(loc.pathname.split("/")[1] || "home").catch(() => {});
     window.scrollTo(0, 0);

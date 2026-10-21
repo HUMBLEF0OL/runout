@@ -1,6 +1,6 @@
 // The only bridge between the UI and the Rust core (docs/API.md). Every command exists here in camelCase
-// with the same snake_case fields as the Rust serde structs. `VITE_MOCK` (default on in M2) routes calls to
-// src/mocks/; M6 routes MVP calls to `invoke` while R2/R3 remain mocked until M7.
+// with the same snake_case fields as the Rust serde structs. With `VITE_MOCK=0` (.env.production) every call goes
+// to `invoke` and every event to `listen`; otherwise (dev, Vitest) to src/mocks/.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { cleanLine, cleanTags, cleanText, LIMITS, lineOrNull, textOrNull } from "./lib/sanitize";
@@ -31,7 +31,7 @@ export interface ItemSummary {
   rating: number | null; favourite: boolean; revisit: boolean; in_backlog: boolean;
   backlog_order: number | null; tags: string[]; artist_names: string[];
   album_name: string | null; // tracks: the album it is on (row subtitle "Artist, from Album")
-  added_via: "pc" | "phone"; // "From: Phone" column (SC-03)
+  added_via: "pc" | "phone" | "inbox"; // "From: Phone" column (SC-03); inbox = Runout Inbox (TSD §5.3)
   recommended_by: string | null; // row subtitles "Album, from Meera" (SC-02, SC-03)
   notes: string | null; // in-progress artist cards show it (SC-02)
   added_at: string; modified_at: string;
@@ -139,25 +139,19 @@ export interface StudioDiff { removed: number; reordered: number; added: number 
 export interface ApplyRecord { undo_id: number; applied_at: string; expires_at: string }
 export interface Autofill { fields: { artist?: string; album?: string; year?: number; display_name?: string }; track_list?: { uri: string; name: string; position: number }[] }
 export interface SpotifyEntry { uri: string; name: string; artist: string; in_library_id: number | null }
+/** A track of the loaded playlist that the user's other own/collab playlists also hold (G-24). */
+export interface CrossDupe { uri: string; playlists: { uri: string; name: string }[] }
+export interface InboxStatus {
+  state: "none" | "ready" | "missing"; playlist_uri: string | null; last_check: string | null; imported_last: number;
+  saved_albums: boolean; followed_artists: boolean; needs_reconnect: boolean;
+}
+export interface InboxCheck { imported: number; albums: number; skipped: number }
 
 /* ------------------------------------------------------------------ transport */
 export const MOCK = import.meta.env.VITE_MOCK !== "0";
-// Loaded on demand: main.tsx awaits it before the first render on mocks. A VITE_MOCK=0 build (.env.production)
-// shows MVP screens only (useRelease), which all run on Rust, so it drops the mocks and their dataset entirely
-// and an R2/R3 call there fails rather than show mock data. The env check sits beside the import, not via MOCK,
-// so the bundler can prove the branch dead.
-export const loadMocks = () => (import.meta.env.VITE_MOCK !== "0" ? import("./mocks") : Promise.reject(new Error("Not available until Release 2/3 runs on your data")));
-/** API.md §3 commands switched to Rust in M6; R2/R3 stay mocked until M7. */
-export const MVP_COMMANDS = new Set([
-  "get_counts", "get_dashboard", "list_items", "get_item", "create_item", "update_item", "set_status",
-  "delete_item", "link_items", "unlink_items", "reorder_backlog", "parse_link", "resolve_link", "prefill_title",
-  "list_unresolved", "retry_unresolved", "discard_unresolved", "search", "list_tags", "rename_tag", "merge_tags",
-  "delete_tag", "list_saved_filters", "save_filter", "delete_saved_filter", "get_rediscover", "get_online",
-  "get_settings", "update_settings", "get_capture", "set_capture_enabled", "new_pairing_code", "export_library",
-  "list_backups", "backup_now", "pick_backup", "check_backup", "restore_backup", "choose_backup_dir",
-  "move_library", "delete_library", "record_page_visit", "get_success_metrics",
-]);
-const MVP_EVENTS = new Set(["online-changed", "capture-received", "capture-disabled", "backup-finished", "unresolved-resolved"]);
+// Loaded on demand: main.tsx awaits it before the first render on mocks. The env check sits beside the import, not
+// via MOCK, so the bundler can prove the branch dead and a VITE_MOCK=0 build carries no mock code (check.py).
+export const loadMocks = () => (import.meta.env.VITE_MOCK !== "0" ? import("./mocks") : Promise.reject(new Error("This build has no mock data")));
 type Listener = () => void;
 const listeners = new Set<Listener>();
 type InvokeTransport = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -175,12 +169,12 @@ export const __setTransportForTests = (transport: {
 /** Data may have changed (a write command ran, even one that failed, or the dev state switcher moved): readers refetch. */
 export const onInvalidate = (fn: Listener) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
 export const invalidate = () => listeners.forEach((fn) => fn());
-const READ = /^(get_|list_|search$|parse_link|preview_|check_backup|prefill_title|autofill|load_studio|library_contains|record_page_visit|pick_)/;
+const READ = /^(get_|list_|search$|parse_link|preview_|check_backup|prefill_title|autofill|load_studio|library_contains|record_page_visit|pick_|find_cross_playlist_dupes$)/;
 
 async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   // A failed write may still have changed data (a Spotify write that timed out keeps an undo, TSD §5.2).
   try {
-    return !MOCK && MVP_COMMANDS.has(cmd)
+    return !MOCK
       ? await invokeCommand<T>(cmd, args)
       : await (await loadMocks()).mockCall<T>(cmd, args);
   } finally {
@@ -191,24 +185,25 @@ async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise
 export interface EventMap {
   "online-changed": boolean; "capture-received": ItemSummary; "capture-disabled": { reason: "wrong_code" | "error" };
   "backup-finished": Backup; "unresolved-resolved": { resolved: number }; "logger-status": LoggerStatus;
-  "play-logged": Play; "spotify-status": SpotifyStatus;
+  "play-logged": Play; "spotify-status": SpotifyStatus; "inbox-imported": InboxCheck; "open-quick-add": null;
 }
 /** Subscribe to a Rust → UI event (API.md §6). Returns an unsubscribe function. */
 export function onEvent<K extends keyof EventMap>(name: K, cb: (payload: EventMap[K]) => void): () => void {
-  const p = !MOCK && MVP_EVENTS.has(name)
+  const p = !MOCK
     ? listenEvent<EventMap[K]>(name, (e) => cb(e.payload))
-    : loadMocks().then((m) => m.mockListen(name, cb as (p: unknown) => void), () => () => {}); // no mocks: R2/R3 events never fire
+    : loadMocks().then((m) => m.mockListen(name, cb as (p: unknown) => void), () => () => {});
   return () => { p.then((un) => un()); };
 }
 
-/** Events that mean library data changed without a UI write (a phone share, a resolved short link, a capture
- *  switched off, a scheduled backup): readers refetch, as after a write. The mocks invalidate themselves; Rust
- *  only emits, so without this an open Backlog missed a phone share until the next navigation (M6). */
+/** Events that mean data changed without a UI write (a phone share, a resolved short link, a capture switched
+ *  off, a scheduled backup, a logged play, the logger or Spotify connection changing state, an Inbox import): readers refetch, as
+ *  after a write. The mocks invalidate themselves; Rust only emits, so without this an open Backlog missed a phone
+ *  share until the next navigation (M6), and the rail's freshness and now-playing went stale (M7). */
 export const invalidateOnDataEvents = () => {
   // One refetch per burst: a retry that resolves 20 queued links emits 21 events.
   let t: ReturnType<typeof setTimeout> | undefined;
   const soon = () => { clearTimeout(t); t = setTimeout(invalidate, 50); };
-  const offs = (["capture-received", "capture-disabled", "unresolved-resolved", "backup-finished"] as const).map((e) => onEvent(e, soon));
+  const offs = (["capture-received", "capture-disabled", "unresolved-resolved", "backup-finished", "play-logged", "logger-status", "spotify-status", "inbox-imported"] as const).map((e) => onEvent(e, soon));
   return () => { clearTimeout(t); offs.forEach((off) => off()); };
 };
 
@@ -316,3 +311,8 @@ export const getRecentPlaysApi = () => call<(SpotifyEntry & { played_at: string 
 export const libraryContains = (uris: string[]) => call<boolean[]>("library_contains", { uris });
 export const saveToSpotifyLibrary = (uris: string[]) => call<void>("save_to_spotify_library", { uris });
 export const removeFromSpotifyLibrary = (uris: string[]) => call<void>("remove_from_spotify_library", { uris });
+export const findCrossPlaylistDupes = (playlistUri: string) => call<CrossDupe[]>("find_cross_playlist_dupes", { playlistUri });
+export const getInbox = () => call<InboxStatus>("get_inbox");
+export const createInbox = () => call<InboxStatus>("create_inbox");
+export const checkInbox = () => call<InboxCheck>("check_inbox");
+export const setInboxOptions = (savedAlbums: boolean, followedArtists: boolean) => call<InboxStatus>("set_inbox_options", { savedAlbums, followedArtists });

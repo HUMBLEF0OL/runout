@@ -2,9 +2,9 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { XIcon as X } from "@phosphor-icons/react";
-import type { AppError, Freshness, ItemSummary, Play, Priority, Source, Status } from "../api";
+import type { AppError, Freshness, ItemSummary, Play, Priority, Source, Sourced, Status } from "../api";
 import { ago, mmss, time, nameOf, openUrl, PRIO, STATUS, STATUS_ORDER, stars, statusMeta, sub, TYPE } from "../lib/format";
-import { freshnessText, ratingClick, ratingKey, sourceText } from "./logic";
+import { freshnessText, ratingClick, ratingKey, sourcedText, sourceText } from "./logic";
 import { useOnline } from "../hooks/useApi";
 import { safeUri } from "../lib/sanitize";
 import spotifyLogo from "../assets/spotify/spotify-logo-white.svg";
@@ -91,6 +91,17 @@ export const LiveDot = () => <span className="live" aria-hidden="true" />;
 export const NameNeeded = () => <span className="badge need">Name needed</span>;
 export const StatusBadge = ({ children }: { children: ReactNode }) => <span className="badge status">{children}</span>;
 export const SourceTag = ({ sources }: { sources: Source[] }) => !sources.length ? null : <span className="text-faint text-xs">{sourceText(sources)}</span>;
+/** Insight source tag (FR-032): sources + freshness of the `Sourced` response it sits on. */
+export const SourcedTag = ({ res }: { res: Pick<Sourced<unknown>, "sources" | "freshness"> }) => <span className="text-faint text-xs">{sourcedText(res)}</span>;
+/** SC-09 insight card: title, the response's sources and freshness, then the content. */
+export function InsightCard({ title, res, children, className = "", side }: { title: ReactNode; res: Pick<Sourced<unknown>, "sources" | "freshness"> | undefined; children: ReactNode; className?: string; side?: boolean }) {
+  return (
+    <section className={`card flex flex-col gap-3 ${side ? "flex-[1_1_320px] min-w-0" : className}`}>
+      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">{title}</h2>{res && <SourcedTag res={res} />}</div>
+      {children}
+    </section>
+  );
+}
 export const FreshnessNote = ({ freshness, loggerState }: { freshness: Freshness | undefined; loggerState?: string }) =>
   <span className="freshness">{freshnessText(freshness, loggerState)}</span>;
 export const Stars = ({ r }: { r: number | null }) => (r ? <span className="stars" aria-label={`Rated ${r} of 5`}>{stars(r)}</span> : null);

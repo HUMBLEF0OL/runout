@@ -65,6 +65,20 @@ fn retry_queued(h: &tauri::AppHandle) {
     RUNNING.store(false, SeqCst);
 }
 
+/// One background Inbox check (TSD §5.3: at start, then every 15 min). Disconnected or offline →
+/// skipped, the items wait in Spotify. Emits `inbox-imported` when something came in.
+fn inbox_tick(h: &tauri::AppHandle) {
+    let (sp, st) = (h.state::<spotify::Spotify>(), h.state::<state::AppState>());
+    if sp.require_connected().is_err() || net::known_offline() {
+        return;
+    }
+    if let Ok(got) = tauri::async_runtime::block_on(spotify::inbox::check(&st, &sp))
+        && got.imported > 0
+    {
+        let _ = h.emit("inbox-imported", &got);
+    }
+}
+
 /// Blocking native error box; works before any window or event loop exists.
 #[cfg(windows)]
 fn fatal_box(text: &str) {
@@ -190,6 +204,13 @@ Settings file: {file}",
                 std::process::exit(1);
             }
             logger::poll::spawn(app.handle().clone());
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                loop {
+                    inbox_tick(&handle);
+                    std::thread::sleep(spotify::inbox::EVERY);
+                }
+            });
             // spotify_cache.db sweeper: at startup, then daily (TSD §5.2)
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -228,6 +249,13 @@ Settings file: {file}",
             });
             Ok(())
         })
-        .run(context())
-        .expect("error while running tauri application");
+        .build(context())
+        .expect("error while building tauri application")
+        // Every exit path, incl. Windows shutdown / sign-out (WM_ENDSESSION, G-36): save the play in
+        // progress. Windows allows ~5 s after WM_ENDSESSION.
+        .run(|app, e| {
+            if let tauri::RunEvent::Exit = e {
+                tray::flush_on_exit(app, std::time::Duration::from_secs(2));
+            }
+        });
 }

@@ -10,6 +10,7 @@ pub mod cache;
 pub mod client;
 pub mod create;
 pub mod discover;
+pub mod inbox;
 pub mod library_sync;
 pub mod studio;
 
@@ -81,6 +82,8 @@ pub struct Spotify {
     /// Held across a whole Studio apply/undo (check → snapshot → every chunk), so two of them
     /// never interleave their PUT/POST chunks (studio.rs; enforced by check.py).
     pub(crate) studio_lock: tauri::async_runtime::Mutex<()>,
+    /// One Inbox check or create at a time (timer, Check now, connect; inbox.rs).
+    pub(crate) inbox_lock: tauri::async_runtime::Mutex<()>,
     emit: Mutex<Option<Emit>>,
 }
 
@@ -118,6 +121,7 @@ impl Spotify {
             write_lock: tauri::async_runtime::Mutex::new(()),
             refresh_lock: tauri::async_runtime::Mutex::new(()),
             studio_lock: tauri::async_runtime::Mutex::new(()),
+            inbox_lock: tauri::async_runtime::Mutex::new(()),
             emit: Mutex::new(None),
         }
     }
@@ -366,9 +370,10 @@ impl Spotify {
         cleared.and(marker)
     }
 
-    /// `connect_spotify` (auth.rs): browser sign-in, then status.
-    pub async fn connect(&self) -> Result<SpotifyStatus> {
-        auth::connect(self).await?;
+    /// `connect_spotify` (auth.rs): browser sign-in, then status. `follow`: also ask for
+    /// `user-follow-read` (Inbox followed-artists option, TSD §5.3).
+    pub async fn connect(&self, follow: bool) -> Result<SpotifyStatus> {
+        auth::connect(self, follow).await?;
         let _ = self.clear_reconnect();
         let _ = auth::fetch_me(self).await;
         self.emit_status();

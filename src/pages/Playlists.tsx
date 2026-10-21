@@ -118,6 +118,16 @@ function Studio() {
   const [busy, setBusy] = useState(false);
   // Which call failed decides the banner: a failed apply/undo may have changed the playlist (TSD §5.2).
   const [fail, setFail] = useState<{ op: "preview" | "apply" | "undo"; e: AppError }>();
+  // "Check other playlists" (G-24): only on request, one Spotify read per playlist; tagged with its playlist.
+  const [cross, setCross] = useState<{ uri: string; busy?: boolean; e?: AppError; also?: Map<string, string[]> }>();
+  const crossNow = cross?.uri === sel?.uri ? cross : undefined;
+  const checkOthers = () => {
+    if (!sel) return;
+    const uri = sel.uri;
+    setCross({ uri, busy: true });
+    api.findCrossPlaylistDupes(uri).then((rows) => setCross({ uri, also: new Map(rows.map((r) => [r.uri, r.playlists.map((p) => p.name)])) }),
+      (e) => setCross({ uri, e: api.toAppError(e) }));
+  };
   useEffect(() => { setFail(undefined); }, [sel?.uri]);
   const refresh = () => { pls.reload(); draft.reload(); };
 
@@ -187,13 +197,13 @@ function Studio() {
     <div className="flex flex-wrap gap-7 items-start">
       <div className="card pad-s flex-[1.5_1_520px] min-w-0 flex flex-col gap-3.5"><div className="list">
         {d.tracks.map((t, i) => {
-          const isCut = cut.has(i); const why = cutReason(t, d.tracks);
+          const isCut = cut.has(i); const why = cutReason(t, d.tracks); const also = crossNow?.also?.get(t.uri);
           return (
             <div key={i} className={`row grid-cols-[24px_minmax(160px,1fr)_64px_auto] ${isCut ? " sel" : ""}`}>
               <span className="font-mono text-faint text-xs">{i + 1}</span>
               <span className="flex flex-col gap-0.5 min-w-0">
                 <span className={`font-semibold ${isCut ? "line-through text-muted" : ""}`}>{t.name}</span>
-                <span className="text-muted text-xs">{t.artist}{why && <span className="text-accent">, {why}</span>}</span>
+                <span className="text-muted text-xs">{t.artist}{why && <span className="text-accent">, {why}</span>}{also && <span className="text-accent">, also in {also.join(", ")}</span>}</span>
               </span>
               <span>{t.rating ? <Stars r={t.rating} /> : null}</span>
               <Seg label={`Keep or cut ${t.name}`} radio value={isCut ? "cut" : "keep"} onChange={(v) => toggle(i, v)} options={[["keep", "Keep"], ["cut", "Cut"]]} />
@@ -211,6 +221,14 @@ function Studio() {
         <button className="btn btn-primary l" disabled={!changes.length || busy} onClick={openConfirm}>{busy && !confirm ? <Dots /> : `Apply ${pl(changes.length, "change")} to Spotify`}</button>
         <span className="text-muted text-xs leading-[1.45]">Runout checks the playlist hasn't changed on Spotify first. You can undo for 30 days.</span>
         <button className="btn btn-secondary" onClick={() => { setEdit(undefined); toast("Draft discarded"); }}>Discard draft</button>
+        <h2 className="card-title">In your other playlists</h2>
+        <span className="text-muted text-xs leading-[1.45]">Looks for these tracks in every other playlist of yours. Reads each one from Spotify, so it can take a while.</span>
+        {crossNow?.e && <ErrorBanner error={crossNow.e} title={crossNow.e.code === "offline" ? "You're offline. Check again when you reconnect." : "Couldn't check your other playlists."} onRetry={checkOthers} />}
+        {crossNow?.also && <span className="text-text-2 text-sm" role="status">{crossNow.also.size ? `${pl(crossNow.also.size, "track")} also in other playlists, marked in the list.` : "None of these tracks are in your other playlists."}</span>}
+        <button className="btn btn-secondary" disabled={!online || crossNow?.busy} onClick={checkOthers}
+          aria-label={crossNow?.busy ? "Checking your other playlists" : undefined}>
+          {crossNow?.busy ? <Dots /> : crossNow?.also ? "Check again" : "Check other playlists"}
+        </button>
       </aside>
     </div>
     {confirm && (

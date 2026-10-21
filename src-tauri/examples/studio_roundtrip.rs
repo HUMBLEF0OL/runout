@@ -128,7 +128,7 @@ fn main() {
         dir.join(runout_lib::cleanup::CACHE_DB),
         client::net_transport(),
     );
-    tauri::async_runtime::block_on(sp.connect()).expect("Spotify sign-in in the browser");
+    tauri::async_runtime::block_on(sp.connect(false)).expect("Spotify sign-in in the browser");
     // Empty library: ratings/tags aren't needed for the round trip.
     let db = Mutex::new(runout_lib::db::open_in_memory().unwrap());
 

@@ -440,6 +440,16 @@ mod tests {
         )
         .unwrap();
         check("private flip");
+        // G-29: names the importer never writes (NULL, not ''): an album whose artist is all NULL
+        // (rank `by`), an unmatched group with no artist (list_unmatched); raw rows, synthetic.
+        c.execute_batch(
+            "INSERT INTO listening_event(source, ended_at_utc, ended_at_local, ms_played, track_name,
+               artist_name, album_name, norm_key, dedupe_hash) VALUES
+             ('export', '2026-10-17T09:00:00Z', '2026-10-17T09:00:00', 50000, 'Twin', NULL, 'Solo Album', '|twin', 'g29a'),
+             ('export', '2026-10-17T09:05:00Z', '2026-10-17T09:05:00', 50000, NULL, NULL, 'Solo Album', NULL, 'g29b')",
+        )
+        .unwrap();
+        check("NULL names");
         c.execute("DELETE FROM item WHERE id = ?1", [fixture::T1])
             .unwrap();
         check("record deleted (FK SET NULL)");

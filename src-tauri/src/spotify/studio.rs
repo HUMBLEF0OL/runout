@@ -126,7 +126,7 @@ pub fn dupes(tracks: &[(String, String, String)]) -> Vec<Option<String>> {
 
 /// Playlist objects carry `items` (Feb 2026 Dev Mode naming) or the older `tracks`; entries carry
 /// `item` or `track`. Read either.
-fn either<'a>(v: &'a Value, new: &str, old: &str) -> &'a Value {
+pub(crate) fn either<'a>(v: &'a Value, new: &str, old: &str) -> &'a Value {
     if v[new].is_null() { &v[old] } else { &v[new] }
 }
 
@@ -149,7 +149,8 @@ async fn snapshot_id(sp: &Spotify, playlist_uri: &str) -> Result<String> {
 async fn items(sp: &Spotify, playlist_uri: &str) -> Result<Vec<(String, String, String)>> {
     let raw: Vec<Value> = sp
         .paginate(
-            &format!("/playlists/{}/items?limit=100", uri_id(playlist_uri)),
+            // documented max 50 (kb/spotify.md)
+            &format!("/playlists/{}/items?limit=50", uri_id(playlist_uri)),
             MAX_ITEMS + 1,
         )
         .await?;
@@ -263,6 +264,79 @@ pub async fn list_spotify_playlists(sp: &Spotify) -> Result<Vec<SpotifyPlaylist>
             })
         })
         .collect())
+}
+
+/// API.md `find_cross_playlist_dupes` row: a track of the checked playlist and the user's other
+/// own/collab playlists that also hold it (G-24).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CrossDupe {
+    pub uri: String,
+    pub playlists: Vec<PlaylistRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PlaylistRef {
+    pub uri: String,
+    pub name: String,
+}
+
+/// Spotify track URIs of a playlist, in order; local files and episodes are passed over (only
+/// compared here, never written back).
+async fn track_uris(sp: &Spotify, playlist_uri: &str) -> Result<Vec<String>> {
+    let raw: Vec<Value> = sp
+        .paginate(
+            &format!("/playlists/{}/items?limit=50", uri_id(playlist_uri)),
+            MAX_ITEMS,
+        )
+        .await?;
+    Ok(raw
+        .iter()
+        .filter(|e| e["is_local"] != true)
+        .filter_map(|e| either(e, "item", "track")["uri"].as_str())
+        .filter(|u| super::check_uri(u, &["track"]).is_ok())
+        .map(str::to_string)
+        .collect())
+}
+
+/// `find_cross_playlist_dupes` (G-24, BRD R3-1): on the user's explicit "Check other playlists",
+/// one items read per other own/collab playlist (429 waits via the client). Matches by URI. Rows
+/// follow the checked playlist's order, once per URI, only tracks found elsewhere. A playlist that
+/// went away meanwhile (404) is skipped. Reads playlists only, never listening data (D27).
+pub async fn find_cross_playlist_dupes(sp: &Spotify, playlist_uri: &str) -> Result<Vec<CrossDupe>> {
+    let mine = track_uris(sp, playlist_uri).await?;
+    let mut out: Vec<CrossDupe> = vec![];
+    let mut at: HashMap<String, usize> = HashMap::new();
+    for u in &mine {
+        if !at.contains_key(u) {
+            at.insert(u.clone(), out.len());
+            out.push(CrossDupe {
+                uri: u.clone(),
+                playlists: vec![],
+            });
+        }
+    }
+    for p in list_spotify_playlists(sp).await? {
+        if p.uri == playlist_uri {
+            continue;
+        }
+        let theirs = match track_uris(sp, &p.uri).await {
+            Err(e) if e.code == Code::NotFound => continue,
+            r => r?,
+        };
+        let mut seen = std::collections::HashSet::new();
+        for u in theirs {
+            if let Some(&i) = at.get(&u)
+                && seen.insert(u)
+            {
+                out[i].playlists.push(PlaylistRef {
+                    uri: p.uri.clone(),
+                    name: p.name.clone(),
+                });
+            }
+        }
+    }
+    out.retain(|d| !d.playlists.is_empty());
+    Ok(out)
 }
 
 pub async fn load_studio_draft(
@@ -1064,6 +1138,46 @@ mod tests {
         assert!(stub.calls().is_empty(), "apply ran while the lock was held");
         drop(held);
         assert_eq!(block(job).unwrap().unwrap_err().code, Code::Conflict);
+    }
+
+    #[test]
+    fn cross_playlist_dupes_name_the_other_playlists() {
+        let d = temp_dir("studio-cross");
+        let pl = |c: char, name: &str| {
+            json!({"uri": format!("spotify:playlist:{}", c.to_string().repeat(22)), "name": name,
+                   "owner": {"id": "me1"}, "collaborative": false, "items": {"total": 1}})
+        };
+        let mine = format!("spotify:playlist:{}", "A".repeat(22));
+        let lists = json!({"items": [pl('A', "Mine"), pl('B', "Road"), pl('C', "Gone"), pl('D', "Gym")], "next": null});
+        let stub = Stub::new(&[
+            (200, &pg(&v("xyxz"))), // the checked playlist: x twice
+            (200, r#"{"id":"me1"}"#),
+            (200, &lists.to_string()),
+            (200, &pg(&v("qxx"))), // Road: x (twice, named once)
+            (404, "{}"),           // Gone: skipped
+            (200, &pg(&v("zx"))),  // Gym: z, x
+        ]);
+        let sp = connected(&d, &stub);
+        let got = block(find_cross_playlist_dupes(&sp, &mine)).unwrap();
+        let names = |i: usize| {
+            got[i]
+                .playlists
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(got.len(), 2, "y is nowhere else");
+        assert_eq!(
+            (got[0].uri.clone(), names(0)),
+            (t(b'x'), vec!["Road", "Gym"])
+        );
+        assert_eq!((got[1].uri.clone(), names(1)), (t(b'z'), vec!["Gym"]));
+        assert_eq!(
+            stub.calls().len(),
+            6,
+            "one items read per other playlist, none for the checked one twice"
+        );
+        assert!(stub.calls().iter().all(|(m, _)| m == "GET"));
     }
 
     #[test]

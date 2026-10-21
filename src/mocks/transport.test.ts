@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-describe("M6 MVP transport", () => {
+describe("Rust transport (VITE_MOCK=0)", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubEnv("VITE_MOCK", "0");
@@ -42,47 +42,82 @@ describe("M6 MVP transport", () => {
       "list_backups", "backup_now", "pick_backup", "check_backup", "restore_backup", "choose_backup_dir",
       "move_library", "delete_library", "record_page_visit", "get_success_metrics",
     ]);
-    // R2/R3 aren't on Rust yet and a real build carries no mocks: they fail instead of showing mock data.
-    await expect(api.getLoggerStatus()).rejects.toThrow(/Release 2\/3/);
-    await expect(api.getSpotifyStatus()).rejects.toThrow(/Release 2\/3/);
-    expect(invoke).toHaveBeenCalledTimes(calls.length);
     expect(mockCall).not.toHaveBeenCalled();
   });
 
-  it("uses Rust for MVP events and never loads mocks for the R2 logger event", async () => {
+  it("sends every API.md §4 (R2) and §5 (R3) command to Rust with the Rust parameter names", async () => {
     const api = await import("../api");
     const invoke = vi.fn(async <T>(_cmd: string, _args?: Record<string, unknown>) => undefined as T) as unknown as Parameters<typeof api.__setTransportForTests>[0]["invoke"];
-    const listen = vi.fn(async () => () => undefined);
-    api.__setTransportForTests({ invoke, listen });
-    const mockListen = vi.spyOn(await import("../mocks"), "mockListen");
-    const offOnline = api.onEvent("online-changed", () => undefined);
-    const offCapture = api.onEvent("capture-received", () => undefined);
-    const offDisabled = api.onEvent("capture-disabled", () => undefined);
-    const offBackup = api.onEvent("backup-finished", () => undefined);
-    const offResolved = api.onEvent("unresolved-resolved", () => undefined);
-    const offLogger = api.onEvent("logger-status", () => undefined);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(listen).toHaveBeenCalledTimes(5);
-    expect(mockListen).not.toHaveBeenCalled();
-    offOnline();
-    offCapture();
-    offDisabled();
-    offBackup();
-    offResolved();
-    offLogger();
+    api.__setTransportForTests({ invoke, listen: vi.fn(async () => () => undefined) });
+    const mockCall = vi.spyOn(await import("../mocks"), "mockCall");
+    const P = "spotify:playlist:AAAAAAAAAAAAAAAAAAAAAA";
+    const draft = { playlist_uri: P, snapshot_id: "s", tracks: [] };
+    await Promise.all([
+      api.getLoggerStatus(), api.setLogger({ on: true }), api.pauseLogger(60), api.resumeLogger(),
+      api.listPlays({ tab: "all", range: "7d", offset: 0, limit: 50 }), api.listUnmatched(), api.linkPlay(1, 2),
+      api.getItemListening(1), api.pickImportSource(), api.previewImport("x.zip"), api.runImport("x.zip"),
+      api.listImports(), api.getFreshness(), api.getListeningInsights("12m"), api.getCollectionInsights("12m"),
+      api.getTakeInsights(), api.getYearReview(2026), api.listExportedPlaylists(), api.getPlaylistCheckup(1),
+      api.getSpotifyStatus(), api.connectSpotify(), api.disconnectSpotify(), api.listSpotifyPlaylists(),
+      api.loadStudioDraft(P), api.previewStudioApply(draft, []), api.applyStudioDraft(draft, []), api.getLastApply(P),
+      api.undoLastApply(P), api.createPlaylistFromFilter(1, "n", false), api.createPlaylistFromItems([1], "n", true),
+      api.autofill("spotify:album:AAAAAAAAAAAAAAAAAAAAAA"), api.bulkAddAlbumTracks(1, [{ uri: "spotify:track:AAAAAAAAAAAAAAAAAAAAAA", name: "t" }]),
+      api.getTopItems("tracks", "4w"), api.getRecentPlaysApi(), api.libraryContains([]), api.saveToSpotifyLibrary([]),
+      api.removeFromSpotifyLibrary([]), api.findCrossPlaylistDupes(P), api.getInbox(), api.createInbox(), api.checkInbox(),
+      api.setInboxOptions(true, false),
+    ]);
+    expect(mockCall).not.toHaveBeenCalled();
+    const sent = Object.fromEntries(vi.mocked(invoke).mock.calls.map(([cmd, args]) => [cmd, Object.keys(args ?? {}).sort()]));
+    // Argument keys = the commands.rs parameters, camelCased as Tauri expects (check.py "commands" checks the same).
+    expect(sent).toEqual({
+      get_logger_status: [], set_logger: ["patch"], pause_logger: ["minutes"], resume_logger: [], list_plays: ["q"],
+      list_unmatched: [], link_play: ["eventId", "itemId"], get_item_listening: ["id"], pick_import_source: [],
+      preview_import: ["path"], run_import: ["path"], list_imports: [], get_freshness: [], get_listening_insights: ["range"],
+      get_collection_insights: ["range"], get_take_insights: [], get_year_review: ["year"], list_exported_playlists: [],
+      get_playlist_checkup: ["id"], get_spotify_status: [], connect_spotify: [], disconnect_spotify: [],
+      list_spotify_playlists: [], load_studio_draft: ["playlistUri"], preview_studio_apply: ["draft", "keep"],
+      apply_studio_draft: ["draft", "keep"], get_last_apply: ["playlistUri"], undo_last_apply: ["playlistUri"],
+      create_playlist_from_filter: ["filterId", "name", "public"], create_playlist_from_items: ["itemIds", "name", "public"],
+      autofill: ["uri"], bulk_add_album_tracks: ["albumId", "tracks"], get_top_items: ["kind", "range"],
+      get_recent_plays_api: [], library_contains: ["uris"], save_to_spotify_library: ["uris"], remove_from_spotify_library: ["uris"],
+      find_cross_playlist_dupes: ["playlistUri"], get_inbox: [], create_inbox: [], check_inbox: [], set_inbox_options: ["followedArtists", "savedAlbums"],
+    });
   });
 
-  it("hides R2/R3 screens and keeps the real clock when mocks are off", async () => {
+  it("the rail's freshness box shows the dates get_freshness returns", async () => {
+    const api = await import("../api");
+    const invoke = vi.fn(async () => ({ logger_last_event: "2026-10-20T12:00:00Z", export_latest_event: "2026-10-12T12:00:00Z" }));
+    api.__setTransportForTests({ invoke: invoke as never, listen: vi.fn(async () => () => undefined) });
+    const { freshnessText } = await import("../components/logic");
+    expect(freshnessText(await api.getFreshness(), "listening")).toBe("Desktop plays: live. All devices: up to your export of 12 Oct.");
+    expect(invoke).toHaveBeenCalledWith("get_freshness", {});
+  });
+
+  it("uses Rust for every API.md §6 event and never loads the mocks", async () => {
+    const api = await import("../api");
+    const listen = vi.fn(async (_name: string, _h: unknown) => () => undefined);
+    api.__setTransportForTests({ invoke: vi.fn() as never, listen: listen as never });
+    const mockListen = vi.spyOn(await import("../mocks"), "mockListen");
+    const names = ["online-changed", "capture-received", "capture-disabled", "backup-finished", "unresolved-resolved",
+      "logger-status", "play-logged", "spotify-status", "inbox-imported", "open-quick-add"] as const;
+    const offs = names.map((n) => api.onEvent(n, () => undefined));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(vi.mocked(listen).mock.calls.map(([n]) => n)).toEqual([...names]);
+    expect(mockListen).not.toHaveBeenCalled();
+    offs.forEach((off) => off());
+  });
+
+  it("shows every release's screens and keeps the real clock when mocks are off", async () => {
     const { renderHook } = await import("@testing-library/react");
     const { useRelease } = await import("../hooks/useRelease");
-    expect(renderHook(() => useRelease()).result.current).toEqual({ release: "mvp", r2: false, r3: false });
+    expect(renderHook(() => useRelease()).result.current).toEqual({ release: "r3", r2: true, r3: true });
     const before = Date.now();
     await import("../mocks");
     const { today } = await import("../lib/format");
     expect(today().getTime()).toBeGreaterThanOrEqual(before);
   }, 30_000); // fresh imports of Testing Library and the mock dataset after resetModules: ~7 s under a loaded check.py
 
-  it("a phone share or resolved link from Rust makes readers refetch", async () => {
+  it("a phone share, resolved link, logged play or logger/Spotify state change from Rust makes readers refetch", async () => {
     const api = await import("../api");
     const handlers = new Map<string, (e: { payload: unknown }) => void>();
     const listen = vi.fn(async (name: string, h: (e: { payload: unknown }) => void) => { handlers.set(name, h); return () => undefined; });
@@ -91,7 +126,7 @@ describe("M6 MVP transport", () => {
     api.onInvalidate(refetch);
     const off = api.invalidateOnDataEvents();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    for (const e of ["capture-received", "capture-disabled", "unresolved-resolved", "backup-finished"]) handlers.get(e)!({ payload: {} });
+    for (const e of ["capture-received", "capture-disabled", "unresolved-resolved", "backup-finished", "play-logged", "logger-status", "spotify-status", "inbox-imported"]) handlers.get(e)!({ payload: {} });
     await new Promise((resolve) => setTimeout(resolve, 80));
     expect(refetch).toHaveBeenCalledTimes(1); // one burst, one refetch
     off();

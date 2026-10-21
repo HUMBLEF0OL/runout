@@ -5,7 +5,7 @@
 import raw from "../../docs/design/prototype/mock-data.json";
 import type {
   AppError, Backup, Counts, Draft, ItemDetail, ItemFilter, ItemSummary, LinkKind, NewItem, Page, Play, Range, Source,
-  SpotifyEntry, Status, Unresolved, ItemPatch, SavedFilter, Tag, LoggerStatus, Freshness,
+  SpotifyEntry, Status, Unresolved, ItemPatch, SavedFilter, Tag, LoggerStatus, Freshness, InboxStatus, CrossDupe,
 } from "../api";
 import { invalidate, MOCK } from "../api";
 import { dev, onDevChange } from "./devState";
@@ -25,7 +25,7 @@ interface MItem {
   priority: ItemSummary["priority"]; rating: number | null; favourite: boolean; revisit: boolean; in_backlog: boolean;
   backlog_order: number | null; tags: string[]; artist: string | null; album: string | null; artist_id: number | null; album_id: number | null;
   added_at: string; modified_at: string; review: string | null; notes: string | null; recommended_by: string | null;
-  explored_at: string | null; reviewed_at: string | null; via_phone: boolean; tracklist: string[] | null;
+  explored_at: string | null; reviewed_at: string | null; via_phone: boolean; via_inbox?: boolean; tracklist: string[] | null;
   provenance: Record<string, "user" | "promoted">;
 }
 interface MHist { item_id: number; from: Status | null; to: Status; at: string; note: string | null }
@@ -70,6 +70,9 @@ let backups: Backup[] = D.settings.backups.map((b: any) => ({
 }));
 const logger = { ...D.settings.logger, paused_until: null as string | null, paused: false };
 let spotify = { connected: !!D.spotify.connected };
+// Runout Inbox (TSD §5.3): `waiting` = what the phone added to the Inbox playlist since the last check.
+const inbox = { ...D.settings.inbox, waiting: [...D.settings.inbox.waiting], saved_albums: false, followed_artists: false, needs_reconnect: false };
+const inboxStatus = (): InboxStatus => ({ state: inbox.state, playlist_uri: inbox.state === "none" ? null : playlistUri("Runout Inbox"), last_check: inbox.last_check, imported_last: inbox.imported_last, saved_albums: inbox.saved_albums, followed_artists: inbox.followed_artists, needs_reconnect: inbox.followed_artists && inbox.needs_reconnect });
 const savedInSpotify = new Set<string>();
 const lastApply = new Map<string, { undo_id: number; applied_at: string; expires_at: string }>();
 
@@ -125,7 +128,7 @@ function summary(i: MItem): ItemSummary {
     id: i.id, type: i.type, display_name: i.display_name, spotify_uri: i.spotify_uri, status: i.status, priority: i.priority,
     rating: i.rating, favourite: i.favourite, revisit: i.revisit, in_backlog: i.in_backlog, backlog_order: i.backlog_order,
     tags: [...i.tags], artist_names: artist ? [artist] : [], album_name: i.type !== "track" ? null : i.album_id != null ? byId(i.album_id)?.display_name ?? null : i.album,
-    recommended_by: i.recommended_by, notes: i.notes, added_via: i.via_phone ? "phone" : "pc", added_at: i.added_at, modified_at: i.modified_at,
+    recommended_by: i.recommended_by, notes: i.notes, added_via: i.via_inbox ? "inbox" : i.via_phone ? "phone" : "pc", added_at: i.added_at, modified_at: i.modified_at,
   };
 }
 function detail(i: MItem): ItemDetail {
@@ -224,6 +227,8 @@ function draftFor(uri: string): Draft {
     tracks: pl.tracks.map((t: any) => ({ uri: trackUri(t.track, t.artist), name: t.track, artist: t.artist, rating: t.rating, tags: t.tags, dupe_of: t.duplicate_of != null ? trackUri(t.track, t.artist) : null })),
   };
 }
+/** As Rust (API.md §5): library save/remove/contains take track and album URIs only. */
+const trackOrAlbum = (uris: string[]) => uris.every((u) => /^spotify:(track|album):/.test(u)) || fail("validation", "Only tracks and albums can be saved in your Spotify library.");
 const spotifyOn = () => spotify.connected || fail("spotify_auth", "Connect Spotify in Settings first.");
 const noUndo = (uri: string) => lastApply.has(uri) || fail("not_found", "There's no recent change to undo.");
 const plusDays = (iso: string, d: number) => new Date(Date.parse(iso) + d * 86400000).toISOString().slice(0, 16);
@@ -440,7 +445,7 @@ const H: Record<string, Handler> = {
 
   /* R3 */
   get_spotify_status: () => (spotify.connected ? { state: "connected", display_name: "You", renew_by: D.spotify.renew_by } : { state: "disconnected", display_name: null, renew_by: null }),
-  connect_spotify: () => { spotify = { connected: true }; return H.get_spotify_status({}); },
+  connect_spotify: () => { spotify = { connected: true }; inbox.needs_reconnect = false; if (inbox.state === "none") inbox.state = "ready"; return H.get_spotify_status({}); },
   disconnect_spotify: () => { spotify = { connected: false }; savedInSpotify.clear(); lastApply.clear(); },
   list_spotify_playlists: () => (spotifyOn(), D.playlists.map((p: any) => ({ uri: playlistUri(p.name), name: p.name, tracks: p.tracks.length, owned: true, collaborative: false }))),
   load_studio_draft: ({ playlistUri: uri }) => (spotifyOn(), draftFor(uri)),
@@ -479,17 +484,50 @@ const H: Record<string, Handler> = {
   },
   get_top_items: ({ kind, range }) => (spotifyOn(), D.spotify[`top_${kind}`][range].map((e: any) => entry(e.track ?? e.artist, e.artist, kind === "artists" ? "artist" : "track"))),
   get_recent_plays_api: () => (spotifyOn(), D.spotify.recent.map((e: any) => ({ ...entry(e.track, e.artist, "track"), uri: e.spotify_uri, played_at: e.at }))),
-  library_contains: ({ uris }: { uris: string[] }) => (spotifyOn(), uris.map((u) => savedInSpotify.has(u))),
-  save_to_spotify_library: ({ uris }: { uris: string[] }) => { spotifyOn(); uris.forEach((u) => savedInSpotify.add(u)); },
-  remove_from_spotify_library: ({ uris }: { uris: string[] }) => { spotifyOn(); uris.forEach((u) => savedInSpotify.delete(u)); },
+  library_contains: ({ uris }: { uris: string[] }) => (spotifyOn(), trackOrAlbum(uris), uris.map((u) => savedInSpotify.has(u))),
+  save_to_spotify_library: ({ uris }: { uris: string[] }) => { spotifyOn(); trackOrAlbum(uris); uris.forEach((u) => savedInSpotify.add(u)); },
+  remove_from_spotify_library: ({ uris }: { uris: string[] }) => { spotifyOn(); trackOrAlbum(uris); uris.forEach((u) => savedInSpotify.delete(u)); },
+  find_cross_playlist_dupes: ({ playlistUri: uri }): CrossDupe[] => {
+    spotifyOn();
+    const others = D.playlists.filter((p: any) => playlistUri(p.name) !== uri).map((p: any) => ({ uri: playlistUri(p.name), name: p.name, uris: new Set(draftFor(playlistUri(p.name)).tracks.map((t) => t.uri)) }));
+    const seen = new Set<string>();
+    return draftFor(uri).tracks.flatMap((t) => {
+      const in_ = others.filter((o: any) => o.uris.has(t.uri)).map((o: any) => ({ uri: o.uri, name: o.name }));
+      if (!in_.length || seen.has(t.uri)) return [];
+      seen.add(t.uri); return [{ uri: t.uri, playlists: in_ }];
+    });
+  },
+  get_inbox: () => inboxStatus(),
+  create_inbox: () => { spotifyOn(); inbox.state = "ready"; return inboxStatus(); },
+  check_inbox: () => {
+    spotifyOn();
+    if (inbox.state !== "ready") return { imported: 0, albums: 0, skipped: 0 };
+    // As Rust: each waiting entry becomes a name-needed item (added_via inbox) and leaves the Inbox.
+    const got = inbox.waiting.splice(0).map((w: { type: "album" | "track"; added_at: string }) => {
+      const id = nextId();
+      const it: MItem = { ...items[0], id, type: w.type, display_name: null, spotify_uri: `spotify:${w.type}:${fakeId("inbox" + id)}`, status: "planned", priority: null, rating: null, favourite: false, revisit: false, in_backlog: true, backlog_order: order + id, tags: [], artist: null, album: null, artist_id: null, album_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: null, recommended_by: null, explored_at: null, reviewed_at: null, via_phone: false, via_inbox: true, tracklist: null, provenance: {} };
+      items.push(it); history.push({ item_id: id, from: null, to: "planned", at: TODAY, note: "From the Runout Inbox" });
+      return it;
+    });
+    inbox.last_check = TODAY; inbox.imported_last = got.length;
+    const r = { imported: got.length, albums: got.filter((i: MItem) => i.type === "album").length, skipped: 0 };
+    if (r.imported) emit("inbox-imported", r);
+    return r;
+  },
+  set_inbox_options: ({ savedAlbums, followedArtists }: { savedAlbums: boolean; followedArtists: boolean }) => {
+    spotifyOn();
+    if (followedArtists && !inbox.followed_artists) inbox.needs_reconnect = true; // the sign-in lacks user-follow-read
+    Object.assign(inbox, { saved_albums: savedAlbums, followed_artists: followedArtists }); return inboxStatus();
+  },
 };
 
 /* ------------------------------------------------------------------ dev states + transport */
 // Shell commands keep working in every state so the rail and banners still render.
 const SHELL = new Set(["get_counts", "get_freshness", "get_online", "get_logger_status", "get_spotify_status", "record_page_visit", "parse_link"]);
-const NO_EMPTY = new Set([...SHELL, "get_item", "get_settings", "get_capture", "list_backups"]);
+const NO_EMPTY = new Set([...SHELL, "get_item", "get_settings", "get_capture", "list_backups", "get_inbox"]);
 const NETWORK = new Set(["connect_spotify", "list_spotify_playlists", "load_studio_draft", "apply_studio_draft", "undo_last_apply", "autofill",
-  "create_playlist_from_filter", "create_playlist_from_items", "get_top_items", "get_recent_plays_api", "library_contains", "save_to_spotify_library", "remove_from_spotify_library"]);
+  "create_playlist_from_filter", "create_playlist_from_items", "get_top_items", "get_recent_plays_api", "library_contains", "save_to_spotify_library", "remove_from_spotify_library",
+  "find_cross_playlist_dupes", "create_inbox", "check_inbox"]);
 /** Empty state: same shape, no rows (arrays → [], counts → 0). */
 const emptied = (v: unknown): unknown =>
   Array.isArray(v) ? [] : typeof v === "number" ? 0 : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "freshness" || k === "sources" ? x : emptied(x)])) : v;

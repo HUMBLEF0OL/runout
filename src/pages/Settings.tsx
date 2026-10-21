@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
-  backupNow, checkBackup, chooseBackupDir, deleteLibrary, disconnectSpotify, exportLibrary, getCapture, getLoggerStatus,
+  backupNow, checkBackup, checkInbox, chooseBackupDir, createInbox, deleteLibrary, getInbox, setInboxOptions, disconnectSpotify, exportLibrary, getCapture, getLoggerStatus,
   getSettings, getSpotifyStatus, getSuccessMetrics, listBackups, listImports, listTags, moveLibrary, newPairingCode, onEvent, pauseLogger,
   pickBackup, restoreBackup, resumeLogger, setCaptureEnabled, setLogger, updateSettings, toAppError, type AppError, type Backup, type RestoreCheck,
 } from "../api";
@@ -51,6 +51,7 @@ export default function Settings() {
   const cap = useApi(getCapture);
   const logger = useApi(() => (r2 ? getLoggerStatus() : Promise.resolve(null)), [r2]);
   const spotify = useApi(() => (r3 ? getSpotifyStatus() : Promise.resolve(null)), [r3]);
+  const inbox = useApi(() => (r3 ? getInbox() : Promise.resolve(null)), [r3]);
   const imports = useApi(() => (r2 ? listImports() : Promise.resolve([])), [r2]);
   const tags = useApi(listTags);
   const metrics = useApi(getSuccessMetrics);
@@ -70,6 +71,8 @@ export default function Settings() {
   const lastPlay = imports.data?.find((m) => m.latest_event_utc)?.latest_event_utc;
   const lg = logger.data;
   const sp = spotify.data;
+  const ib = inbox.data;
+  const connected = sp?.state === "connected";
 
   return (
     <>
@@ -136,6 +139,34 @@ export default function Settings() {
               </>}
         </Card>
 
+        {r3 && (
+          <Card id="inbox" title="Runout Inbox">
+            {inbox.loading || spotify.loading ? <div className="skel h-[90px]" /> : inbox.error || !ib ? <ErrorBanner error={inbox.error} title="Couldn’t read the Inbox settings." onRetry={inbox.reload} /> : <>
+              <span>{!connected ? "Runout Inbox · connect Spotify first" : ib.state === "ready" ? "Runout Inbox · ready" : ib.state === "missing" ? "Runout Inbox · missing" : "Runout Inbox · not created yet"}</span>
+              <span className="text-muted text-sm leading-[1.5]">On your phone, add a track or album to the private “Runout Inbox” playlist in Spotify. Runout checks it at start and every 15 minutes, saves each one to your backlog as “Name needed” and takes it out of the Inbox.</span>
+              {ib.state === "missing" && connected && <span className="text-text-2 text-sm">The Inbox playlist was deleted in Spotify. Runout won’t make a new one unless you ask.</span>}
+              {ib.state !== "none" && (
+                <span className="flex justify-between items-baseline gap-3 text-sm"><span>Last check</span>
+                  <span className="font-mono text-text-2 text-xs">{ib.last_check ? `${day(ib.last_check)}, ${time(ib.last_check)} · ${pl(ib.imported_last, "item")} imported` : "not yet"}</span></span>)}
+              {connected && <div className="flex flex-wrap gap-2 items-center">
+                {ib.state === "ready"
+                  ? <button className="btn btn-secondary" disabled={!online || !!busy} onClick={() => run("inbox", checkInbox).then((r) => r && toast(r.imported ? `${pl(r.imported, "item")} from your Inbox saved to the backlog as Name needed` : "Nothing new in your Inbox"))}>
+                      {busy === "inbox" ? <Dots /> : "Check now"}</button>
+                  : <button className="btn btn-primary" disabled={!online || !!busy} onClick={() => run("inbox", createInbox).then((r) => r && toast("Runout Inbox created in your Spotify playlists"))}>
+                      {busy === "inbox" ? <Dots /> : "Create Inbox"}</button>}
+              </div>}
+              {connected && !online && <span className="help">Check the Inbox when you’re back online.</span>}
+              {connected && <>
+                <Switch label="Also import albums I save in Spotify" on={ib.saved_albums} disabled={!!busy} onChange={(v) => run("ibopt", () => setInboxOptions(v, ib.followed_artists))} />
+                <Switch label="Also import artists I follow" on={ib.followed_artists} disabled={!!busy} onChange={(v) => run("ibopt", () => setInboxOptions(ib.saved_albums, v))} />
+                <span className="text-muted text-xs">Following artists asks Spotify for one more permission: you approve it once when you next sign in.</span>
+                {ib.needs_reconnect && <div className="flex flex-wrap gap-2 items-center"><span className="text-text-2 text-sm">Sign in again to allow reading who you follow.</span>
+                  <button className="btn btn-secondary s" disabled={!online} onClick={() => setDlg("connect")}>Sign in again</button></div>}
+              </>}
+            </>}
+          </Card>
+        )}
+
         {r2 && (
           <Card id="logger" title="Desktop logger">
             {logger.loading || !lg ? <div className="skel h-[90px]" /> : <>
@@ -154,22 +185,26 @@ export default function Settings() {
           </Card>
         )}
 
-        <Card id="phone" title="Phone capture">
+        <Card id="phone" title="Home Wi-Fi capture">
           {cap.loading || !cap.data ? <div className="skel h-[90px]" /> : capOff ? <>
               <div className="banner err" role="alert"><span><b className="text-danger">Phone capture turned itself off.</b> <span className="text-text-2">{capOff === "wrong_code" ? "5 wrong pairing codes in a row. Make a new code and update your Shortcut." : "The listener stopped. Turn it on again to keep saving from your iPhone."}</span></span></div>
               <div><button className="btn btn-primary" onClick={() => run("code", async () => { await newPairingCode(); await setCaptureEnabled(true); }).then(() => { setCapOff(undefined); toast("New pairing code. Update it in your iPhone Shortcut."); })}>New code and turn on</button></div>
-            </> : <>
-              <Switch label="Accept shares from my iPhone on this Wi-Fi" on={cap.data.on} onChange={(v) => run("cap", () => setCaptureEnabled(v))} />
-              <div className="tiles grid-cols-2">
-                <div className="field"><span className="label">Address</span><span className="font-mono">{cap.data.address}:{cap.data.port}</span></div>
-                <div className="field"><span className="label">Pairing code</span><span className="font-mono text-[18px] tracking-[2px]">{cap.data.code}</span></div>
+            </> : (
+            <details className="flex flex-col gap-3">
+              <summary className="cursor-pointer">Optional: instant capture on home Wi-Fi</summary>
+              <div className="flex flex-col gap-3 pt-3">
+                <Switch label="Accept shares from my iPhone on this Wi-Fi" on={cap.data.on} onChange={(v) => run("cap", () => setCaptureEnabled(v))} />
+                <div className="tiles grid-cols-2">
+                  <div className="field"><span className="label">Address</span><span className="font-mono">{cap.data.address}:{cap.data.port}</span></div>
+                  <div className="field"><span className="label">Pairing code</span><span className="font-mono text-[18px] tracking-[2px]">{cap.data.code}</span></div>
+                </div>
+                <span className="text-muted text-xs">Windows may ask to allow Runout on private networks. Your Wi-Fi must be set to Private.</span>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <button className="btn btn-light" onClick={() => setDlg("shortcut")}>Shortcut steps</button>
+                  <button className="btn btn-secondary" onClick={() => run("code", newPairingCode).then((c) => c && toast("New pairing code. Update it in your iPhone Shortcut."))}>New code</button>
+                </div>
               </div>
-              <span className="text-muted text-xs">Windows may ask to allow Runout on private networks. Your Wi-Fi must be set to Private.</span>
-              <div className="flex flex-wrap gap-2 items-center">
-                <button className="btn btn-light" onClick={() => setDlg("shortcut")}>Shortcut steps</button>
-                <button className="btn btn-secondary" onClick={() => run("code", newPairingCode).then((c) => c && toast("New pairing code. Update it in your iPhone Shortcut."))}>New code</button>
-              </div>
-            </>}
+            </details>)}
         </Card>
 
         {r2 && (

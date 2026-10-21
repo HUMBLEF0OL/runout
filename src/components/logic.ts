@@ -1,7 +1,7 @@
 // Pure logic behind components (tested in logic.test.ts).
-import type { Freshness, Play, Source } from "../api";
+import type { Freshness, Play, Source, Sourced } from "../api";
 import { linkKind, parseLink } from "../lib/link";
-import { day } from "../lib/format";
+import { day, dayY } from "../lib/format";
 
 /** Rating keyboard (DESIGN §5): arrows ±0.5, Home/End, clamp 0–5. Returns null for keys it doesn't handle. */
 export function ratingKey(value: number, key: string): number | null {
@@ -40,6 +40,14 @@ export function freshnessText(f: Freshness | undefined, loggerState?: string): s
 const SRC = { U: "Your records", S: "Desktop log", E: "Spotify export" } as const;
 /** Source tag (FR-032): "From: Your records + Desktop log." */
 export const sourceText = (sources: (keyof typeof SRC)[]) => `From: ${sources.map((s) => SRC[s]).join(" + ")}.`;
+/** Insight card tag (FR-032): the response's sources, each listening source with how current it is. A response
+ *  without both never reads as sourced. */
+export function sourcedText(r: Partial<Pick<Sourced<unknown>, "sources" | "freshness">>): string {
+  const f = r.freshness;
+  if (!r.sources?.length || !f) return "Sources unknown.";
+  const to = (iso: string | null) => ` (${iso ? `to ${dayY(iso)}` : "none yet"})`;
+  return `From: ${r.sources.map((s) => SRC[s] + (s === "S" ? to(f.logger_last_event) : s === "E" ? to(f.export_latest_event) : "")).join(" + ")}.`;
+}
 
 /** Source tag for a play list (list_plays has no `sources`): U when any play is linked to a record, then each play source present. */
 export const playSources = (rows: Play[]): Source[] => [

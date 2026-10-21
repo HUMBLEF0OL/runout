@@ -17,6 +17,9 @@ use crate::error::{AppError, Code, Result};
 pub const AUTHORIZE: &str = "https://accounts.spotify.com/authorize";
 pub const TOKEN: &str = "https://accounts.spotify.com/api/token";
 pub const SCOPES: &str = "playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public user-top-read user-read-recently-played user-library-read user-library-modify";
+/// Asked for only while the Inbox's "followed artists" option is on (TSD §5.3): adding a scope means
+/// the user re-approves, so it is never requested by default.
+pub const FOLLOW_SCOPE: &str = "user-follow-read";
 /// How long the browser sign-in may take.
 const LOGIN_WAIT: Duration = Duration::from_secs(300);
 /// Refresh this long before `expires_at`.
@@ -31,6 +34,15 @@ pub struct Tokens {
     pub expires_at: i64,
     /// ISO-8601 UTC: sign-in + 6 months (refreshing doesn't extend it).
     pub renew_by: String,
+    /// Space-separated scopes Spotify granted; "" for tokens stored before this field existed.
+    #[serde(default)]
+    pub scope: String,
+}
+
+impl Tokens {
+    pub fn has_scope(&self, scope: &str) -> bool {
+        self.scope.split_whitespace().any(|s| s == scope)
+    }
 }
 
 impl Tokens {
@@ -41,6 +53,7 @@ impl Tokens {
             refresh: "synthetic-refresh".into(),
             expires_at: chrono::Utc::now().timestamp() + valid_s,
             renew_by: "2027-04-19T00:00:00Z".into(),
+            scope: SCOPES.into(),
         }
     }
 }
@@ -163,6 +176,7 @@ struct TokenResp {
     access_token: String,
     expires_in: i64,
     refresh_token: Option<String>,
+    scope: Option<String>,
 }
 
 /// Outcome of a token-endpoint call. Error bodies contribute only their `error` code.
@@ -246,6 +260,7 @@ pub async fn access_token(sp: &Spotify, rejected: Option<&str>) -> Result<String
                 refresh: r.refresh_token.unwrap_or(t.refresh),
                 expires_at: expires_at(r.expires_in),
                 renew_by: t.renew_by,
+                scope: r.scope.unwrap_or(t.scope),
             };
             if !sp.set_refreshed(generation, next.clone())? {
                 return Err(AppError::new(
@@ -397,8 +412,14 @@ fn open_browser(url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Full sign-in: PKCE, loopback port, browser, callback, exchange, store tokens.
-pub async fn connect(sp: &Spotify) -> Result<()> {
+/// Full sign-in: PKCE, loopback port, browser, callback, exchange, store tokens. `follow` adds
+/// [`FOLLOW_SCOPE`] (Inbox followed-artists option on).
+pub async fn connect(sp: &Spotify, follow: bool) -> Result<()> {
+    let scopes = if follow {
+        [SCOPES, " ", FOLLOW_SCOPE].concat()
+    } else {
+        SCOPES.to_string()
+    };
     let client_id = sp.client_id()?;
     let verifier = random(64);
     let state = random_state();
@@ -416,7 +437,7 @@ pub async fn connect(sp: &Spotify) -> Result<()> {
         ("redirect_uri", &redirect),
         ("code_challenge_method", "S256"),
         ("code_challenge", &challenge(&verifier)),
-        ("scope", SCOPES),
+        ("scope", &scopes),
         ("state", &state),
     ]);
     open_browser(&[AUTHORIZE, "?", &query].concat())?;
@@ -465,6 +486,7 @@ pub async fn exchange(
         refresh,
         expires_at: expires_at(r.expires_in),
         renew_by: renew.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        scope: r.scope.unwrap_or_default(),
     }))
 }
 
