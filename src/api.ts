@@ -201,6 +201,14 @@ export function onEvent<K extends keyof EventMap>(name: K, cb: (payload: EventMa
   return () => { p.then((un) => un()); };
 }
 
+/** Events that mean library data changed without a UI write (a phone share, a resolved short link, a capture
+ *  switched off, a scheduled backup): readers refetch, as after a write. The mocks invalidate themselves; Rust
+ *  only emits, so without this an open Backlog missed a phone share until the next navigation (M6). */
+export const invalidateOnDataEvents = () => {
+  const offs = (["capture-received", "capture-disabled", "unresolved-resolved", "backup-finished"] as const).map((e) => onEvent(e, () => invalidate()));
+  return () => offs.forEach((off) => off());
+};
+
 /* ------------------------------------------------------------------ §3 MVP commands */
 export const getCounts = () => call<Counts>("get_counts");
 export const getDashboard = () => call<Dashboard>("get_dashboard");

@@ -507,6 +507,12 @@ def check_release_build():
     lib = (TAURI / "src" / "lib.rs").read_text(encoding="utf-8")
     if "prevent_close" in lib and "tauri_plugin_single_instance" not in lib:
         bad.append("src-tauri/src/lib.rs: close hides to tray, so register tauri_plugin_single_instance (one logger, one pause)")
+    conf = json.loads((TAURI / "tauri.conf.json").read_text(encoding="utf-8"))
+    wv2 = conf["app"]["windows"][0].get("additionalBrowserArgs", "")
+    # Setting it replaces wry's defaults, so keep them; background networking off = no idle WebView2 calls (NFR-07).
+    for flag in ("msSmartScreenProtection", "--disable-background-networking", "--disable-component-update"):
+        if flag not in wv2:
+            bad.append(f"tauri.conf.json additionalBrowserArgs lacks {flag} (M6 network capture)")
     lang = TAURI / "windows" / "English.nsh"
     if lang.exists():
         keys = re.findall(r"^LangString (\w+) ", lang.read_text(encoding="utf-8"), re.M)

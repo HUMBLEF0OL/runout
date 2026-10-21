@@ -19,7 +19,8 @@
         "height": 800,
         "minWidth": 900,
         "minHeight": 600,
-        "incognito": true
+        "incognito": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-networking --disable-component-update --disable-domain-reliability --no-pings --disable-sync --disable-client-side-phishing-detection"
       }
     ],
     "security": {

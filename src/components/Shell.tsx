@@ -5,7 +5,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowsClockwiseIcon, BooksIcon, ChartBarIcon, ClockCounterClockwiseIcon, CompassIcon, GearSixIcon, HouseIcon, PlaylistIcon, QueueIcon,
 } from "@phosphor-icons/react";
-import { getCapture, getCounts, getFreshness, getLoggerStatus, MOCK, recordPageVisit } from "../api";
+import { getCapture, getCounts, getFreshness, getLoggerStatus, invalidateOnDataEvents, MOCK, recordPageVisit } from "../api";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { useShortcuts, type ShortcutAction } from "../hooks/useShortcuts";
@@ -102,6 +102,7 @@ export default function Shell() {
   const bare = loc.pathname === "/first-run"; // SC-02b has no rail
   const [qa, setQa] = useState<QuickAddOpts | null>(null);
   const open = useCallback((o: QuickAddOpts = {}) => setQa(o), []);
+  useEffect(invalidateOnDataEvents, []);
   useEffect(() => {
     recordPageVisit(loc.pathname.split("/")[1] || "home").catch(() => {});
     window.scrollTo(0, 0);

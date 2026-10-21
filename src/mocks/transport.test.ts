@@ -81,4 +81,18 @@ describe("M6 MVP transport", () => {
     const { today } = await import("../lib/format");
     expect(today().getTime()).toBeGreaterThanOrEqual(before);
   }, 30_000); // fresh imports of Testing Library and the mock dataset after resetModules: ~7 s under a loaded check.py
+
+  it("a phone share or resolved link from Rust makes readers refetch", async () => {
+    const api = await import("../api");
+    const handlers = new Map<string, (e: { payload: unknown }) => void>();
+    const listen = vi.fn(async (name: string, h: (e: { payload: unknown }) => void) => { handlers.set(name, h); return () => undefined; });
+    api.__setTransportForTests({ invoke: vi.fn() as never, listen: listen as never });
+    const refetch = vi.fn();
+    api.onInvalidate(refetch);
+    const off = api.invalidateOnDataEvents();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (const e of ["capture-received", "capture-disabled", "unresolved-resolved", "backup-finished"]) handlers.get(e)!({ payload: {} });
+    expect(refetch).toHaveBeenCalledTimes(4);
+    off();
+  });
 });
