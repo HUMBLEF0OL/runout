@@ -12,6 +12,7 @@ pub mod library;
 pub mod links;
 pub mod logger;
 pub mod net;
+pub mod open;
 pub mod settings;
 pub mod spotify;
 pub mod state;
@@ -23,7 +24,7 @@ use std::time::Duration;
 
 use tauri::{Emitter, Manager};
 
-/// Re-probe `net::online()` this often so `online-changed` fires when the network comes back.
+/// While a short-link retry is pending, re-probe `net::online()` this often.
 const ONLINE_POLL: Duration = Duration::from_secs(30);
 /// Spotify cache sweeper period (TSD §5.2: startup + daily).
 const SWEEP_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -119,6 +120,12 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Built here, not from config alone: only a window made in code takes `on_new_window`, and
+            // Tauri drops `target="_blank"` links otherwise ("Open Spotify", embed links: open.rs).
+            let main = app.config().app.windows[0].clone();
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &main)?
+                .on_new_window(|url, _| open::handle(url))
+                .build()?;
             let st = match state::AppState::init(app.handle()) {
                 Ok(st) => st,
                 Err(e) => {
@@ -191,11 +198,18 @@ Settings file: {file}",
                     std::thread::spawn(move || retry_queued(&h));
                 }
             });
+            // Network back (OS event) → re-probe; a flip to online fires the hook above (retry).
+            net::on_os_network_change(|| {
+                std::thread::spawn(|| tauri::async_runtime::block_on(net::online()));
+            });
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 loop {
-                    // Online but a spotify.link request was queued/stopped offline: retry now.
-                    if tauri::async_runtime::block_on(net::online()) && links::take_retry_pending()
+                    // Only while a spotify.link request is waiting (it timed out with no OS event to
+                    // follow): an idle app makes no outbound connections (NFR-07, M6 network capture).
+                    if links::retry_pending()
+                        && tauri::async_runtime::block_on(net::online())
+                        && links::take_retry_pending()
                     {
                         retry_queued(&handle);
                     }

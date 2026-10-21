@@ -40,8 +40,9 @@ function subscribeOnline(fn: () => void) {
   return () => { subs.delete(fn); if (!subs.size) { stop?.(); online = undefined; } };
 }
 
-/** Online state from `get_online` + `online-changed` (TSD §4.3). Embeds and short links depend on it. */
-export function useOnline(): boolean {
-  // unknown = offline: no embed mounts before get_online answers (TSD §4.3)
-  return useSyncExternalStore(subscribeOnline, () => online ?? false);
+/** Online state from `get_online` + `online-changed` (TSD §4.3). Embeds and short links depend on it.
+ *  `unknown` is the answer before the first probe: offline by default, so no embed mounts early (TSD §4.3);
+ *  the offline banner passes true so it doesn't flash on every start. */
+export function useOnline(unknown = false): boolean {
+  return useSyncExternalStore(subscribeOnline, () => online ?? unknown);
 }

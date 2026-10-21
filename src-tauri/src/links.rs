@@ -415,6 +415,11 @@ fn note_offline<T>(out: &Result<T>) -> bool {
 }
 
 /// Poll loop: true (and cleared) when a queued row is waiting for a retry.
+/// Peek without clearing: lib.rs only probes `online()` while a retry is waiting.
+pub fn retry_pending() -> bool {
+    RETRY_PENDING.load(Ordering::SeqCst)
+}
+
 pub fn take_retry_pending() -> bool {
     RETRY_PENDING.swap(false, Ordering::SeqCst)
 }

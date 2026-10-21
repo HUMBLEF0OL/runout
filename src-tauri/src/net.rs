@@ -1,5 +1,6 @@
 //! The only outbound HTTP in Runout (TSD §7): one shared client, host allow-list checked before every
 //! request and on every redirect hop, `online()` cached 30 s with an `online-changed` hook (TSD §4.3).
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -79,16 +80,19 @@ pub async fn get(url: &str) -> Result<Response> {
 type OnChange = Box<dyn Fn(bool) + Send + Sync>;
 static ON_CHANGE: Mutex<Option<OnChange>> = Mutex::new(None);
 static ONLINE: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+/// Set by an OS network change: the next `online()` probes even inside the 30 s cache.
+static STALE: AtomicBool = AtomicBool::new(false);
 
 /// Register the `online-changed` emitter (lib.rs wires it to the AppHandle).
 pub fn on_online_change(f: impl Fn(bool) + Send + Sync + 'static) {
     *ON_CHANGE.lock().unwrap() = Some(Box::new(f));
 }
 
-/// HEAD open.spotify.com, cached 30 s. Any HTTP answer counts as online.
-// ponytail: no OS network-change hook yet; lib.rs re-probes every 30 s instead.
+/// HEAD open.spotify.com, cached 30 s. Any HTTP answer counts as online. Only asked on demand (the UI,
+/// a pending link retry) or after an OS network change: an idle app sends nothing (NFR-07, M6).
 pub async fn online() -> bool {
-    if let Some((at, v)) = *ONLINE.lock().unwrap()
+    if !STALE.swap(false, Ordering::SeqCst)
+        && let Some((at, v)) = *ONLINE.lock().unwrap()
         && at.elapsed() < ONLINE_TTL
     {
         return v;
@@ -99,6 +103,23 @@ pub async fn online() -> bool {
     record_online(now);
     now
 }
+
+/// Call `f` on every OS network change (Windows `NetworkStatusChanged`), after marking the cached
+/// probe stale (TSD §4.3). Event-driven: no traffic while nothing changes.
+#[cfg(windows)]
+pub fn on_os_network_change(f: impl Fn() + Send + Sync + 'static) {
+    use windows::Networking::Connectivity::{NetworkInformation, NetworkStatusChangedEventHandler};
+    let handler = NetworkStatusChangedEventHandler::new(move |_| {
+        STALE.store(true, Ordering::SeqCst);
+        f();
+        Ok(())
+    });
+    // The registration lives as long as the process; the token is never needed.
+    let _ = NetworkInformation::NetworkStatusChanged(&handler);
+}
+
+#[cfg(not(windows))]
+pub fn on_os_network_change(_f: impl Fn() + Send + Sync + 'static) {}
 
 /// Store a probe result; fires the hook when it differs from the last known value. No value yet
 /// counts as offline, so the first good probe at startup fires too and leftover queued links retry.

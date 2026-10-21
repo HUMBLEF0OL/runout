@@ -98,7 +98,7 @@ export function Topbar({ children }: { children?: ReactNode }) {
 
 export default function Shell() {
   const loc = useLocation();
-  const online = useOnline();
+  const online = useOnline(true); // banner only once offline is known
   const bare = loc.pathname === "/first-run"; // SC-02b has no rail
   const [qa, setQa] = useState<QuickAddOpts | null>(null);
   const open = useCallback((o: QuickAddOpts = {}) => setQa(o), []);
