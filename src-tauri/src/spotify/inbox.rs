@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use reqwest::Method;
+use rusqlite::OptionalExtension;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -169,11 +170,37 @@ async fn each(
     Ok(())
 }
 
-/// What one Inbox read asks for: `(kind, uri)` per new item, and the track URIs to remove.
+/// One item to import: kind, URI and, for a track, its album URI (see [`import`]).
+type Add = (ItemType, String, Option<String>);
+
+/// What one Inbox read asks for: the new items, and the track URIs to remove, grouped as planned
+/// (an album batch is one group) so [`chunks`] never splits a batch across two DELETEs.
 #[derive(Debug, Default, PartialEq)]
 struct Plan {
-    add: Vec<(ItemType, String)>,
-    remove: Vec<String>,
+    add: Vec<Add>,
+    remove: Vec<Vec<String>>,
+}
+
+/// Removal chunks of ≤ [`CHUNK`] URIs, a group never split unless it alone is over [`CHUNK`]. If
+/// the second DELETE failed after the first removed part of a batch, the next check would see
+/// under 80 % of the album and import the rest as stray tracks.
+fn chunks(groups: &[Vec<String>]) -> Vec<Vec<String>> {
+    let mut out: Vec<Vec<String>> = vec![];
+    let mut cur: Vec<String> = vec![];
+    for g in groups {
+        if !cur.is_empty() && cur.len() + g.len() > CHUNK {
+            out.push(std::mem::take(&mut cur));
+        }
+        if g.len() > CHUNK {
+            out.extend(g.chunks(CHUNK).map(<[String]>::to_vec));
+        } else {
+            cur.extend(g.iter().cloned());
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
 }
 
 /// Playlist entries → plan. Only Spotify tracks are handled (local files and episodes stay in
@@ -183,6 +210,7 @@ struct Plan {
 fn plan(entries: &[Value]) -> Plan {
     let mut groups: Vec<((String, String), Vec<String>, i64)> = vec![];
     let mut at: HashMap<(String, String), usize> = HashMap::new();
+    let mut seen = HashSet::new(); // a URI is planned (and removed) once, in its first group
     let mut p = Plan::default();
     for e in entries {
         let t = either(e, "item", "track");
@@ -192,7 +220,9 @@ fn plan(entries: &[Value]) -> Plan {
         if e["is_local"] == true {
             continue;
         }
-        p.remove.push(uri.clone());
+        if !seen.insert(uri.clone()) {
+            continue;
+        }
         let album = t["album"]["uri"].as_str().unwrap_or_default().to_string();
         let minute: String = e["added_at"]
             .as_str()
@@ -209,33 +239,48 @@ fn plan(entries: &[Value]) -> Plan {
             ));
             groups.len() - 1
         });
-        if !groups[i].1.contains(&uri) {
-            groups[i].1.push(uri);
-        }
+        groups[i].1.push(uri);
     }
     for ((album, _), tracks, total) in groups {
         let batch = total >= 2
             && tracks.len() >= 2
             && tracks.len() as f64 >= ALBUM_SHARE * total as f64
             && check_uri(&album, &["album"]).is_ok();
+        let al = check_uri(&album, &["album"]).ok();
         if batch {
-            p.add.push((ItemType::Album, album));
+            p.add.push((ItemType::Album, album, None));
         } else {
-            p.add
-                .extend(tracks.into_iter().map(|u| (ItemType::Track, u)));
+            p.add.extend(
+                tracks
+                    .iter()
+                    .map(|u| (ItemType::Track, u.clone(), al.clone())),
+            );
         }
+        p.remove.push(tracks);
     }
-    let mut seen = HashSet::new();
-    p.remove.retain(|u| seen.insert(u.clone()));
     p
 }
 
-/// Insert each `(kind, uri)` not already in the library (one transaction).
-fn import(st: &AppState, add: &[(ItemType, String)], out: &mut Checked) -> Result<()> {
+/// Insert each item not already in the library (one transaction). A track whose album is already
+/// an Inbox-imported album item counts as skipped: it is a leftover of that batch (a batch over 100
+/// tracks spans DELETEs, or a removal failed), not a new track of its own.
+// ponytail: also skips a later deliberate single track of such an album; its album is in the backlog.
+fn import(st: &AppState, add: &[Add], out: &mut Checked) -> Result<()> {
     let mut db = st.db.lock().unwrap();
     let tx = db.transaction()?;
-    for (kind, uri) in add {
-        if items::id_by_uri(&tx, uri)?.is_some() {
+    for (kind, uri, album) in add {
+        let covered = match album {
+            Some(a) => tx
+                .query_row(
+                    "SELECT 1 FROM item WHERE spotify_uri = ?1 AND added_via = 'inbox'",
+                    [a],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some(),
+            None => false,
+        };
+        if covered || items::id_by_uri(&tx, uri)?.is_some() {
             out.skipped += 1;
             continue;
         }
@@ -250,14 +295,19 @@ fn import(st: &AppState, add: &[(ItemType, String)], out: &mut Checked) -> Resul
 }
 
 /// `check_inbox` (also at start and every 15 min, lib.rs). Disconnected → `spotify_auth` before
-/// any request. A gone Inbox → state `missing`, nothing imported, never re-created here.
+/// any request. A gone Inbox (unlisted or 404) → state `missing` and `not_found`, nothing imported,
+/// never re-created here; no Inbox recorded → nothing to do.
 pub async fn check(st: &AppState, sp: &Spotify) -> Result<Checked> {
     sp.require_connected()?;
     let _one = sp.inbox_lock.lock().await;
     let i = inbox(st);
-    let (Some(id), false) = (i.playlist_id.clone(), i.missing) else {
+    let gone = || AppError::not_found("The Runout Inbox is gone. Create it again in Settings.");
+    let Some(id) = i.playlist_id.clone() else {
         return Ok(Checked::default());
     };
+    if i.missing {
+        return Err(gone());
+    }
     let started = now();
     let mut out = Checked::default();
 
@@ -276,12 +326,12 @@ pub async fn check(st: &AppState, sp: &Spotify) -> Result<Checked> {
         })
         .await
     } else {
-        Err(AppError::not_found("The Runout Inbox is gone."))
+        Err(gone())
     };
     match read {
         Err(e) if e.code == crate::error::Code::NotFound => {
             update(st, |i| i.missing = true)?;
-            return Ok(out);
+            return Err(gone()); // not "Nothing new": the UI offers Create Inbox
         }
         r => r?,
     }
@@ -290,7 +340,7 @@ pub async fn check(st: &AppState, sp: &Spotify) -> Result<Checked> {
     import(st, &p.add, &mut out)?;
     // Imported (or skipped) entries leave the Inbox; a failed removal waits for the next check
     // (import is idempotent by URI). Every copy of a URI goes (kb/spotify.md).
-    for c in p.remove.chunks(CHUNK) {
+    for c in chunks(&p.remove) {
         let body = json!({ "items": c.iter().map(|u| json!({ "uri": u })).collect::<Vec<_>>() });
         if sp
             .send_json(
@@ -338,7 +388,7 @@ async fn saved_albums(st: &AppState, sp: &Spotify, after: &str, out: &mut Checke
         if let (true, Some(u)) = (newer, e["album"]["uri"].as_str())
             && let Ok(u) = check_uri(u, &["album"])
         {
-            add.push((ItemType::Album, u));
+            add.push((ItemType::Album, u, None));
         }
         newer
     })
@@ -370,7 +420,7 @@ async fn followed(st: &AppState, sp: &Spotify, out: &mut Checked) -> Result<()> 
             .iter()
             .filter(|a| !old.contains(a.as_str()))
             .filter_map(|a| check_uri(&format!("spotify:artist:{a}"), &["artist"]).ok())
-            .map(|u| (ItemType::Artist, u))
+            .map(|u| (ItemType::Artist, u, None))
             .collect();
         import(st, &add, out)?;
     }
@@ -448,24 +498,50 @@ mod tests {
         e.push(json!({"is_local": true, "item": {"uri": "spotify:local:x:y:z:1"}}));
         e.push(json!({"item": {"uri": format!("spotify:episode:{}", id("E1"))}}));
         let p = plan(&e);
-        let t = |n: &str| (ItemType::Track, format!("spotify:track:{}", id(n)));
+        let t = |n: &str, al: &str| {
+            (
+                ItemType::Track,
+                format!("spotify:track:{}", id(n)),
+                Some(format!("spotify:album:{}", id(al))),
+            )
+        };
         assert_eq!(
             p.add,
             vec![
-                (ItemType::Album, format!("spotify:album:{}", id("AL1"))),
-                t("B1"),
-                t("C1"),
-                t("C2"),
-                t("D1"),
-                t("D2"),
+                (
+                    ItemType::Album,
+                    format!("spotify:album:{}", id("AL1")),
+                    None
+                ),
+                t("B1", "AL2"),
+                t("C1", "AL3"),
+                t("C2", "AL3"),
+                t("D1", "AL4"),
+                t("D2", "AL4"),
             ]
         );
+        let all = p.remove.concat();
         assert_eq!(
-            p.remove.len(),
+            all.len(),
             9,
             "every handled track once, never local/episode"
         );
-        assert!(p.remove.iter().all(|u| u.starts_with("spotify:track:")));
+        assert!(all.iter().all(|u| u.starts_with("spotify:track:")));
+        assert_eq!(p.remove[0].len(), 4, "the album batch is one removal group");
+    }
+
+    #[test]
+    fn removal_chunks_never_split_a_batch() {
+        let g = |n: usize, tag: &str| (0..n).map(|i| format!("{tag}{i}")).collect::<Vec<_>>();
+        let sizes =
+            |groups: Vec<Vec<String>>| chunks(&groups).iter().map(Vec::len).collect::<Vec<_>>();
+        let singles: Vec<Vec<String>> = (0..98).map(|i| vec![format!("s{i}")]).collect();
+        assert_eq!(sizes([singles.clone(), vec![g(5, "a")]].concat()), [98, 5]);
+        assert_eq!(sizes([singles, vec![g(2, "a")]].concat()), [100]);
+        assert_eq!(
+            sizes(vec![g(3, "x"), g(250, "big"), g(4, "y")]),
+            [3, 100, 100, 50, 4]
+        );
     }
 
     #[test]
@@ -588,6 +664,52 @@ mod tests {
         assert_eq!(stub.calls().last().unwrap().0, "DELETE");
     }
 
+    /// External review of f01432a: an album batch crossing a 100-URI DELETE boundary whose second
+    /// DELETE fails must not come back as stray track items on the next check.
+    #[test]
+    fn batch_never_straddles_a_failed_delete() {
+        let d = temp_dir("inbox-straddle");
+        let at = "2026-10-21T09:15:30Z";
+        let singles: Vec<Value> = (0..98)
+            .map(|n| entry(&format!("S{n}"), &format!("SA{n}"), 10, at))
+            .collect();
+        let batch: Vec<Value> = (1..=5)
+            .map(|n| entry(&format!("A{n}"), "AL1", 5, at))
+            .collect();
+        let stub = Stub::new(&[
+            (200, &listed()),
+            (200, &page([singles, batch.clone()].concat())),
+            (200, "{}"),
+            (500, "{}"),
+        ]);
+        let (sp, st) = (connected(&d, &stub), state(&d));
+        ready(&st);
+        let first = block(check(&st, &sp)).unwrap();
+        assert_eq!((first.imported, first.albums), (99, 1));
+        let n = |i: usize| match &stub.requests.lock().unwrap()[i].body {
+            Some(crate::spotify::Body::Json(b)) => b["items"].as_array().unwrap().len(),
+            _ => 0,
+        };
+        assert_eq!((n(2), n(3)), (98, 5), "the batch goes in one DELETE");
+        // what a split chunk would have left (3 of 5 = 60 %): still no stray tracks
+        stub.push(200, &listed());
+        stub.push(200, &page(batch[2..].to_vec()));
+        stub.push(200, "{}");
+        let again = block(check(&st, &sp)).unwrap();
+        assert_eq!((again.imported, again.skipped), (0, 3));
+        let tracks: i64 = st
+            .db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM item WHERE type = 'track' AND spotify_uri LIKE 'spotify:track:%A%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tracks, 0);
+    }
+
     /// A failing optional read (followed artists, scope revoked) never hides the Inbox import.
     #[test]
     fn optional_read_failure_keeps_the_import() {
@@ -612,17 +734,19 @@ mod tests {
         let stub = Stub::new(&[(200, &page(vec![json!({"id": "Other00000000000000001"})]))]);
         let (sp, st) = (connected(&d, &stub), state(&d));
         ready(&st);
-        assert_eq!(block(check(&st, &sp)).unwrap(), Checked::default());
+        let gone =
+            |r: Result<Checked>| assert_eq!(r.unwrap_err().code, crate::error::Code::NotFound);
+        gone(block(check(&st, &sp))); // not Ok({0,0,0}): the UI must not say "Nothing new"
         assert_eq!(status(&st, &sp).state, "missing");
         assert_eq!(stub.calls().len(), 1, "no items read, no create");
-        block(check(&st, &sp)).unwrap();
+        gone(block(check(&st, &sp)));
         block(ensure_on_connect(&st, &sp)); // a recorded Inbox is never re-created on connect
         assert_eq!(stub.calls().len(), 1);
         // 404 on the items read counts as gone too
         update(&st, |i| i.missing = false).unwrap();
         stub.push(200, &listed());
         stub.push(404, "{}");
-        block(check(&st, &sp)).unwrap();
+        gone(block(check(&st, &sp)));
         assert_eq!(status(&st, &sp).state, "missing");
         // Create Inbox makes a new one
         stub.push(

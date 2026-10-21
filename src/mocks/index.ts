@@ -501,6 +501,7 @@ const H: Record<string, Handler> = {
   create_inbox: () => { spotifyOn(); inbox.state = "ready"; return inboxStatus(); },
   check_inbox: () => {
     spotifyOn();
+    if (inbox.state === "missing") fail("not_found", "The Runout Inbox is gone."); // as Rust: deleted in Spotify
     if (inbox.state !== "ready") return { imported: 0, albums: 0, skipped: 0 };
     // As Rust: each waiting entry becomes a name-needed item (added_via inbox) and leaves the Inbox.
     const got = inbox.waiting.splice(0).map((w: { type: "album" | "track"; added_at: string }) => {

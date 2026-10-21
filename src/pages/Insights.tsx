@@ -73,7 +73,8 @@ function Listening({ range }: { range: Range }) {
       </Card>
       <Card title="Unfinished albums" res={take.data} side>
         <span className="text-muted text-xs leading-[1.45]">Only albums whose tracks you've added.{take.data?.data.unfinished_unknown ? ` ${pl(take.data.data.unfinished_unknown, "other album")} can't be checked.` : ""}</span>
-        {take.data?.data.unfinished_albums.length ? take.data.data.unfinished_albums.map((u) => (
+        {take.loading ? <SkelRows n={3} /> : take.error ? <ErrorBanner error={take.error} title="Couldn't load unfinished albums." onRetry={take.reload} />
+          : take.data?.data.unfinished_albums.length ? take.data.data.unfinished_albums.map((u) => (
           <Link key={u.item.id} to={`/item/${u.item.id}`} className="flex justify-between items-baseline gap-3 text-text py-[3px]">
             <span className="font-semibold">{nameOf(u.item)}</span><span className="font-mono text-text-2 whitespace-nowrap text-xs">{u.played} of {u.total} played</span>
           </Link>)) : <span className="text-muted">Nothing here.</span>}

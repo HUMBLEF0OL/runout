@@ -92,12 +92,12 @@ export const NameNeeded = () => <span className="badge need">Name needed</span>;
 export const StatusBadge = ({ children }: { children: ReactNode }) => <span className="badge status">{children}</span>;
 export const SourceTag = ({ sources }: { sources: Source[] }) => !sources.length ? null : <span className="text-faint text-xs">{sourceText(sources)}</span>;
 /** Insight source tag (FR-032): sources + freshness of the `Sourced` response it sits on. */
-export const SourcedTag = ({ res }: { res: Pick<Sourced<unknown>, "sources" | "freshness"> }) => <span className="text-faint text-xs">{sourcedText(res)}</span>;
-/** SC-09 insight card: title, the response's sources and freshness, then the content. */
+export const SourcedTag = ({ res }: { res: Pick<Sourced<unknown>, "sources" | "freshness"> | undefined }) => <span className="text-faint text-xs">{sourcedText(res ?? {})}</span>;
+/** SC-09 insight card: title, the response's sources and freshness (always: no response yet → "Sources unknown."), then the content. */
 export function InsightCard({ title, res, children, className = "", side }: { title: ReactNode; res: Pick<Sourced<unknown>, "sources" | "freshness"> | undefined; children: ReactNode; className?: string; side?: boolean }) {
   return (
     <section className={`card flex flex-col gap-3 ${side ? "flex-[1_1_320px] min-w-0" : className}`}>
-      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">{title}</h2>{res && <SourcedTag res={res} />}</div>
+      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">{title}</h2><SourcedTag res={res} /></div>
       {children}
     </section>
   );

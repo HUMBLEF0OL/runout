@@ -59,6 +59,7 @@ export default function Settings() {
   const [dlg, setDlg] = useState<null | "restore" | "shortcut" | "connect" | "disconnect" | "delete">(null);
   const [capOff, setCapOff] = useState<"wrong_code" | "error">();
   const [warn, setWarn] = useState("");
+  const [ibGone, setIbGone] = useState(false); // Check now found the Inbox deleted in Spotify (check_inbox → not_found)
   useEffect(() => onEvent("capture-disabled", (p) => setCapOff(p.reason)), []);
   useEffect(() => { if (s.data) setWarn(String(s.data.size_warn_mb)); }, [s.data]);
 
@@ -73,6 +74,11 @@ export default function Settings() {
   const sp = spotify.data;
   const ib = inbox.data;
   const connected = sp?.state === "connected";
+  const gone = ibGone || ib?.state === "missing";
+  const check = () => checkInbox().catch((e) => {
+    if (toAppError(e).code !== "not_found") throw e;
+    setIbGone(true); inbox.reload(); return undefined;
+  });
 
   return (
     <>
@@ -142,17 +148,17 @@ export default function Settings() {
         {r3 && (
           <Card id="inbox" title="Runout Inbox">
             {inbox.loading || spotify.loading ? <div className="skel h-[90px]" /> : inbox.error || !ib ? <ErrorBanner error={inbox.error} title="Couldn’t read the Inbox settings." onRetry={inbox.reload} /> : <>
-              <span>{!connected ? "Runout Inbox · connect Spotify first" : ib.state === "ready" ? "Runout Inbox · ready" : ib.state === "missing" ? "Runout Inbox · missing" : "Runout Inbox · not created yet"}</span>
+              <span>{!connected ? "Runout Inbox · connect Spotify first" : gone ? "Runout Inbox · missing" : ib.state === "ready" ? "Runout Inbox · ready" : "Runout Inbox · not created yet"}</span>
               <span className="text-muted text-sm leading-[1.5]">On your phone, add a track or album to the private “Runout Inbox” playlist in Spotify. Runout checks it at start and every 15 minutes, saves each one to your backlog as “Name needed” and takes it out of the Inbox.</span>
-              {ib.state === "missing" && connected && <span className="text-text-2 text-sm">The Inbox playlist was deleted in Spotify. Runout won’t make a new one unless you ask.</span>}
+              {gone && connected && <span className="text-text-2 text-sm" role="status">Your Runout Inbox is gone from Spotify. Create a new one? Runout won’t make one unless you ask.</span>}
               {ib.state !== "none" && (
                 <span className="flex justify-between items-baseline gap-3 text-sm"><span>Last check</span>
                   <span className="font-mono text-text-2 text-xs">{ib.last_check ? `${day(ib.last_check)}, ${time(ib.last_check)} · ${pl(ib.imported_last, "item")} imported` : "not yet"}</span></span>)}
               {connected && <div className="flex flex-wrap gap-2 items-center">
-                {ib.state === "ready"
-                  ? <button className="btn btn-secondary" disabled={!online || !!busy} onClick={() => run("inbox", checkInbox).then((r) => r && toast(r.imported ? `${pl(r.imported, "item")} from your Inbox saved to the backlog as Name needed` : "Nothing new in your Inbox"))}>
+                {ib.state === "ready" && !gone
+                  ? <button className="btn btn-secondary" disabled={!online || !!busy} onClick={() => run("inbox", check).then((r) => r && toast(r.imported ? `${pl(r.imported, "item")} from your Inbox saved to the backlog as Name needed` : "Nothing new in your Inbox"))}>
                       {busy === "inbox" ? <Dots /> : "Check now"}</button>
-                  : <button className="btn btn-primary" disabled={!online || !!busy} onClick={() => run("inbox", createInbox).then((r) => r && toast("Runout Inbox created in your Spotify playlists"))}>
+                  : <button className="btn btn-primary" disabled={!online || !!busy} onClick={() => run("inbox", createInbox).then((r) => { if (r) { setIbGone(false); toast("Runout Inbox created in your Spotify playlists"); } })}>
                       {busy === "inbox" ? <Dots /> : "Create Inbox"}</button>}
               </div>}
               {connected && !online && <span className="help">Check the Inbox when you’re back online.</span>}

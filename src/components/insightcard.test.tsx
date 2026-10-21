@@ -19,6 +19,10 @@ describe("InsightCard", () => {
     render(<InsightCard title="t" res={res({ sources: ["S"], freshness: { logger_last_event: null, export_latest_event: null } })}>x</InsightCard>);
     expect(screen.getByText("From: Desktop log (none yet).")).toBeTruthy();
   });
+  it("a card whose response hasn't arrived (loading or failed) still says its sources are unknown", () => {
+    render(<InsightCard title="t" res={undefined}>x</InsightCard>);
+    expect(screen.getByText("Sources unknown.")).toBeTruthy();
+  });
   it("a response lacking sources or freshness never passes as sourced", () => {
     const { rerender } = render(<InsightCard title="t" res={{ data: null } as unknown as Sourced<null>}>x</InsightCard>);
     expect(screen.getByText("Sources unknown.")).toBeTruthy();
