@@ -130,7 +130,9 @@ function Detail({ it }: { it: ItemDetail }) {
     <div className="flex flex-wrap gap-8 items-start">
       <div className="field"><span className="label">Your rating</span>
         <Rating label={`Your rating for ${name}`} value={it.rating} onChange={async (v) => {
-          const old = it.rating; if (await patch("Couldn’t save your rating.", { rating: v })) toast(v ? `Rated ${name} ${v}` : `Rating removed from ${name}`, () => updateItem(it.id, { rating: old }));
+          const old = it.rating; const ok = await patch("Couldn’t save your rating.", { rating: v });
+          if (ok) toast(v ? `Rated ${name} ${v}` : `Rating removed from ${name}`, () => updateItem(it.id, { rating: old }));
+          return ok;
         }} />
         <span className="kbd">Arrow keys change by half a star</span></div>
       <div className="field"><span className="label">Tags</span>

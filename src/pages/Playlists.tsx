@@ -1,7 +1,7 @@
 // SC-11 Playlists: read-only check-up from the export (R2, CAP-22) and Studio live from Spotify (R3, CAP-29, 30).
 // Studio suggests cuts from your own ratings and duplicates only; it never shows listening stats (D27).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useNavigationType, useParams, useSearchParams } from "react-router-dom";
 import * as api from "../api";
 import type { AppError, Draft, StudioDiff } from "../api";
 import { Attribution, Dialog, Dots, Empty, ErrorBanner, Seg, SkelRows, SourceTag, Stat, Stars, useToast } from "../components/ui";
@@ -23,8 +23,9 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
   // (M7 installed run: focus fell to <body>).
   const head = useRef<HTMLDivElement>(null);
   const loc = useLocation();
-  useEffect(() => {
-    if ((loc.state as { modeFocus?: boolean } | null)?.modeFocus) head.current?.querySelector<HTMLElement>('[aria-label="Mode"] [aria-selected="true"]')?.focus();
+  const how = useNavigationType();
+  useEffect(() => { // only right after the switch itself: Back/Forward or a reload replays the history state
+    if (how !== "POP" && (loc.state as { modeFocus?: boolean } | null)?.modeFocus) head.current?.querySelector<HTMLElement>('[aria-label="Mode"] [aria-selected="true"]')?.focus();
   }, [loc.key, loc.state]);
   return (
     <>

@@ -30,4 +30,45 @@ describe("Rating keyboard", () => {
     await act(async () => { vi.advanceTimersByTime(400); });
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("leaving within the debounce still saves the keyed value", () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    const { unmount } = render(<Rating value={2} onChange={onChange} />);
+    const s = screen.getByRole("slider");
+    fireEvent.keyDown(s, { key: "ArrowRight" });
+    fireEvent.keyDown(s, { key: "ArrowRight" });
+    unmount();
+    expect(onChange).toHaveBeenCalledWith(3);
+  });
+
+  it("a click after arrows wins and cancels the pending keys", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    render(<Rating value={2} onChange={onChange} />);
+    const s = screen.getByRole("slider");
+    fireEvent.keyDown(s, { key: "ArrowRight" });
+    fireEvent.keyDown(s, { key: "ArrowRight" });
+    fireEvent.click(s.querySelectorAll("button")[4], { clientX: 9999 }); // right half of the 5th star
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith(5);
+  });
+
+  it("keeps the draft until the saved value arrives, and reverts on a failed save", async () => {
+    vi.useFakeTimers();
+    let ok = true;
+    const onChange = vi.fn(async () => ok);
+    const { rerender } = render(<Rating value={2} onChange={onChange} />);
+    const s = screen.getByRole("slider");
+    fireEvent.keyDown(s, { key: "ArrowRight" });
+    await act(async () => { vi.advanceTimersByTime(400); });
+    expect(s.getAttribute("aria-valuenow")).toBe("2.5"); // saved, refetch not back yet: no flash of the old value
+    rerender(<Rating value={2.5} onChange={onChange} />);
+    expect(s.getAttribute("aria-valuenow")).toBe("2.5");
+    ok = false;
+    fireEvent.keyDown(s, { key: "ArrowRight" });
+    await act(async () => { vi.advanceTimersByTime(400); });
+    expect(s.getAttribute("aria-valuenow")).toBe("2.5"); // failed: back to the saved value
+  });
 });

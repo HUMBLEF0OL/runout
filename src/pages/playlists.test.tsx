@@ -1,7 +1,7 @@
 // Studio (SC-11) write paths: keep/cut edits survive unrelated refetches and failed applies that wrote nothing,
 // and each failure shows its own banner (audit M5 r5).
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import * as api from "../api";
 import { ToastProvider } from "../components/ui";
@@ -149,4 +149,15 @@ describe("Mode switch keyboard", () => {
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Studio (live from Spotify)", selected: true }));
     expect(studioTab).toBeTruthy();
   });
+
+  it("Back to an entry that carried the flag doesn't move focus", async () => {
+    render(<ToastProvider><MemoryRouter initialEntries={["/playlists/checkup", { pathname: "/playlists/studio", state: { modeFocus: true } }, "/elsewhere"]} initialIndex={2}>
+      <Routes><Route path="/playlists/:tab" element={<Playlists />} /><Route path="/elsewhere" element={<BackButton />} /></Routes></MemoryRouter></ToastProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await screen.findByRole("tab", { name: "Studio (live from Spotify)", selected: true }, { timeout: 3000 });
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(document.activeElement?.getAttribute("role")).not.toBe("tab");
+  });
 });
+
+function BackButton() { const nav = useNavigate(); return <button onClick={() => nav(-1)}>Back</button>; }

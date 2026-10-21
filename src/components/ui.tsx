@@ -123,19 +123,37 @@ export function TagChips({ tags, onRemove, onAdd }: { tags: string[]; onRemove?:
 }
 
 /* ------------------------------------------------------------------ opinion controls */
-/** 5 stars with halves; role="slider", arrows ±0.5 (DESIGN §5). Arrow keys move a local value and save once, 400 ms
- *  after the last key: on Rust each save refetches, and keys read from the saved value dropped presses (M7 run). */
-export function Rating({ value, onChange, label = "Your rating" }: { value: number | null; onChange: (v: number | null) => void | Promise<unknown>; label?: string }) {
+/** 5 stars with halves; role="slider", arrows ±0.5 (DESIGN §5). The control shows a local draft: on Rust each save
+ *  refetches, and keys read from the saved value dropped presses (M7 run). Arrows save once, 400 ms after the last key
+ *  (or at once on unmount); a click saves at once and cancels pending keys. The draft stays until `value` catches up
+ *  with what was sent, or the save fails (`onChange` rejects or resolves `false`). */
+export function Rating({ value, onChange, label = "Your rating" }: { value: number | null; onChange: (v: number | null) => unknown; label?: string }) {
   const [draft, setDraft] = useState<number | null>();
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const pending = useRef<number | null | undefined>(undefined); // keyed, not yet sent
+  const sent = useRef<number | null | undefined>(undefined); // sent, not yet seen in `value`
+  const latest = useRef({ value, onChange });
+  latest.current = { value, onChange };
+  const send = (n: number | null) => {
+    clearTimeout(timer.current);
+    pending.current = undefined;
+    const base = sent.current !== undefined ? sent.current : latest.current.value;
+    if (n === base) { if (n === latest.current.value) { sent.current = undefined; setDraft(undefined); } return; }
+    sent.current = n;
+    const fail = () => { if (sent.current === n) { sent.current = undefined; setDraft(undefined); } };
+    void Promise.resolve(latest.current.onChange(n)).then((r) => { if (r === false) fail(); }, fail);
+  };
+  useEffect(() => { // the refetch brought what was sent: show the saved value again
+    if (pending.current === undefined && (sent.current === undefined || sent.current === value)) { sent.current = undefined; setDraft(undefined); }
+  }, [value]);
+  useEffect(() => () => { if (pending.current !== undefined) send(pending.current); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = draft === undefined ? value : draft;
   const v = shown ?? 0;
   const key = (n: number) => {
     setDraft(n || null);
+    pending.current = n || null;
     clearTimeout(timer.current);
-    // The draft shows until the save settles (the refetch has the new value by then; a failed save shows the old one).
-    timer.current = setTimeout(() => { void Promise.resolve((n || null) !== value && onChange(n || null)).finally(() => setDraft(undefined)); }, 400);
+    timer.current = setTimeout(() => send(n || null), 400);
   };
   return (
     <div className="rating" role="slider" tabIndex={0} aria-label={label} aria-valuemin={0} aria-valuemax={5} aria-valuenow={v}
@@ -143,7 +161,7 @@ export function Rating({ value, onChange, label = "Your rating" }: { value: numb
       onKeyDown={(e) => { const n = ratingKey(v, e.key); if (n != null) { e.preventDefault(); key(n); } }}>
       {[0, 1, 2, 3, 4].map((i) => (
         <button key={i} type="button" tabIndex={-1} aria-hidden="true" className={v >= i + 1 ? "on" : v >= i + 0.5 ? "half" : ""}
-          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onChange(ratingClick(value, i, e.clientX - r.left < r.width / 2)); }}>★</button>
+          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); const n = ratingClick(shown, i, e.clientX - r.left < r.width / 2); setDraft(n); send(n); }}>★</button>
       ))}
     </div>
   );

@@ -221,10 +221,10 @@ Work items
 
 Acceptance
 - [ ] All BRD §13.2 and §13.3 criteria pass.
-- [ ] Journeys F and G pass on real data.
-- [ ] Every insight shows sources and freshness.
+- [ ] Journeys F and G pass on real data. *(F passed 21 Oct 2026 on the installed build: import of the real Extended Streaming History, 180,149 plays (48 duplicates), re-import adds 0, insights, recent plays save + rate, unmatched link: 6/6. The native file dialog is not driven (F1 calls `preview_import`/`run_import`, the commands the page calls after the pick). G waits on a Spotify sign-in.)*
+- [x] Every insight shows sources and freshness. *(21 Oct 2026, installed build on the real export: journey F2 walks all four Insights tabs by keyboard, every card has a "From:" tag, none "Sources unknown.", each listening source shows its real date (export to 17 Oct 2026), rail freshness box too; `insightcard.test.tsx` fails a card without sources/freshness)*
 - [ ] Top items and recent plays: “Add to backlog” creates a promoted record (FR-041); save then remove an album in the Spotify library (FR-042).
-- [ ] Unplug network → all MVP and R2 features work.
+- [x] Unplug network → all MVP and R2 features work. *(21 Oct 2026, installed build with a dead proxy for Rust and WebView2 (`launch({offline:true})`), real imported history: journey O 7/7: offline banner, Backlog, Item, Insights with sources, Recent plays, Rediscover, Settings (Spotify/Inbox say offline), From Spotify and Studio show the offline/connect state)*
 - [x] `src/mocks/` holds no code used by the shipped build. *(21 Oct 2026: check.py "no mocks in build" builds the production bundle with sourcemaps and fails on any `src/mocks` source; proven red with one `devState` import; `useRelease` no longer imports `devState` in a real build)*
 - [ ] Runout Inbox: connecting creates a private “Runout Inbox”; a track added to it on the phone (mobile data, not the home Wi-Fi) lands in the backlog as “name needed” and leaves the Inbox; adding a whole album lands one album item; deleting the Inbox shows **Create Inbox**, never a silent re-create.
 
