@@ -126,8 +126,9 @@ export function TagChips({ tags, onRemove, onAdd }: { tags: string[]; onRemove?:
 /** 5 stars with halves; role="slider", arrows ±0.5 (DESIGN §5). The control shows a local draft: on Rust each save
  *  refetches, and keys read from the saved value dropped presses (M7 run). Arrows save once, 400 ms after the last key
  *  (or at once on unmount); a click saves at once and cancels pending keys. The draft stays until `value` catches up
- *  with what was sent, or the save fails (`onChange` rejects or resolves `false`). */
-export function Rating({ value, onChange, label = "Your rating" }: { value: number | null; onChange: (v: number | null) => unknown; label?: string }) {
+ *  with what was sent, or the save fails (`onChange` rejects or resolves `false`). `prev` is the value this save
+ *  replaces (the last one sent, when its refetch hasn't landed yet), for undo. */
+export function Rating({ value, onChange, label = "Your rating" }: { value: number | null; onChange: (v: number | null, prev: number | null) => unknown; label?: string }) {
   const [draft, setDraft] = useState<number | null>();
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const pending = useRef<number | null | undefined>(undefined); // keyed, not yet sent
@@ -140,8 +141,8 @@ export function Rating({ value, onChange, label = "Your rating" }: { value: numb
     const base = sent.current !== undefined ? sent.current : latest.current.value;
     if (n === base) { if (n === latest.current.value) { sent.current = undefined; setDraft(undefined); } return; }
     sent.current = n;
-    const fail = () => { if (sent.current === n) { sent.current = undefined; setDraft(undefined); } };
-    void Promise.resolve(latest.current.onChange(n)).then((r) => { if (r === false) fail(); }, fail);
+    const fail = () => { if (sent.current === n) { sent.current = undefined; if (pending.current === undefined) setDraft(undefined); } };
+    void Promise.resolve(latest.current.onChange(n, base)).then((r) => { if (r === false) fail(); }, fail);
   };
   useEffect(() => { // the refetch brought what was sent: show the saved value again
     if (pending.current === undefined && (sent.current === undefined || sent.current === value)) { sent.current = undefined; setDraft(undefined); }

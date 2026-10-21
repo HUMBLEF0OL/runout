@@ -16,7 +16,7 @@ describe("Rating keyboard", () => {
     expect(s.getAttribute("aria-valuenow")).toBe("4");
     await act(async () => { vi.advanceTimersByTime(400); });
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange).toHaveBeenCalledWith(4);
+    expect(onChange).toHaveBeenCalledWith(4, null);
     expect(s.getAttribute("aria-valuenow")).toBe("4"); // still the draft while the save runs
   });
 
@@ -39,7 +39,7 @@ describe("Rating keyboard", () => {
     fireEvent.keyDown(s, { key: "ArrowRight" });
     fireEvent.keyDown(s, { key: "ArrowRight" });
     unmount();
-    expect(onChange).toHaveBeenCalledWith(3);
+    expect(onChange).toHaveBeenCalledWith(3, 2);
   });
 
   it("a click after arrows wins and cancels the pending keys", async () => {
@@ -52,7 +52,7 @@ describe("Rating keyboard", () => {
     fireEvent.click(s.querySelectorAll("button")[4], { clientX: 9999 }); // right half of the 5th star
     await act(async () => { vi.advanceTimersByTime(1000); });
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange).toHaveBeenLastCalledWith(5);
+    expect(onChange).toHaveBeenLastCalledWith(5, 2);
   });
 
   it("keeps the draft until the saved value arrives, and reverts on a failed save", async () => {
@@ -70,5 +70,21 @@ describe("Rating keyboard", () => {
     fireEvent.keyDown(s, { key: "ArrowRight" });
     await act(async () => { vi.advanceTimersByTime(400); });
     expect(s.getAttribute("aria-valuenow")).toBe("2.5"); // failed: back to the saved value
+  });
+
+  it("a failed save doesn't drop arrows still pending, and each save names the value it replaces", async () => {
+    vi.useFakeTimers();
+    let reject!: () => void;
+    const onChange = vi.fn((_v: number | null, _prev: number | null) => new Promise((_, j) => { reject = () => j(new Error("x")); }));
+    render(<Rating value={2} onChange={onChange} />);
+    const s = screen.getByRole("slider");
+    fireEvent.keyDown(s, { key: "ArrowRight" });
+    await act(async () => { vi.advanceTimersByTime(400); }); // 2.5 sent, still in flight
+    fireEvent.keyDown(s, { key: "ArrowRight" }); // 3 pending
+    await act(async () => { reject(); });
+    expect(s.getAttribute("aria-valuenow")).toBe("3");
+    expect(onChange).toHaveBeenLastCalledWith(2.5, 2);
+    await act(async () => { vi.advanceTimersByTime(400); });
+    expect(onChange).toHaveBeenLastCalledWith(3, 2); // the 2.5 save failed: 3 replaces the saved 2
   });
 });
