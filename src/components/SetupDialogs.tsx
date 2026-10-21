@@ -42,8 +42,12 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
     </Dialog>);
   if (step === "fail") return (
     <Dialog title="Couldn’t connect" onClose={onClose} footer={<><button className="btn btn-secondary" onClick={onClose}>Close</button><button className="btn btn-primary" onClick={go}>Try again</button></>}>
-      <div className="banner err" role="alert"><span><b className="text-danger">Spotify said no.</b> <span className="text-text-2">{error?.code === "offline" ? error.message
-        : "Developer access needs an active Premium plan on the app owner’s account, and your account added under User Management."}</span></span></div>
+      {/* Premium/User Management is only the cause when Spotify itself refused (403). Anything else, e.g. the client ID
+          not set (spotify_auth, message names RUNOUT_SPOTIFY_CLIENT_ID), shows Rust's message: the old blanket Premium
+          copy hid a missing env var on the M7 installed build (21 Oct 2026). */}
+      <div className="banner err" role="alert"><span>{error?.code === "spotify_forbidden"
+        ? <><b className="text-danger">Spotify said no.</b> <span className="text-text-2">Developer access needs an active Premium plan on the app owner’s account, and your account added under User Management.</span></>
+        : <><b className="text-danger">Couldn’t start the sign-in.</b> <span className="text-text-2">{error?.message ?? "Spotify didn’t finish the sign-in. Try again."}</span></>}</span></div>
     </Dialog>);
   if (step === "done") return (
     <Dialog title="Spotify connected" onClose={onClose} footer={<button className="btn btn-primary" onClick={onClose}>Done</button>}>
