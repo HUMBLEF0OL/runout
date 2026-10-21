@@ -1,7 +1,7 @@
 // SC-11 Playlists: read-only check-up from the export (R2, CAP-22) and Studio live from Spotify (R3, CAP-29, 30).
 // Studio suggests cuts from your own ratings and duplicates only; it never shows listening stats (D27).
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import * as api from "../api";
 import type { AppError, Draft, StudioDiff } from "../api";
 import { Attribution, Dialog, Dots, Empty, ErrorBanner, Seg, SkelRows, SourceTag, Stat, Stars, useToast } from "../components/ui";
@@ -19,6 +19,13 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
   const [sp] = useSearchParams();
   const fresh = useApi(api.getFreshness);
   const exp = fresh.data?.export_latest_event;
+  // Check-up and Studio are separate pages, so arrowing the Mode switch remounts it: put focus back on the new tab
+  // (M7 installed run: focus fell to <body>).
+  const head = useRef<HTMLDivElement>(null);
+  const loc = useLocation();
+  useEffect(() => {
+    if ((loc.state as { modeFocus?: boolean } | null)?.modeFocus) head.current?.querySelector<HTMLElement>('[aria-label="Mode"] [aria-selected="true"]')?.focus();
+  }, [loc.key, loc.state]);
   return (
     <>
       <Topbar />
@@ -28,9 +35,9 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
           {list}
         </nav>
         <div className="flex-[1_1_620px] min-w-0 flex flex-col gap-3.5">
-          <div className="page-head">
+          <div className="page-head" ref={head}>
             <div className="flex flex-col gap-1"><h1 className="page-title">{title}</h1>{subline && <span className="text-muted">{subline}</span>}</div>
-            {r3 && <Seg label="Mode" value={tab} onChange={(t) => nav(`/playlists/${t}?${sp}`)}
+            {r3 && <Seg label="Mode" value={tab} onChange={(t) => nav(`/playlists/${t}?${sp}`, { state: { modeFocus: true } })}
               options={[["checkup", exp ? `Check-up (export of ${day(exp)})` : "Check-up"], ["studio", "Studio (live from Spotify)"]]} />}
           </div>
           {children}

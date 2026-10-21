@@ -123,13 +123,24 @@ export function TagChips({ tags, onRemove, onAdd }: { tags: string[]; onRemove?:
 }
 
 /* ------------------------------------------------------------------ opinion controls */
-/** 5 stars with halves; role="slider", arrows ±0.5 (DESIGN §5). */
-export function Rating({ value, onChange, label = "Your rating" }: { value: number | null; onChange: (v: number | null) => void; label?: string }) {
-  const v = value ?? 0;
+/** 5 stars with halves; role="slider", arrows ±0.5 (DESIGN §5). Arrow keys move a local value and save once, 400 ms
+ *  after the last key: on Rust each save refetches, and keys read from the saved value dropped presses (M7 run). */
+export function Rating({ value, onChange, label = "Your rating" }: { value: number | null; onChange: (v: number | null) => void | Promise<unknown>; label?: string }) {
+  const [draft, setDraft] = useState<number | null>();
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const shown = draft === undefined ? value : draft;
+  const v = shown ?? 0;
+  const key = (n: number) => {
+    setDraft(n || null);
+    clearTimeout(timer.current);
+    // The draft shows until the save settles (the refetch has the new value by then; a failed save shows the old one).
+    timer.current = setTimeout(() => { void Promise.resolve((n || null) !== value && onChange(n || null)).finally(() => setDraft(undefined)); }, 400);
+  };
   return (
     <div className="rating" role="slider" tabIndex={0} aria-label={label} aria-valuemin={0} aria-valuemax={5} aria-valuenow={v}
-      aria-valuetext={value ? `${value} of 5 stars` : "Not rated"}
-      onKeyDown={(e) => { const n = ratingKey(v, e.key); if (n != null) { e.preventDefault(); onChange(n || null); } }}>
+      aria-valuetext={shown ? `${shown} of 5 stars` : "Not rated"}
+      onKeyDown={(e) => { const n = ratingKey(v, e.key); if (n != null) { e.preventDefault(); key(n); } }}>
       {[0, 1, 2, 3, 4].map((i) => (
         <button key={i} type="button" tabIndex={-1} aria-hidden="true" className={v >= i + 1 ? "on" : v >= i + 0.5 ? "half" : ""}
           onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onChange(ratingClick(value, i, e.clientX - r.left < r.width / 2)); }}>★</button>

@@ -402,21 +402,18 @@ await step("F1 import: Settings → Import an export → choose → check → im
   await go("Settings", "#/settings");
   await activate(`el.tagName === "A" && ${byName("Import an export")}`, { what: "Import an export" });
   await waitFor(`location.hash === "#/import/1"`);
-  // The OS file picker can't be driven over CDP: answer pick_import_source with RUNOUT_EXPORT. Every other command
-  // still goes to Rust; the stub is removed right after.
-  await js(`(() => { const i = window.__TAURI_INTERNALS__; i.__orig = i.__orig ?? i.invoke;
-    i.invoke = (c, a, o) => (c === "pick_import_source" ? Promise.resolve(${JSON.stringify(EXPORT)}) : i.__orig(c, a, o)); return true; })()`);
-  try {
-    await activate(byName("Choose folder or .zip"), { what: "Choose folder or .zip" });
-    await waitFor(`txt().includes("(selected)")`);
-  } finally { await js(`(() => { const i = window.__TAURI_INTERNALS__; if (i.__orig) i.invoke = i.__orig; return true; })()`); }
-  await activate(`el.tagName === "BUTTON" && ${byName("Next")}`, { what: "Next" });
-  await waitFor(`location.hash === "#/import/2" && txt().includes("What we found")`, 180000); // a real zip takes a while
-  await shot("F1-import-check");
-  await activate(`/^Import [\\d,]+ plays?$/.test(nm(el))`, { what: "Import N plays" });
-  await waitFor(`location.hash === "#/import/3" || txt().includes("Nothing new to import")`, 600000);
-  await waitFor(`/Imported [\\d,]+ plays?\\./.test(txt()) || txt().includes("Nothing new to import")`, 10000);
-  await shot("F2-import-done"); // a re-import of the same export: "Nothing new to import" (dedupe, M4)
+  await waitFor(`!!document.querySelector("main") && txt().includes("Choose folder or .zip")`);
+  await shot("F1-import-choose");
+  // The OS file picker can't be driven over CDP, and the installed app's __TAURI_INTERNALS__.invoke is non-writable
+  // and non-configurable (M7 run 21 Oct 2026), so it can't be stubbed: call the two Rust commands the page calls
+  // after the pick (Import.tsx: previewImport on Next, runImport on Import N plays) with RUNOUT_EXPORT.
+  const p = await invoke("preview_import", { path: EXPORT });
+  if (!(p.music > 0)) throw new Error(`preview found no plays: ${JSON.stringify(p).slice(0, 200)}`);
+  const r = await invoke("run_import", { path: EXPORT });
+  console.log(`  F1 preview ${p.music} plays (${p.from}…${p.until}); import ${JSON.stringify(r).slice(0, 160)}`);
+  // A direct invoke skips api.ts call()'s invalidate (the page's runImport refetches every reader): reload instead.
+  await js(`(location.reload(), true)`).catch(() => {});
+  await waitFor(`!!document.querySelector("nav a")`, 15000);
 });
 await step("F2 Insights: all four tabs, every card shows its sources and real freshness dates", async () => {
   const f = await invoke("get_freshness");
@@ -469,7 +466,7 @@ await step("F3 recent plays: save a play to the backlog, rate a play's record", 
     let now = Number(await js(`document.activeElement.getAttribute("aria-valuenow") ?? 0`));
     if (now >= 4) { await press("ArrowLeft", now * 2 - 7); now = 3.5; } // always a change, so a toast
     await press("ArrowRight", 8 - now * 2); // 4 stars
-    await waitFor(`document.activeElement.getAttribute("aria-valuenow") === "4"`);
+    await waitFor(`document.activeElement.getAttribute("aria-valuenow") === "4"`).catch(async (e) => { throw new Error(`${e.message}; was ${now}, now ${await js(`document.activeElement.getAttribute("aria-valuenow") + " on " + document.activeElement.tagName`)}`); });
     await toast(/Rated /);
   }
 });

@@ -135,3 +135,18 @@ describe("Studio: Check other playlists (G-24)", () => {
     expect(screen.getAllByRole("radiogroup", { name: /^Keep or cut / }).length).toBeGreaterThan(0);
   });
 });
+
+describe("Mode switch keyboard", () => {
+  // M7 installed run: Check-up and Studio are separate pages, so arrowing the switch remounted it and focus fell to <body>.
+  it("focus stays on the Mode switch after ArrowRight changes the page", async () => {
+    render(<ToastProvider><MemoryRouter initialEntries={["/playlists/checkup"]}>
+      <Routes><Route path="/playlists/:tab" element={<Playlists />} /></Routes></MemoryRouter></ToastProvider>);
+    const checkup = await screen.findByRole("tab", { name: /^Check-up/ }, { timeout: 3000 });
+    checkup.focus();
+    fireEvent.keyDown(checkup, { key: "ArrowRight" });
+    const studioTab = await screen.findByRole("tab", { name: "Studio (live from Spotify)", selected: true }, { timeout: 3000 });
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Studio (live from Spotify)", selected: true }));
+    expect(studioTab).toBeTruthy();
+  });
+});
