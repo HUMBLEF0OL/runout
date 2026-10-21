@@ -152,8 +152,9 @@ const EXPORT = process.env.RUNOUT_EXPORT;
 const PLAYLIST = process.env.RUNOUT_TEST_PLAYLIST;
 const INBOX = !!process.env.RUNOUT_INBOX;
 const POST = !!process.env.RUNOUT_CAPTURE_POST;
-const NAMED = new Set((process.env.RUNOUT_JOURNEYS ?? "").toUpperCase()); // a named journey must not skip entirely
-const J = new Set(OFFLINE ? ["O"] : (process.env.RUNOUT_JOURNEYS ?? `AC${INBOX || POST ? "B" : ""}DEH${EXPORT ? "F" : ""}${PLAYLIST ? "G" : ""}`).toUpperCase());
+const letters = (v) => v.toUpperCase().replace(/[^A-Z]/g, ""); // "A, B" / "a b" / "AB" all mean A and B
+const NAMED = new Set(letters(process.env.RUNOUT_JOURNEYS ?? "")); // a named journey must not skip entirely
+const J = new Set(OFFLINE ? ["O"] : letters(process.env.RUNOUT_JOURNEYS ?? `AC${INBOX || POST ? "B" : ""}DEH${EXPORT ? "F" : ""}${PLAYLIST ? "G" : ""}`));
 const IDS = process.env.RUNOUT_IDS ? JSON.parse(readFileSync(process.env.RUNOUT_IDS)) : { album: [], track: [], artist: [] };
 if (["A", "D"].some((x) => J.has(x)) && !process.env.RUNOUT_IDS) { console.log("FAIL journeys A and D need RUNOUT_IDS"); done(1); }
 const invoke = (cmd, args = {}) => js(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(cmd)}, ${JSON.stringify(args)})`);
@@ -607,8 +608,8 @@ await step("G7 an album not yet in your Spotify library: Saved in your Spotify l
       if (want) await shot("G6-saved-in-spotify");
     }
   } finally {
-    // Leave the account as it was: the album was not saved before this step.
-    if ((await invoke("library_contains", { uris: [al.spotify_uri] }).catch(() => [false]))[0]) await invoke("remove_from_spotify_library", { uris: [al.spotify_uri] });
+    // Leave the account as it was: the album was not saved before this step, so remove it whatever happened above.
+    await invoke("remove_from_spotify_library", { uris: [al.spotify_uri] });
   }
 });
 }

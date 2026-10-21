@@ -278,25 +278,26 @@ fn plan(entries: &[Value]) -> Plan {
 }
 
 /// Insert each item not already in the library (one transaction). A track that was already in the
-/// Inbox when its album was imported from it by an *earlier* check (album `added_via = inbox`,
-/// entry `added_at` ≤ its `created_at` < `started`, this check's start) counts as skipped: a
-/// leftover of that batch (a batch over 100 tracks spans DELETEs, or a removal failed). Within one
-/// check a batch is one group, so an album created by this check covers nothing: a single track of
-/// it added after the batch is imported. A track added later, or with no `added_at`, is imported
+/// Inbox when its album was imported from it by an earlier check, not this import (album
+/// `added_via = inbox`, entry `added_at` ≤ its `created_at`) counts as skipped: a leftover of that
+/// batch (a batch over 100 tracks spans DELETEs, or a removal failed). Within one check a batch is
+/// one group, so an album inserted by this call covers nothing: a single track of it added after
+/// the batch is imported. A track added later, or with no `added_at`, is imported
 /// (FR-046).
 // ponytail: second-resolution timestamps from two clocks (Spotify's, this PC's). Clock skew can tip
 // an entry added within seconds of an earlier check's import either way (a deliberate add skipped,
 // or a leftover imported as a stray track); the upgrade is storing the batch's entry URIs with the album.
-fn import(st: &AppState, add: &[Add], started: &str, out: &mut Checked) -> Result<()> {
+fn import(st: &AppState, add: &[Add], out: &mut Checked) -> Result<()> {
     let mut db = st.db.lock().unwrap();
     let tx = db.transaction()?;
+    let mut fresh: HashSet<&str> = HashSet::new(); // albums inserted by this call
     for (kind, uri, album) in add {
         let covered = match album {
+            Some((a, _)) if fresh.contains(a.as_str()) => false,
             Some((a, at)) => tx
                 .query_row(
-                    "SELECT 1 FROM item WHERE spotify_uri = ?1 AND added_via = 'inbox'
-                     AND created_at >= ?2 AND created_at < ?3",
-                    [a.as_str(), at.as_str(), started],
+                    "SELECT 1 FROM item WHERE spotify_uri = ?1 AND added_via = 'inbox' AND created_at >= ?2",
+                    [a, at],
                     |_| Ok(()),
                 )
                 .optional()?
@@ -311,6 +312,7 @@ fn import(st: &AppState, add: &[Add], started: &str, out: &mut Checked) -> Resul
         out.imported += 1;
         if *kind == ItemType::Album {
             out.albums += 1;
+            fresh.insert(uri);
         }
     }
     tx.commit()?;
@@ -360,7 +362,7 @@ pub async fn check(st: &AppState, sp: &Spotify) -> Result<Checked> {
     }
 
     let p = plan(&entries);
-    import(st, &p.add, &started, &mut out)?;
+    import(st, &p.add, &mut out)?;
     // Imported (or skipped) entries leave the Inbox; a failed removal waits for the next check
     // (import is idempotent by URI). Every copy of a URI goes (kb/spotify.md).
     for c in chunks(&p.remove) {
@@ -416,7 +418,7 @@ async fn saved_albums(st: &AppState, sp: &Spotify, after: &str, out: &mut Checke
         newer
     })
     .await?;
-    import(st, &add, "", out) // albums only: no track cover rule
+    import(st, &add, out)
 }
 
 /// Artists followed since the previous read, diffed against the cached baseline. No baseline (just
@@ -445,7 +447,7 @@ async fn followed(st: &AppState, sp: &Spotify, out: &mut Checked) -> Result<()> 
             .filter_map(|a| check_uri(&format!("spotify:artist:{a}"), &["artist"]).ok())
             .map(|u| (ItemType::Artist, u, None))
             .collect();
-        import(st, &add, "", out)?; // artists only: no track cover rule
+        import(st, &add, out)?;
     }
     sp.with_cache(|c| cache::put(c, FOLLOWED, "inbox_followed", &json!(ids), t))
 }
@@ -714,15 +716,7 @@ mod tests {
             _ => 0,
         };
         assert_eq!((n(2), n(3)), (98, 5), "the batch goes in one DELETE");
-        // the next check runs ~15 min later: the album was created before it started
-        st.db
-            .lock()
-            .unwrap()
-            .execute(
-                "UPDATE item SET created_at = '2020-06-01T00:00:00Z' WHERE type = 'album'",
-                [],
-            )
-            .unwrap();
+        // the next check may run in the same second (Check now queued behind the timer)
         // what a split chunk would have left (3 of 5 = 60 %): still no stray tracks
         stub.push(200, &listed());
         stub.push(200, &page(batch[2..].to_vec()));

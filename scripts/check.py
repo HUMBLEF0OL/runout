@@ -552,25 +552,36 @@ def check_no_mocks_in_build():
 
 
 SPOTIFY_WRITES = re.compile(
-    r'invoke\(\s*"(apply_studio_draft|undo_last_apply|save_to_spotify_library|remove_from_spotify_library|check_inbox|create_inbox)"'
-    r'|(activate|byName|nameStarts)\(.*"(Check now|Create Inbox|Undo last apply|Saved in your Spotify library|Apply \d)'
-    r'|activate\(.*Apply \\+d')
+    r"""invoke\(\s*["'`](apply_studio_draft|undo_last_apply|save_to_spotify_library|remove_from_spotify_library|check_inbox"""
+    r"""|create_inbox|create_playlist_from_filter|create_playlist_from_items|connect_spotify)["'`]"""
+    r"""|(activate|byName|nameStarts)\(.*["'`](Check now|Create Inbox|Create playlist|Undo last apply|Saved in your Spotify library|Apply \d)"""
+    r"""|activate\(.*Apply \\+d""")
+# invoke( with a computed command can hide a write: only the wrapper definitions may do it.
+DYNAMIC_INVOKE = re.compile(r"""\binvoke\(\s*(?!["'`])""")
+GATE = re.compile(r"(?<![!\w])(PLAYLIST|INBOX)\b")
 
 
 def check_installed_spotify_writes():
     # M7 review r3: the installed journeys run on the user's real Spotify account. Every Spotify write (a command or
     # the UI control that sends it) sits under a top-level `if (` that names PLAYLIST (RUNOUT_TEST_PLAYLIST) or INBOX
-    # (RUNOUT_INBOX). Heuristic: the nearest column-0 `if (` above the line is its gate.
+    # (RUNOUT_INBOX), not negated, and opening a block (or carrying the write on its own line). Heuristic: the
+    # nearest column-0 `if (` above the line is its gate.
     bad = []
     for f in sorted((ROOT / "scripts" / "installed").glob("*.mjs")):
         lines = f.read_text(encoding="utf-8").splitlines()
         text = "\n".join(lines)
         for i, line in enumerate(lines):
-            if line.lstrip().startswith("//") or not SPOTIFY_WRITES.search(line):
+            if line.lstrip().startswith("//"):
                 continue
-            gate = next((lines[j] for j in range(i, -1, -1) if lines[j].startswith("if (")), "")
-            ok = (re.search(r"\bPLAYLIST\b", gate) and "process.env.RUNOUT_TEST_PLAYLIST" in text) or \
-                 (re.search(r"\bINBOX\b", gate) and "process.env.RUNOUT_INBOX" in text)
+            if DYNAMIC_INVOKE.search(line) and "const invoke = (" not in line:
+                bad.append(f"{f.relative_to(ROOT)}:{i + 1}: invoke( with a non-literal command: {line.strip()[:90]}")
+            if not SPOTIFY_WRITES.search(line):
+                continue
+            j = next((j for j in range(i, -1, -1) if lines[j].startswith("if (")), None)
+            gate = lines[j] if j is not None else ""
+            names = {m.group(1) for m in GATE.finditer(gate)}
+            ok = (("PLAYLIST" in names and "process.env.RUNOUT_TEST_PLAYLIST" in text) or
+                  ("INBOX" in names and "process.env.RUNOUT_INBOX" in text)) and (gate.rstrip().endswith("{") or j == i)
             if not ok:
                 bad.append(f"{f.relative_to(ROOT)}:{i + 1}: Spotify write not gated by RUNOUT_TEST_PLAYLIST/RUNOUT_INBOX: {line.strip()[:90]}")
     if bad:
