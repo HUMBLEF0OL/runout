@@ -29,6 +29,8 @@ pub use client::{Body, HttpReq, HttpResp, Transport};
 /// Env var holding the developer app's client ID (never in the repo, never logged; KB spotify.md).
 /// Optional: the Connect dialog saves a pasted one to `cleanup::CLIENT_ID_FILE` instead.
 pub const CLIENT_ID_ENV: &str = "RUNOUT_SPOTIFY_CLIENT_ID";
+/// Baked in at build time by build.rs (env var or `src-tauri/spotify_client_id.local`), if set.
+const BUILTIN_CLIENT_ID: Option<&str> = option_env!("RUNOUT_BUILTIN_CLIENT_ID");
 /// `spotify_auth` detail when no client ID is set: the Connect dialog then asks for one.
 pub const NO_CLIENT_ID: &str = "client_id";
 
@@ -62,7 +64,8 @@ pub struct Spotify {
     /// delete (or a new sign-in's store) succeeds. While it exists the stored tokens count as
     /// deleted: startup retries the delete instead of signing back in (TSD §5.2 Disconnect).
     pending_delete: PathBuf,
-    /// Test override; production reads [`CLIENT_ID_ENV`], then `client_id_file`, each time.
+    /// Test override; production reads [`CLIENT_ID_ENV`], then `client_id_file`, then
+    /// [`BUILTIN_CLIENT_ID`], each time.
     client_id: Option<String>,
     /// `cleanup::CLIENT_ID_FILE`: the client ID pasted in the Connect dialog.
     client_id_file: PathBuf,
@@ -145,7 +148,7 @@ impl Spotify {
         }
     }
 
-    /// The client ID from the test override, [`CLIENT_ID_ENV`] or the saved file; missing →
+    /// The client ID from the test override, [`CLIENT_ID_ENV`], the saved file or the build; missing →
     /// `spotify_auth` with detail [`NO_CLIENT_ID`].
     pub(crate) fn client_id(&self) -> Result<String> {
         let id = self
@@ -153,6 +156,7 @@ impl Spotify {
             .clone()
             .or_else(|| std::env::var(CLIENT_ID_ENV).ok())
             .or_else(|| std::fs::read_to_string(&self.client_id_file).ok())
+            .or_else(|| BUILTIN_CLIENT_ID.map(str::to_string))
             .unwrap_or_default();
         check_client_id(&id).map_err(|_| {
             AppError::new(

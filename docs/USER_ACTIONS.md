@@ -138,7 +138,7 @@ Steps:
 
 **Why only you:** it's your account consent.
 
-The first time, the installed app asks for your **Client ID** (from U-6): paste it and click **Save and sign in**. It's saved on this PC, so no environment variable is needed. The app opens a Spotify page in your browser listing the permissions. Check that it says *Runout*, then click **Agree**.
+To skip that, put your Client ID in `src-tauri/spotify_client_id.local` (gitignored) before `npm run tauri build`; the exe then has it built in. Otherwise, the first time, the installed app asks for your **Client ID** (from U-6): paste it and click **Save and sign in**. It's saved on this PC, so no environment variable is needed. The app opens a Spotify page in your browser listing the permissions. Check that it says *Runout*, then click **Agree**.
 
 This repeats **every 6 months**, which is Spotify's rule (BRD S7).
 

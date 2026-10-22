@@ -13,5 +13,18 @@ fn main() {
         println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
         println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
     }
+    // Bake the Spotify client ID into the exe (spotify::BUILTIN_CLIENT_ID) so the installed app
+    // needs no env var: from RUNOUT_SPOTIFY_CLIENT_ID at build time, else the gitignored
+    // `spotify_client_id.local` next to this file. Neither → the Connect dialog asks for it.
+    println!("cargo:rerun-if-env-changed=RUNOUT_SPOTIFY_CLIENT_ID");
+    println!("cargo:rerun-if-changed=spotify_client_id.local");
+    let id = std::env::var("RUNOUT_SPOTIFY_CLIENT_ID")
+        .ok()
+        .or_else(|| std::fs::read_to_string("spotify_client_id.local").ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    if !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        println!("cargo:rustc-env=RUNOUT_BUILTIN_CLIENT_ID={id}");
+    }
     tauri_build::try_build(attrs).expect("tauri-build failed");
 }
