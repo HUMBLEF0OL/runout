@@ -31,9 +31,12 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
   const inbox = useApi(getInbox).data;
   const follow = inbox?.followed_artists;
   const [error, setError] = useState<AppError>();
+  const [clientId, setClientId] = useState("");
+  // No client ID yet (no env var, nothing saved): ask for it here instead of a restart with an env var.
+  const needsId = error?.code === "spotify_auth" && error.detail === "client_id";
   const go = async () => {
     setStep("wait");
-    try { const s = await connectSpotify(); setStep(s.state === "connected" ? "done" : "fail"); } catch (e) { setError(toAppError(e)); setStep("fail"); }
+    try { const s = await connectSpotify(needsId ? clientId : undefined); setStep(s.state === "connected" ? "done" : "fail"); } catch (e) { setError(toAppError(e)); setStep("fail"); }
   };
   if (step === "wait") return (
     <Dialog title="Connect Spotify" onClose={onClose} footer={<button className="btn btn-secondary" onClick={onClose}>Cancel</button>}>
@@ -41,13 +44,18 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
       <span className="help">Spotify’s page lists what Runout may do. Check it says Runout, then click Agree.</span>
     </Dialog>);
   if (step === "fail") return (
-    <Dialog title="Couldn’t connect" onClose={onClose} footer={<><button className="btn btn-secondary" onClick={onClose}>Close</button><button className="btn btn-primary" onClick={go}>Try again</button></>}>
+    <Dialog title={needsId ? "Set up Spotify" : "Couldn’t connect"} onClose={onClose} footer={<><button className="btn btn-secondary" onClick={onClose}>Close</button>
+      <button className="btn btn-primary" onClick={go} disabled={needsId && !clientId.trim()}>{needsId ? "Save and sign in" : "Try again"}</button></>}>
       {/* Premium/User Management is only the cause when Spotify itself refused (403). Anything else, e.g. the client ID
-          not set (spotify_auth, message names RUNOUT_SPOTIFY_CLIENT_ID), shows Rust's message: the old blanket Premium
+          not set (spotify_auth, detail client_id), shows Rust's message and a Client ID field: the old blanket Premium
           copy hid a missing env var on the M7 installed build (21 Oct 2026). */}
       <div className="banner err" role="alert"><span>{error?.code === "spotify_forbidden"
         ? <><b className="text-danger">Spotify said no.</b> <span className="text-text-2">Developer access needs an active Premium plan on the app owner’s account, and your account added under User Management.</span></>
         : <><b className="text-danger">Couldn’t start the sign-in.</b> <span className="text-text-2">{error?.message ?? "Spotify didn’t finish the sign-in. Try again."}</span></>}</span></div>
+      {needsId && <div className="field"><label className="label" htmlFor="sp-client-id">Client ID</label>
+        <input id="sp-client-id" className="input font-mono" autoFocus spellCheck={false} autoComplete="off" value={clientId}
+          onChange={(e) => setClientId(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && clientId.trim()) go(); }} />
+        <span className="help">On developer.spotify.com, open Dashboard, then your app, then Settings. Runout saves it on this PC; you only do this once.</span></div>}
     </Dialog>);
   if (step === "done") return (
     <Dialog title="Spotify connected" onClose={onClose} footer={<button className="btn btn-primary" onClick={onClose}>Done</button>}>

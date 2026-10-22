@@ -16,10 +16,13 @@ async function failWith(e: api.AppError) {
 }
 
 describe("Connect dialog failure copy", () => {
-  it("a missing client ID shows Rust's message, not the Premium hint", async () => {
-    const t = await failWith({ code: "spotify_auth", message: "Spotify isn't set up: set RUNOUT_SPOTIFY_CLIENT_ID to your Spotify developer app's client ID, then restart Runout." });
-    expect(t).toContain("RUNOUT_SPOTIFY_CLIENT_ID");
+  it("a missing client ID asks for it, not the Premium hint, and sends the pasted one", async () => {
+    const t = await failWith({ code: "spotify_auth", message: "Spotify isn't set up yet: paste your Spotify developer app's Client ID.", detail: "client_id" });
+    expect(t).toContain("Client ID");
     expect(t).not.toContain("Premium");
+    fireEvent.change(screen.getByLabelText("Client ID"), { target: { value: "Abc123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save and sign in", hidden: true }));
+    expect(api.connectSpotify).toHaveBeenLastCalledWith("Abc123");
   });
   it("a Spotify refusal shows the Premium / User Management hint", async () => {
     const t = await failWith({ code: "spotify_forbidden", message: "Forbidden" });

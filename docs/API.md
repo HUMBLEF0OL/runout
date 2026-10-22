@@ -167,7 +167,7 @@ interface PlaylistCheckup { tracks: { position: number; name: string; artist: st
 | Command | Args | Returns | Notes / spec |
 |---|---|---|---|
 | `get_spotify_status` | — | `{state: 'disconnected' \| 'connected' \| 'reconnect', display_name, renew_by}` | SC-13c |
-| `connect_spotify` | — | same | Opens browser, PKCE, loopback port (TSD §5.2); adds scope `user-follow-read` only while the Inbox's followed-artists option is on; then creates the Runout Inbox if none was ever recorded (TSD §5.3) |
+| `connect_spotify` | `client_id?` | same | `client_id` (pasted in the Connect dialog) is validated and saved to `%LOCALAPPDATA%\…\spotify_client_id` first (`validation` if malformed). With no client ID from the env var or that file: `spotify_auth` with `detail: 'client_id'` (the dialog then asks for it). Opens browser, PKCE, loopback port (TSD §5.2); adds scope `user-follow-read` only while the Inbox's followed-artists option is on; then creates the Runout Inbox if none was ever recorded (TSD §5.3) |
 | `disconnect_spotify` | — | `void` | Deletes tokens + `spotify_cache.db` at once |
 | `list_spotify_playlists` | — | `{uri, name, tracks, owned, collaborative}[]` | Own/collab only |
 | `load_studio_draft` | `playlist_uri` | `Draft` | `{playlist_uri, snapshot_id, tracks: {uri, name, artist, rating, tags, dupe_of}[]}`; ratings/tags only (D27). `validation` for a playlist over 10,000 entries or holding local files/episodes (TSD §5.2) |

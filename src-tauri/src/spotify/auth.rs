@@ -816,7 +816,26 @@ mod tests {
         let sp = Spotify::with(None, Some(String::new()), d.join("c.db"), stub.transport());
         let e = sp.client_id().unwrap_err();
         assert_eq!(e.code, Code::SpotifyAuth);
-        assert!(e.message.contains(crate::spotify::CLIENT_ID_ENV));
+        assert_eq!(e.detail.as_deref(), Some(crate::spotify::NO_CLIENT_ID));
+    }
+
+    /// A client ID pasted in the Connect dialog is saved and used without the env var.
+    #[test]
+    fn pasted_client_id_is_saved_and_used() {
+        let d = temp_dir("auth-pasted");
+        let sp = Spotify::with(None, None, d.join("c.db"), Stub::new(&[]).transport());
+        assert_eq!(
+            sp.save_client_id("not an id").unwrap_err().code,
+            Code::Validation
+        );
+        sp.save_client_id(" Abc123 ").unwrap();
+        if std::env::var(crate::spotify::CLIENT_ID_ENV).is_err() {
+            assert_eq!(sp.client_id().unwrap(), "Abc123");
+        }
+        assert_eq!(
+            std::fs::read_to_string(d.join(crate::cleanup::CLIENT_ID_FILE)).unwrap(),
+            "Abc123"
+        );
     }
 
     /// G-15: production writes exactly the target `--uninstall-cleanup` deletes.

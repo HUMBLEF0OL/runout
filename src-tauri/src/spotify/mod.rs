@@ -27,7 +27,10 @@ pub use auth::Tokens;
 pub use client::{Body, HttpReq, HttpResp, Transport};
 
 /// Env var holding the developer app's client ID (never in the repo, never logged; KB spotify.md).
+/// Optional: the Connect dialog saves a pasted one to `cleanup::CLIENT_ID_FILE` instead.
 pub const CLIENT_ID_ENV: &str = "RUNOUT_SPOTIFY_CLIENT_ID";
+/// `spotify_auth` detail when no client ID is set: the Connect dialog then asks for one.
+pub const NO_CLIENT_ID: &str = "client_id";
 
 /// API.md §5 `get_spotify_status` (also the `spotify-status` event payload).
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -59,8 +62,10 @@ pub struct Spotify {
     /// delete (or a new sign-in's store) succeeds. While it exists the stored tokens count as
     /// deleted: startup retries the delete instead of signing back in (TSD §5.2 Disconnect).
     pending_delete: PathBuf,
-    /// Test override; production reads [`CLIENT_ID_ENV`] each time.
+    /// Test override; production reads [`CLIENT_ID_ENV`], then `client_id_file`, each time.
     client_id: Option<String>,
+    /// `cleanup::CLIENT_ID_FILE`: the client ID pasted in the Connect dialog.
+    client_id_file: PathBuf,
     /// Outer `None` = not read from Credential Manager yet.
     tokens: Mutex<Option<Option<Tokens>>>,
     /// Set when Spotify answered `invalid_grant` (persisted as `cleanup::RECONNECT_MARKER`); cleared by
@@ -111,6 +116,7 @@ impl Spotify {
             delete_credential: crate::cleanup::delete_credential,
             pending_delete: cache_path.with_file_name(crate::cleanup::DISCONNECT_MARKER),
             client_id,
+            client_id_file: cache_path.with_file_name(crate::cleanup::CLIENT_ID_FILE),
             tokens: Mutex::new(None),
             reconnect: AtomicBool::new(reconnect_marker.exists()),
             reconnect_marker,
@@ -139,23 +145,29 @@ impl Spotify {
         }
     }
 
-    /// The client ID from the test override or [`CLIENT_ID_ENV`]; missing → `spotify_auth`.
+    /// The client ID from the test override, [`CLIENT_ID_ENV`] or the saved file; missing →
+    /// `spotify_auth` with detail [`NO_CLIENT_ID`].
     pub(crate) fn client_id(&self) -> Result<String> {
         let id = self
             .client_id
             .clone()
             .or_else(|| std::env::var(CLIENT_ID_ENV).ok())
-            .map(|s| s.trim().to_string())
+            .or_else(|| std::fs::read_to_string(&self.client_id_file).ok())
             .unwrap_or_default();
-        if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return Err(AppError::new(
+        check_client_id(&id).map_err(|_| {
+            AppError::new(
                 Code::SpotifyAuth,
-                format!(
-                    "Spotify isn't set up: set {CLIENT_ID_ENV} to your Spotify developer app's client ID, then restart Runout."
-                ),
-            ));
-        }
-        Ok(id)
+                "Spotify isn't set up yet: paste your Spotify developer app's Client ID.",
+            )
+            .with_detail(NO_CLIENT_ID)
+        })
+    }
+
+    /// Save a client ID pasted in the Connect dialog (validated; used from the next sign-in on).
+    pub fn save_client_id(&self, id: &str) -> Result<()> {
+        let id = check_client_id(id)?;
+        std::fs::write(&self.client_id_file, id)?;
+        Ok(())
     }
 
     /// Current tokens; a failed Credential Manager read reads as `None` for this call only.
@@ -379,6 +391,17 @@ impl Spotify {
         self.emit_status();
         self.status_now()
     }
+}
+
+/// A client ID is up to 64 letters/digits (Spotify's are 32 hex); trimmed.
+fn check_client_id(id: &str) -> Result<String> {
+    let id = id.trim();
+    if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err(AppError::validation(
+            "That isn't a Client ID. Copy it from your app's page in the Spotify developer dashboard.",
+        ));
+    }
+    Ok(id.to_string())
 }
 
 /// Validate a URI at the command boundary: `spotify:{kind}:{22 base62}` with `kind` in `kinds`.

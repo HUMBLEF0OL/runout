@@ -45,26 +45,15 @@ pub type Transport =
 pub fn net_transport() -> Transport {
     Arc::new(|r: HttpReq| {
         Box::pin(async move {
-            let write = r.method != reqwest::Method::GET;
-            let resp = crate::net::send(r.method, &r.url, |mut b| {
-                if let Some(t) = &r.bearer {
-                    b = b.bearer_auth(t);
-                }
-                match r.body {
-                    Some(Body::Json(v)) => b
-                        .header("Content-Type", "application/json")
-                        .body(v.to_string()),
-                    Some(Body::Form(s)) => b
-                        .header("Content-Type", "application/x-www-form-urlencoded")
-                        .body(s),
-                    // Spotify answers 411 to a body-less PUT/DELETE (`/me/library` save, M7 live
-                    // run 21 Oct 2026); stub transports never saw it. hyper omits the header for an
-                    // empty body, so it is set explicitly (a bare `.body("")` still got 411).
-                    None if !write => b,
-                    None => b.header(reqwest::header::CONTENT_LENGTH, "0").body(""),
-                }
-            })
-            .await?;
+            let HttpReq {
+                method,
+                url,
+                bearer,
+                body,
+            } = r;
+            let write = method != Method::GET;
+            let resp = crate::net::send(method, &url, |b| apply(b, bearer.as_deref(), body, write))
+                .await?;
             let retry_after = resp
                 .headers()
                 .get("Retry-After")
@@ -77,6 +66,32 @@ pub fn net_transport() -> Transport {
             })
         })
     })
+}
+
+/// Bearer, body and headers onto a request (split out so the headers are unit-tested: every Rust
+/// test runs on the stub transport, which never builds a real request).
+fn apply(
+    mut b: reqwest::RequestBuilder,
+    bearer: Option<&str>,
+    body: Option<Body>,
+    write: bool,
+) -> reqwest::RequestBuilder {
+    if let Some(t) = bearer {
+        b = b.bearer_auth(t);
+    }
+    match body {
+        Some(Body::Json(v)) => b
+            .header("Content-Type", "application/json")
+            .body(v.to_string()),
+        Some(Body::Form(s)) => b
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(s),
+        // Spotify answers 411 to a body-less PUT/DELETE (`/me/library` save, M7 live run 21 Oct
+        // 2026; KB spotify.md). hyper omits the header for an empty body, so it is set explicitly
+        // (a bare `.body("")` still got 411).
+        None if !write => b,
+        None => b.header(reqwest::header::CONTENT_LENGTH, "0").body(""),
+    }
 }
 
 /// Percent-encode for query strings and form bodies (RFC 3986 unreserved kept).
@@ -219,6 +234,29 @@ impl Spotify {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn bodyless_writes_send_content_length_zero_and_gets_dont() {
+        let c = reqwest::Client::new();
+        let len = |m: Method| {
+            let write = m != Method::GET;
+            let r = super::apply(
+                c.request(m, "https://api.spotify.com/v1/me/library"),
+                Some("t"),
+                None,
+                write,
+            )
+            .build()
+            .unwrap();
+            r.headers()
+                .get(reqwest::header::CONTENT_LENGTH)
+                .map(|v| v.to_str().unwrap().to_owned())
+        };
+        assert_eq!(len(Method::PUT).as_deref(), Some("0"));
+        assert_eq!(len(Method::DELETE).as_deref(), Some("0"));
+        assert_eq!(len(Method::GET), None);
+    }
+
     use super::*;
     use crate::spotify::testing::*;
 

@@ -722,9 +722,17 @@ pub async fn get_spotify_status(sp: Sp<'_>) -> Result<SpotifyStatus> {
 }
 
 /// Asks for `user-follow-read` only while the Inbox's followed-artists option is on; creates the
-/// Inbox after the first successful sign-in (TSD §5.3).
+/// Inbox after the first successful sign-in (TSD §5.3). `client_id`: pasted in the Connect
+/// dialog; saved first so no env var is needed.
 #[tauri::command]
-pub async fn connect_spotify(sp: Sp<'_>, st: St<'_>) -> Result<SpotifyStatus> {
+pub async fn connect_spotify(
+    sp: Sp<'_>,
+    st: St<'_>,
+    client_id: Option<String>,
+) -> Result<SpotifyStatus> {
+    if let Some(id) = client_id {
+        sp.save_client_id(&id)?;
+    }
     let follow = st.settings.lock().unwrap().inbox.followed_artists;
     let s = sp.connect(follow).await?;
     sp_inbox::ensure_on_connect(&st, &sp).await;

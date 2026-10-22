@@ -291,7 +291,9 @@ export const getPlaylistCheckup = (id: number) => call<PlaylistCheckup>("get_pla
 
 /* ------------------------------------------------------------------ §5 R3 commands */
 export const getSpotifyStatus = () => call<SpotifyStatus>("get_spotify_status");
-export const connectSpotify = () => call<SpotifyStatus>("connect_spotify");
+/** `clientId`: pasted in the Connect dialog when Spotify isn't set up (`spotify_auth`, detail `client_id`); Rust saves it. */
+export const connectSpotify = (clientId?: string) =>
+  call<SpotifyStatus>("connect_spotify", clientId === undefined ? {} : { clientId: cleanLine(clientId, 64) });
 export const disconnectSpotify = () => call<void>("disconnect_spotify");
 export const listSpotifyPlaylists = () => call<SpotifyPlaylist[]>("list_spotify_playlists");
 export const loadStudioDraft = (playlistUri: string) => call<Draft>("load_studio_draft", { playlistUri });
