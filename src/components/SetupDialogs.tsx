@@ -35,6 +35,7 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
   // No client ID yet (no env var, nothing saved): ask for it here instead of a restart with an env var.
   const needsId = error?.code === "spotify_auth" && error.detail === "client_id";
   const go = async () => {
+    setError(undefined); // a retry must not show the previous attempt's reason
     setStep("wait");
     try { const s = await connectSpotify(needsId ? clientId : undefined); setStep(s.state === "connected" ? "done" : "fail"); } catch (e) { setError(toAppError(e)); setStep("fail"); }
   };

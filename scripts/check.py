@@ -742,6 +742,17 @@ def check_exit_flush():
         print("--- exit flush: FAIL (lib.rs .run(|app, e| ...) must call tray::flush_on_exit on RunEvent::Exit)")
 
 
+
+def check_doc_line_endings():
+    # M7 r8: a scripted edit stored docs/MILESTONES.md with CRLF and a lone CR (462-line diff for a
+    # 2-line change, blame lost). Staged/committed .md must be LF only.
+    out = subprocess.run(["git", "ls-files", "--eol", "--", "*.md"], cwd=ROOT, capture_output=True, text=True).stdout
+    bad = [l.split("	")[-1] for l in out.splitlines() if l.split()[:1] and l.split()[0] in ("i/crlf", "i/mixed")]
+    if bad:
+        failures.append("doc line endings")
+        print("--- doc line endings: FAIL (store as LF): " + ", ".join(bad))
+
+
 if (TAURI / "Cargo.toml").exists():
     run("cargo fmt", "cargo fmt --check", TAURI)
     run("cargo clippy", "cargo clippy --all-targets -- -D warnings", TAURI)
@@ -778,6 +789,7 @@ check_link_parity()
 check_source_map()
 check_design()
 check_exit_flush()
+check_doc_line_endings()
 
 if HOOK and not failures:
     sys.exit(0)

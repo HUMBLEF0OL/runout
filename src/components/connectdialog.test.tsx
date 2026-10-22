@@ -28,4 +28,11 @@ describe("Connect dialog failure copy", () => {
     const t = await failWith({ code: "spotify_forbidden", message: "Forbidden" });
     expect(t).toContain("Premium");
   });
+  it("a retry that just doesn't finish drops the previous attempt's reason", async () => {
+    await failWith({ code: "spotify_forbidden", message: "Forbidden" });
+    vi.mocked(api.connectSpotify).mockResolvedValue({ state: "disconnected", display_name: null, renew_by: null });
+    fireEvent.click(screen.getByRole("button", { name: "Try again", hidden: true }));
+    const t = (await screen.findByRole("alert", { hidden: true })).textContent ?? "";
+    expect(t).not.toContain("Premium");
+  });
 });
