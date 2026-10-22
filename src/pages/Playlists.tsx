@@ -112,6 +112,7 @@ function Studio() {
   // swap it out under them or skip the pre-apply conflict check. It reloads only when this page says so.
   const pls = useApi(api.listSpotifyPlaylists, [], false);
   // By uri; a name and optional track count only from the check-up's "Open in Studio" (the export has no uri, G-31).
+  // ponytail: the export's count can drift from the live one, then the first same-name playlist wins; match by track list if that bites.
   const match = pls.data?.filter((p) => p.name === sp.get("p"));
   const tracksParam = sp.get("tracks");
   const sel = pls.data?.find((p) => p.uri === sp.get("p"))

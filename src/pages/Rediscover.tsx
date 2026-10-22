@@ -76,28 +76,28 @@ export default function Rediscover() {
         </div>
       </div>
       <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-muted text-sm">Saved shelves:</span>
+        <span className="text-muted text-sm">Saved filters:</span>
         {saved.data?.length ? saved.data.map((s) => (
           <button key={s.id} className={`chip${active?.id === s.id ? " on" : ""}`} aria-pressed={active?.id === s.id} onClick={() => setActive(active?.id === s.id ? null : s)}>{s.name}</button>
         )) : <span className="text-faint text-sm">None yet. New shelf saves one.</span>}
       </div>
 
       {active && (
-        <section className="flex flex-col gap-3" aria-label={`Saved shelf ${active.name}`}>
+        <section className="flex flex-col gap-3" aria-label={`Saved filter ${active.name}`}>
           <div className="flex justify-between items-baseline gap-3">
-            <div className="flex flex-col gap-0.5"><h2 className="section-title">{active.name}</h2><span className="text-muted text-sm">Your custom shelf</span></div>
+            <div className="flex flex-col gap-0.5"><h2 className="section-title">{active.name}</h2><span className="text-muted text-sm">Your saved filter</span></div>
             <span className="flex flex-wrap gap-2 items-center">
               {playlistBtn({ title: active.name, items: activeRows.data?.rows ?? [], kind: "filter", filterId: active.id }, "Make a Spotify playlist")}
               <button className="btn btn-ghost s" onClick={async () => {
                 const gone = active; setActive(null); await deleteSavedFilter(gone.id);
-                toast(`Shelf ${gone.name} deleted`, () => saveFilter(gone.name, gone.definition));
-              }}>Delete shelf</button>
+                toast(`Filter ${gone.name} deleted`, () => saveFilter(gone.name, gone.definition));
+              }}>Delete filter</button>
               {activeRows.data && <span className="font-mono text-faint text-xs">{pl(activeRows.data.total, "record")}</span>}
             </span>
           </div>
-          {activeRows.loading ? <SkelTiles n={6} /> : activeRows.error ? <ErrorBanner title="Couldn’t load this shelf." error={activeRows.error} onRetry={activeRows.reload} />
+          {activeRows.loading ? <SkelTiles n={6} /> : activeRows.error ? <ErrorBanner title="Couldn’t load this filter." error={activeRows.error} onRetry={activeRows.reload} />
             : activeRows.data?.rows.length ? <ItemSet items={activeRows.data.rows.slice(0, 6)} total={activeRows.data.total} art={art} meta={(it) => (it.rating ? stars(it.rating) : STATUS[it.status])} />
-            : <span className="text-muted">Nothing matches this shelf right now.</span>}
+            : <span className="text-muted">Nothing matches this filter right now.</span>}
         </section>
       )}
 

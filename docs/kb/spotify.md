@@ -5,7 +5,7 @@ Constraints table with sources: [BRD §11](../../BRD.md) (S1–S17). This file h
 ## Links and IDs
 - IDs are 22 base-62 chars; `open.spotify.com` URLs may carry an `intl-xx/` locale segment and `?si=` query — **Documented + tested**, 2026-10-18, TSD §4.1.
 - `spotify.link/{code}` short links need an HTTP redirect follow to reach an `open.spotify.com` URL — **Verified**, 2026-10-18, BRD research.
-- The user's Spotify apps share full `https://open.spotify.com/{type}/{id}?si=…` links, with `&utm_source=whatsapp&rowId=…` when shared to WhatsApp; no `spotify.link` short link appeared (10 shares, desktop and phone) — **Verified** (observed), 2026-10-21. Runout stores the canonical URI with every parameter stripped (M6 installed run). Real short-link resolution stays unverified (G-37).
+- The user's Spotify apps share full `https://open.spotify.com/{type}/{id}?si=…` links, with `&utm_source=whatsapp&rowId=…` when shared to WhatsApp; no `spotify.link` short link appeared (10 shares, desktop and phone) — **Verified** (observed), 2026-10-21. Runout stores the canonical URI with every parameter stripped (M6 installed run). Real short-link resolution stays unverified (G-37, accepted: no real `spotify.link` to test).
 - An unknown `spotify.link` code answers `200 text/html` (~7 KB, openresty), not 404 — **Verified** (curl, synthetic code), 2026-10-18. So `links::resolve_short` follows allow-listed redirects, then falls back to the first `open.spotify.com` item link in the page body; a hop to a non-listed host (e.g. a branch.io domain) is refused. Real-code redirect chain **Unverified**: check with a real short link in M6.
 - `spotify:` URIs open the desktop app through the OS shell handler — **Documented**, 2026-10-18, BRD FR-016.
 

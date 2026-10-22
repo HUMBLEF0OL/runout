@@ -3,7 +3,7 @@
 //! the user put it there, TSD §4.2), collapses album batches into one album item, then removes the
 //! handled entries. The playlist id and options live in settings (the user's own pointer); the
 //! followed-artists baseline is Spotify data, so it lives in `spotify_cache.db`.
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::Duration;
 
 use reqwest::Method;
@@ -25,8 +25,11 @@ const DESCRIPTION: &str =
 pub const EVERY: Duration = Duration::from_secs(15 * 60);
 /// `DELETE /playlists/{id}/items` takes at most 100 objects (kb/spotify.md).
 const CHUNK: usize = 100;
-/// Tracks of one album added in the same minute covering this share of it → one album item.
+/// Tracks of one album added together covering this share of it → one album item.
 const ALBUM_SHARE: f64 = 0.8;
+/// "Added together": within this many seconds of the group's previous entry, so a whole-album add
+/// that straddles a minute boundary stays one group (G-39).
+const BATCH_GAP_S: i64 = 60;
 /// Reads stop here (a playlist, saved albums or followed artists list longer than this is cut).
 const MAX_READ: usize = 10_000;
 /// Cache key of the followed-artist baseline (expires like any cache entry: then re-baselined).
@@ -219,15 +222,17 @@ fn chunks(groups: &[Vec<String>]) -> Vec<Vec<String>> {
 }
 
 /// Playlist entries → plan. Only Spotify tracks are handled (local files and episodes stay in
-/// the Inbox). Tracks of one album added within the same minute covering ≥ [`ALBUM_SHARE`] of the
+/// the Inbox). Tracks of one album added together ([`BATCH_GAP_S`]) covering ≥ [`ALBUM_SHARE`] of the
 /// album's `total_tracks` (≥ 2 tracks) become one album item.
 // ponytail: album size from the entry's `album.total_tracks`, not a track-list read (TSD §5.3).
 fn plan(entries: &[Value]) -> Plan {
-    // Groups by (album, minute) of (uri, added_at). A URI is in each group it was added in: a batch
-    // track re-added later on its own is planned again as a single (the DELETE takes every copy).
+    // Groups by (album, last added_at in seconds) of (uri, added_at): an entry joins its album's
+    // group last added within BATCH_GAP_S (no added_at: one group per album). A URI is in each
+    // group it was added in: a batch track re-added later on its own is planned again as a single
+    // (the DELETE takes every copy).
+    // ponytail: linear scan over groups per entry; fine for an Inbox of hundreds, index by album if not.
     #[allow(clippy::type_complexity)]
-    let mut groups: Vec<((String, String), Vec<(String, Option<String>)>, i64)> = vec![];
-    let mut at: HashMap<(String, String), usize> = HashMap::new();
+    let mut groups: Vec<((String, Option<i64>), Vec<(String, Option<String>)>, i64)> = vec![];
     let mut p = Plan::default();
     for e in entries {
         let t = either(e, "item", "track");
@@ -238,21 +243,31 @@ fn plan(entries: &[Value]) -> Plan {
             continue;
         }
         let album = t["album"]["uri"].as_str().unwrap_or_default().to_string();
-        let minute: String = e["added_at"]
+        let secs = e["added_at"]
             .as_str()
-            .unwrap_or_default()
-            .chars()
-            .take(16)
-            .collect();
-        let key = (album, minute);
-        let i = *at.entry(key.clone()).or_insert_with(|| {
-            groups.push((
-                key,
-                vec![],
-                t["album"]["total_tracks"].as_i64().unwrap_or(0),
-            ));
-            groups.len() - 1
-        });
+            .and_then(|a| chrono::DateTime::parse_from_rfc3339(a).ok())
+            .map(|d| d.timestamp());
+        let near = |((a, last), ..): &((String, Option<i64>), _, _)| {
+            *a == album
+                && match (*last, secs) {
+                    (Some(l), Some(s)) => (s - l).abs() <= BATCH_GAP_S,
+                    (l, s) => l.is_none() && s.is_none(),
+                }
+        };
+        let i = match groups.iter().position(near) {
+            Some(i) => i,
+            None => {
+                groups.push((
+                    (album, secs),
+                    vec![],
+                    t["album"]["total_tracks"].as_i64().unwrap_or(0),
+                ));
+                groups.len() - 1
+            }
+        };
+        if let (Some(l), Some(s)) = (&mut groups[i].0.1, secs) {
+            *l = (*l).max(s);
+        }
         if !groups[i].1.iter().any(|(u, _)| *u == uri) {
             groups[i].1.push((uri, added_at(e)));
         }
@@ -517,8 +532,10 @@ mod tests {
         e.push(entry("B1", "AL2", 10, at)); // 1 of 10: a track
         e.push(entry("C1", "AL3", 3, at)); // 2 of 3 = 67 %: tracks
         e.push(entry("C2", "AL3", 3, "2026-10-21T09:15:59Z"));
-        e.push(entry("D1", "AL4", 2, at)); // 1 of 2 in this minute, 1 the next: tracks
-        e.push(entry("D2", "AL4", 2, "2026-10-21T09:16:00Z"));
+        e.push(entry("D1", "AL4", 2, at)); // 1 of 2, the other 61 s later: tracks
+        e.push(entry("D2", "AL4", 2, "2026-10-21T09:16:31Z"));
+        e.push(entry("E1", "AL5", 2, "2026-10-21T09:16:59Z")); // straddles a minute: album (G-39)
+        e.push(entry("E2", "AL5", 2, "2026-10-21T09:17:01Z"));
         e.push(entry("A1", "AL1", 5, at)); // a second copy of a batch track
         e.push(json!({"is_local": true, "item": {"uri": "spotify:local:x:y:z:1"}}));
         e.push(json!({"item": {"uri": format!("spotify:episode:{}", id("E1"))}}));
@@ -542,13 +559,18 @@ mod tests {
                 t("C1", "AL3", at),
                 t("C2", "AL3", "2026-10-21T09:15:59Z"),
                 t("D1", "AL4", at),
-                t("D2", "AL4", "2026-10-21T09:16:00Z"),
+                t("D2", "AL4", "2026-10-21T09:16:31Z"),
+                (
+                    ItemType::Album,
+                    format!("spotify:album:{}", id("AL5")),
+                    None
+                ),
             ]
         );
         let all = p.remove.concat();
         assert_eq!(
             all.len(),
-            9,
+            11,
             "every handled track once, never local/episode"
         );
         assert!(all.iter().all(|u| u.starts_with("spotify:track:")));

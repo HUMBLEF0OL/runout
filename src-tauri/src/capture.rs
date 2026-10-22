@@ -1092,16 +1092,9 @@ mod tests {
         assert!(info.on);
         assert_eq!(info.code.len(), 7);
         let port = l.bound_port().unwrap();
+        // The gate answers loopback before reading a byte. Bytes sent first would be unread when the
+        // server closes, so Windows resets the connection and the 403 can be lost (10053, G-41).
         let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-        let b = body("000000", &album());
-        // Server rejects loopback at the gate before reading the body (403), so the socket write
-        // may see ConnectionAborted/Reset if the server closes early under load (G-41).
-        let _ = write!(
-            s,
-            "POST /capture HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            b.len()
-        );
-        let _ = s.write_all(&b);
         let mut resp = String::new();
         s.read_to_string(&mut resp).unwrap();
         assert!(

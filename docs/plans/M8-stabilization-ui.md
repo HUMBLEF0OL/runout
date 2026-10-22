@@ -18,17 +18,17 @@ Agents: `react-ui` (UI streamline & states), `rust-core` (gap resolution & backe
 ## Steps
 
 1. **Systematic Gap & Defect Resolution (WI 1):**
-   - Addressed and closed targeted M8-candidate gaps from `docs/MILESTONES.md`:
-     - **G-6:** Rediscover "New shelf" structure unified with saved filters (FR-013, CAP-11); chip bar and custom shelf section styled consistently.
-     - **G-16:** `0007_backlog_history.sql` migration tracks backlog entry and exit; `usage.rs` queries `backlog_history` so planned items leaving the backlog count as moved within 14 days. Unit test `moved_after_14d_sees_items_leaving_backlog_while_planned` passes.
-     - **G-31:** Playlist check-up "Open in Studio" link passes `&tracks=${sel.tracks}` as well as playlist name; Studio resolves same-name playlists disambiguating by track count.
-     - **G-33:** 120s `UNSURE_WAIT` + pre-write content compare verified against 20s timeout and busy check rules.
-     - **G-34:** Phone capture superseded by Runout Inbox (FR-046, D33); Wi-Fi capture listener verified in installed journey B.
-     - **G-37:** Short link resolution verified; full links shared across desktop/mobile/WhatsApp.
-     - **G-38:** Suppressed WebView2 Microsoft 365 / Substrate front-door traffic via `--disable-identity-proxy` and `--disable-features=msEdgeIdentitySSO,msHubs,msProfileTokenBroker` in `tauri.conf.json`.
-     - **G-39:** Verified live U-10 album batch uses single batch timestamp from Spotify.
-     - **G-40:** Verified Inbox optional imports (albums, artists) and follow scope re-approval.
-     - **G-41:** Fixed flaky `real_socket_smoke` test by tolerating early 403 response close before body.
+   - Targeted M8-candidate gaps from `docs/MILESTONES.md` (re-checked 22 Oct 2026; closures without evidence reopened):
+     - **G-6** closed by design: FR-013 names saved filters; "New shelf" saves one, no separate shelf entity.
+     - **G-16** fixed: `0007_backlog_history.sql` records backlog entry/exit (no row for `create_item`'s transient `in_backlog = 0` insert); a planned item taken out of the backlog stays in the denominator, unmoved (BRD §15: moved = status other than Planned). Test `moved_after_14d_keeps_items_taken_out_while_planned`.
+     - **G-31** fixed with a ceiling: "Open in Studio" passes `&tracks=`; Studio picks the same-name playlist with that track count, else the first (the export's count can drift from the live one).
+     - **G-33** accepted: apply and undo re-read the items and compare content right before writing, and wait `UNSURE_WAIT` (2 min ≫ 20 s timeout); a write landing later still can't be seen. Revisit only if seen.
+     - **G-34** closed: the Shortcut was dropped with U-3 (D33); the LAN listener took a real request in installed journey B.
+     - **G-37** accepted: the user's Spotify apps share only full links; `resolve_short` is fixture-tested only. Paste a real `spotify.link` if one ever appears.
+     - **G-38** open: candidate switches added to `additionalBrowserArgs`, not yet confirmed with `scripts/installed/netwatch.ps1` on an installed build.
+     - **G-39** fixed: album batches group entries within 60 s (`BATCH_GAP_S`), not by clock minute, so a straddling add stays one album.
+     - **G-40** open: needs one live run per option (U-5).
+     - **G-41** fixed: the gate answers loopback before reading, so the test reads without sending first (sent bytes left unread made Windows reset the connection).
    - Any issues identified during U-5 daily use.
 
 2. **End-to-End Functionality Hardening (WI 2):**
