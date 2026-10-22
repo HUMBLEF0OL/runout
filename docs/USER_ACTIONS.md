@@ -21,7 +21,7 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 | U-6 | Create the Spotify developer app | Start of M5 | 5 min | Release 3 · **done 19 Oct 2026** (redirect `http://127.0.0.1:8888/callback`; client ID kept out of the repo) |
 | U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 · **done 19 Oct 2026** (gate login); live Studio check on a test playlist still open |
 | U-8 | *(Optional)* Ask Spotify developer support one question | Before M5 | 5 min | Nothing |
-| U-10 | Test the Runout Inbox from your phone (on mobile data) | M7 (WI 4) | 5 min | M7 Inbox acceptance |
+| U-10 | Test the Runout Inbox from your phone (on mobile data) | M7 (WI 4) | 5 min | M7 Inbox acceptance · **done 22 Oct 2026** (album → one album item, single track → name-needed track, Inbox emptied, deleted Inbox → Create Inbox) |
 
 ---
 
