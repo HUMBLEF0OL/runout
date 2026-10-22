@@ -45,6 +45,7 @@ pub type Transport =
 pub fn net_transport() -> Transport {
     Arc::new(|r: HttpReq| {
         Box::pin(async move {
+            let write = r.method != reqwest::Method::GET;
             let resp = crate::net::send(r.method, &r.url, |mut b| {
                 if let Some(t) = &r.bearer {
                     b = b.bearer_auth(t);
@@ -56,7 +57,11 @@ pub fn net_transport() -> Transport {
                     Some(Body::Form(s)) => b
                         .header("Content-Type", "application/x-www-form-urlencoded")
                         .body(s),
-                    None => b,
+                    // Spotify answers 411 to a body-less PUT/DELETE (`/me/library` save, M7 live
+                    // run 21 Oct 2026); stub transports never saw it. hyper omits the header for an
+                    // empty body, so it is set explicitly (a bare `.body("")` still got 411).
+                    None if !write => b,
+                    None => b.header(reqwest::header::CONTENT_LENGTH, "0").body(""),
                 }
             })
             .await?;
