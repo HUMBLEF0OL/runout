@@ -753,6 +753,24 @@ def check_doc_line_endings():
         print("--- doc line endings: FAIL (store as LF): " + ", ".join(bad))
 
 
+
+def check_doc_drift():
+    # M7 close review: a blank line split G-39 off the Known gaps table, and kb/SOURCE_MAP still
+    # pointed at U-10 as pending after it was done.
+    ms = (ROOT / "docs/MILESTONES.md").read_text(encoding="utf-8")
+    if re.search(r"\n\n\| G-\d+ \|", ms):
+        failures.append("doc drift")
+        print("--- doc drift: FAIL (blank line inside the Known gaps table: a G-n row renders as text)")
+    ua = (ROOT / "docs/USER_ACTIONS.md").read_text(encoding="utf-8")
+    done = set(re.findall(r"^\| (U-\d+) \|.*\*\*done", ua, re.M))
+    for f in [ROOT / "docs/SOURCE_MAP.md", *sorted((ROOT / "docs/kb").glob("*.md"))]:
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            for u in done:
+                if re.search(rf"(Not yet[^.|]*|open|stub-tested; live|live:) \(?{u}\)?(?![\d])(?! done)", line):
+                    failures.append("doc drift")
+                    print(f"--- doc drift: FAIL {f.relative_to(ROOT)}:{n} points at {u} as pending, but USER_ACTIONS marks it done")
+
+
 if (TAURI / "Cargo.toml").exists():
     run("cargo fmt", "cargo fmt --check", TAURI)
     run("cargo clippy", "cargo clippy --all-targets -- -D warnings", TAURI)
@@ -790,6 +808,7 @@ check_source_map()
 check_design()
 check_exit_flush()
 check_doc_line_endings()
+check_doc_drift()
 
 if HOOK and not failures:
     sys.exit(0)
