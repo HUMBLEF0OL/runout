@@ -8,7 +8,7 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export async function launch({ port = 9333, offline = false } = {}) {
   // Keep wry's defaults: this env var replaces them (SmartScreen etc. off in the real app).
   // Same as tauri.conf.json additionalBrowserArgs (this env var stands in for them) + the debug port.
-  let args = `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-networking --disable-component-update --disable-domain-reliability --no-pings --disable-sync --disable-client-side-phishing-detection --remote-debugging-port=${port}`;
+  let args = `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,msEdgeIdentitySSO,msHubs,msProfileTokenBroker --disable-identity-proxy --disable-background-networking --disable-component-update --disable-domain-reliability --no-pings --disable-sync --disable-client-side-phishing-detection --remote-debugging-port=${port}`;
   const env = { ...process.env };
   if (offline) {
     // Dead proxy for both stacks: reqwest honours HTTPS_PROXY/HTTP_PROXY, WebView2 takes --proxy-server.

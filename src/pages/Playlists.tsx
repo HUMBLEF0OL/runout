@@ -95,7 +95,7 @@ function Checkup() {
         );
       })}
     </div></div>
-    {r3 && <Link className="btn btn-primary self-start" to={`/playlists/studio?p=${encodeURIComponent(sel.name)}`}>Open in Studio</Link>}
+    {r3 && <Link className="btn btn-primary self-start" to={`/playlists/studio?p=${encodeURIComponent(sel.name)}&tracks=${sel.tracks}`}>Open in Studio</Link>}
   </>);
 }
 
@@ -111,8 +111,13 @@ function Studio() {
   // Not live: the draft is what the user edits, so another write in the app (QuickAdd, a failed apply) must not
   // swap it out under them or skip the pre-apply conflict check. It reloads only when this page says so.
   const pls = useApi(api.listSpotifyPlaylists, [], false);
-  // By uri; a name only from the check-up's "Open in Studio" (the export has no uri).
-  const sel = pls.data?.find((p) => p.uri === sp.get("p")) ?? pls.data?.find((p) => p.name === sp.get("p")) ?? pls.data?.[0];
+  // By uri; a name and optional track count only from the check-up's "Open in Studio" (the export has no uri, G-31).
+  const match = pls.data?.filter((p) => p.name === sp.get("p"));
+  const tracksParam = sp.get("tracks");
+  const sel = pls.data?.find((p) => p.uri === sp.get("p"))
+    ?? (tracksParam ? match?.find((p) => p.tracks === Number(tracksParam)) : undefined)
+    ?? match?.[0]
+    ?? pls.data?.[0];
   const draft = useApi(() => (sel ? api.loadStudioDraft(sel.uri) : Promise.resolve(null)), [sel?.uri], false);
   // Not live either: a refetch that fails elsewhere would drop the Undo banner. Re-read after each apply/undo.
   // Tagged with its playlist so a previous playlist's record never shows (or undoes) under the new one while loading.

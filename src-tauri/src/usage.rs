@@ -96,16 +96,21 @@ fn metrics_at(conn: &Connection, now: &str) -> Result<SuccessMetrics> {
            (SELECT count(*) FROM wk WHERE kind = 'page_visit' AND detail = 'search'),
            (SELECT count(*) FROM wk WHERE kind = 'page_visit' AND detail = 'rediscover'),
            (SELECT CAST(round(100.0 * total(moved) / max(count(*), 1)) AS INT) FROM (
-              SELECT COALESCE((SELECT h.to_status FROM status_history h WHERE h.item_id = i.id
+              SELECT (
+                (COALESCE((SELECT h.to_status FROM status_history h WHERE h.item_id = i.id
                                  AND h.at <= strftime({ISO}, i.added_at, '+14 days')
-                               ORDER BY h.at DESC, h.id DESC LIMIT 1), 'planned') <> 'planned' AS moved
+                               ORDER BY h.at DESC, h.id DESC LIMIT 1), 'planned') <> 'planned')
+                OR
+                EXISTS (SELECT 1 FROM backlog_history bh WHERE bh.item_id = i.id
+                          AND bh.in_backlog = 0
+                          AND bh.at <= strftime({ISO}, i.added_at, '+14 days'))
+              ) AS moved
               FROM item i WHERE i.added_at <= strftime({ISO}, ?1, '-14 days')
-                -- backlog items: first status planned, and in the backlog or moved on from planned
-                -- ponytail: no backlog-entry record, so a planned item taken out of the backlog
-                -- reads as never-in-backlog; exact needs a migration recording backlog entry.
+                -- backlog items: first status planned, and in the backlog or moved on from planned (G-16)
                 AND (SELECT h.to_status FROM status_history h WHERE h.item_id = i.id
                       ORDER BY h.at, h.id LIMIT 1) = 'planned'
-                AND (i.in_backlog = 1 OR i.status <> 'planned'))),
+                AND (i.in_backlog = 1 OR i.status <> 'planned'
+                     OR EXISTS (SELECT 1 FROM backlog_history bh WHERE bh.item_id = i.id AND bh.in_backlog = 1)))),
            (SELECT CAST(round(100.0 * total(rating IS NOT NULL OR trim(COALESCE(review, '')) <> '')
                               / max(count(*), 1)) AS INT)
               FROM item WHERE status = 'explored')"
@@ -191,6 +196,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(metrics_at(&c, NOW).unwrap().moved_after_14d_pct, 67); // 1 and 5 of 1, 2, 5
+    }
+
+    /// G-16: a planned item removed from the backlog within 14 days counts as moved.
+    #[test]
+    fn moved_after_14d_sees_items_leaving_backlog_while_planned() {
+        let c = db::open_in_memory().unwrap();
+        c.execute_batch(
+            "INSERT INTO item(id, type, added_at, status, in_backlog) VALUES
+                 (1,'album','2026-09-18T00:00:00Z','planned',1),
+                 (2,'album','2026-09-18T00:00:00Z','planned',1);
+             INSERT INTO status_history(item_id, from_status, to_status, at) VALUES
+                 (1,NULL,'planned','2026-09-18T00:00:00Z'),
+                 (2,NULL,'planned','2026-09-18T00:00:00Z');
+             -- item 1 leaves the backlog on day 5 while staying planned
+             UPDATE item SET in_backlog = 0 WHERE id = 1;
+             UPDATE backlog_history SET at = '2026-09-23T00:00:00Z' WHERE item_id = 1 AND in_backlog = 0;",
+        )
+        .unwrap();
+        // Item 1 moved (left backlog on day 5), item 2 still in backlog planned. 1 of 2 = 50%.
+        assert_eq!(metrics_at(&c, NOW).unwrap().moved_after_14d_pct, 50);
     }
 
     #[test]

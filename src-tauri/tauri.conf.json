@@ -20,7 +20,7 @@
         "minWidth": 900,
         "minHeight": 600,
         "incognito": true,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-networking --disable-component-update --disable-domain-reliability --no-pings --disable-sync --disable-client-side-phishing-detection"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,msEdgeIdentitySSO,msHubs,msProfileTokenBroker --disable-identity-proxy --disable-background-networking --disable-component-update --disable-domain-reliability --no-pings --disable-sync --disable-client-side-phishing-detection"
       }
     ],
     "security": {

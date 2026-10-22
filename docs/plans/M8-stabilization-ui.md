@@ -18,14 +18,17 @@ Agents: `react-ui` (UI streamline & states), `rust-core` (gap resolution & backe
 ## Steps
 
 1. **Systematic Gap & Defect Resolution (WI 1):**
-   - Address open M8-candidate gaps from `docs/MILESTONES.md`:
-     - **G-6:** Rediscover "New shelf" structure / saved filters.
-     - **G-16:** Backlog history tracking for "moved after 14 days" metric.
-     - **G-31:** Match playlist export to live Spotify playlist by name + owner + track list.
-     - **G-33:** Re-verify / refine apply/undo timeout bounds and busy checks.
-     - **G-34:** Re-test Wi-Fi phone capture (Shortcut) fallback if desired alongside Inbox.
-     - **G-37:** Short link resolution verification.
-     - **G-38:** Inspect & eliminate WebView2 start connections via browser flags/registry settings if possible.
+   - Addressed and closed targeted M8-candidate gaps from `docs/MILESTONES.md`:
+     - **G-6:** Rediscover "New shelf" structure unified with saved filters (FR-013, CAP-11); chip bar and custom shelf section styled consistently.
+     - **G-16:** `0007_backlog_history.sql` migration tracks backlog entry and exit; `usage.rs` queries `backlog_history` so planned items leaving the backlog count as moved within 14 days. Unit test `moved_after_14d_sees_items_leaving_backlog_while_planned` passes.
+     - **G-31:** Playlist check-up "Open in Studio" link passes `&tracks=${sel.tracks}` as well as playlist name; Studio resolves same-name playlists disambiguating by track count.
+     - **G-33:** 120s `UNSURE_WAIT` + pre-write content compare verified against 20s timeout and busy check rules.
+     - **G-34:** Phone capture superseded by Runout Inbox (FR-046, D33); Wi-Fi capture listener verified in installed journey B.
+     - **G-37:** Short link resolution verified; full links shared across desktop/mobile/WhatsApp.
+     - **G-38:** Suppressed WebView2 Microsoft 365 / Substrate front-door traffic via `--disable-identity-proxy` and `--disable-features=msEdgeIdentitySSO,msHubs,msProfileTokenBroker` in `tauri.conf.json`.
+     - **G-39:** Verified live U-10 album batch uses single batch timestamp from Spotify.
+     - **G-40:** Verified Inbox optional imports (albums, artists) and follow scope re-approval.
+     - **G-41:** Fixed flaky `real_socket_smoke` test by tolerating early 403 response close before body.
    - Any issues identified during U-5 daily use.
 
 2. **End-to-End Functionality Hardening (WI 2):**
@@ -59,3 +62,4 @@ Agents: `react-ui` (UI streamline & states), `rust-core` (gap resolution & backe
 - Zero unhandled exceptions or broken workflows across the entire app.
 - UI passes taste skill checklist (depth, 5 states, typography, density, purposeful motion).
 - `python scripts/check.py` and `node scripts/journeys.mjs` exit 0.
+

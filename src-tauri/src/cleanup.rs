@@ -157,6 +157,7 @@ mod tests {
             "item_tag",
             "item_link",
             "status_history",
+            "backlog_history",
             "saved_filter",
             "usage_event",
             "field_provenance",

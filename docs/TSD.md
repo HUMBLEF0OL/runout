@@ -92,6 +92,7 @@ item_link(from_id, to_id, kind CHECK(kind IN('by_artist','on_album','version_of'
 tag(id PK, name UNIQUE COLLATE NOCASE, description)
 item_tag(item_id, tag_id, PK(item_id, tag_id))
 status_history(id PK, item_id, from_status, to_status, at TEXT, note)
+backlog_history(id PK, item_id, in_backlog INT, at TEXT)                 -- G-16 (0007)
 saved_filter(id PK, name, definition_json)
 unresolved_capture(id PK, raw_link, received_at, source CHECK(source IN('paste','shortcut')), state, error)
 item_fts  -- FTS5 over display_name, review, notes, recommended_by, tag names, linked artist names
