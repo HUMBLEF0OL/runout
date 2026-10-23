@@ -103,7 +103,7 @@ export default function Settings() {
           <div className="field">
             <span className="label">Backups, newest 3 kept</span>
             {backups.loading ? <div className="skel h-[60px]" /> : backups.data?.length
-              ? backups.data.map((b, i) => <span key={b.path} className="flex justify-between items-baseline gap-3"><span>{backupLabel(b, i)}</span><span className="font-mono text-text-2 text-xs">{mb(b.size_bytes)}</span></span>)
+              ? backups.data.map((b, i) => <span key={b.path} className="flex justify-between items-baseline gap-3"><span className="font-mono text-xs">{backupLabel(b, i)}</span><span className="font-mono text-text-2 text-xs">{mb(b.size_bytes)}</span></span>)
               : <span className="text-muted">No backups yet. Back up now to make the first one.</span>}
             <span className="flex justify-between items-baseline gap-3">
               <span className="font-mono text-text-2 text-xs">{st.backup_dir}</span>
@@ -312,7 +312,7 @@ function RestoreDialog({ backups, onClose }: { backups: Backup[]; onClose: () =>
       {backups.length ? (
         <div className="card pad-s"><div className="list">{backups.map((b, i) => (
           <div key={b.path} className="row grid-cols-[minmax(0,1fr)_70px_auto]">
-            <span>{backupLabel(b, i)}</span><span className="font-mono text-muted text-xs">{mb(b.size_bytes)}</span>
+            <span className="font-mono text-xs">{backupLabel(b, i)}</span><span className="font-mono text-muted text-xs">{mb(b.size_bytes)}</span>
             <button className="btn btn-secondary s" onClick={() => check(b.path, day(b.created_at))} aria-label={`Restore the backup from ${day(b.created_at)}`}>Restore</button>
           </div>))}
         </div></div>

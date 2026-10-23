@@ -98,7 +98,7 @@ export function MvpBody({ dash }: { dash: Dashboard }) {
             <div className="flex justify-between items-baseline gap-3"><h2 id="mvp-next" className="card-title">Up next</h2><Link to="/backlog" className="text-sm font-semibold">Backlog ({c.backlog})</Link></div>
             {next.data && !upNext.length && <span className="text-muted">Nothing planned. Paste a link to add one.</span>}
             {upNext.map((it) => (
-              <Link key={it.id} to={`/item/${it.id}`} className="flex justify-between items-baseline gap-3 text-text py-1">
+              <Link key={it.id} to={`/item/${it.id}`} className="lrow flex justify-between items-baseline gap-3 text-text py-1">
                 <span className="flex flex-col gap-0.5"><span className="font-semibold">{nameOf(it)}</span><span className="text-muted text-xs">{TYPE[it.type]}{from(it)}</span></span>
                 <span className={`text-xs ${it.priority === "high" ? "text-accent" : "text-muted"}`}>{it.priority ? PRIO[it.priority] : "Planned"}</span>
               </Link>
@@ -107,7 +107,7 @@ export function MvpBody({ dash }: { dash: Dashboard }) {
           <section className="card flex flex-col gap-3" aria-labelledby="mvp-recent">
             <h2 id="mvp-recent" className="card-title">Recently added</h2>
             {recent.data?.rows.map((it) => (
-              <Link key={it.id} to={`/item/${it.id}`} className="flex justify-between items-baseline gap-3 text-text py-0.5">
+              <Link key={it.id} to={`/item/${it.id}`} className="lrow flex justify-between items-baseline gap-3 text-text py-0.5">
                 <span className="truncate">{nameOf(it)}</span>
                 <span className="font-mono text-faint whitespace-nowrap text-xs">{age(it.added_at)}{daysSince(it.added_at) ? " ago" : ""}</span>
               </Link>

@@ -415,6 +415,19 @@ await step("M1 prefers-reduced-motion: transitions/animations off", async () => 
   await devState("normal");
   await send("Emulation.setEmulatedMedia", { features: [] });
 });
+await step("M4 hovering the selected segment keeps its label legible (M8 audit: hover rule outranked selected)", async () => {
+  await go("Backlog", "#/backlog");
+  const box = await waitFor(`(() => { const b = document.querySelector('.seg button[aria-selected="true"], .seg button[aria-checked="true"]'); if (!b) return null;
+    const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+  await sleep(300);
+  const c = await js(`(() => { const b = document.querySelector('.seg button[aria-selected="true"], .seg button[aria-checked="true"]');
+    const ind = b.parentElement.querySelector(".seg-ind"); const bg = getComputedStyle(ind ?? b).backgroundColor;
+    return { fg: getComputedStyle(b).color, bg, hover: b.matches(":hover") }; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
+  if (!c.hover) throw new Error("mouse hover did not land on the selected segment");
+  if (c.fg === c.bg) throw new Error(`selected segment label invisible on hover: color ${c.fg} on ${c.bg}`);
+});
 await step("M2 every rendered <button> on visited routes has an accessible name", async () => {
   if (unnamed.size) throw new Error([...unnamed].join("\n  "));
 });

@@ -136,6 +136,11 @@ impl Logger {
         write(conn, self.acc.observe(snap, at))
     }
 
+    /// See `Accumulator::awake_since`.
+    pub fn awake_since(&mut self, from: DateTime<Utc>) {
+        self.acc.awake_since(from);
+    }
+
     /// Finish the current play now (before pausing or turning off), writing it if ≥ 1 s.
     pub fn close(&mut self, conn: &Connection, at: DateTime<Utc>) -> Result<Option<i64>> {
         write(conn, self.acc.close(at))

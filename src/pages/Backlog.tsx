@@ -96,7 +96,7 @@ export default function Backlog() {
   if (isEmpty) return <><Topbar />{head}<Empty h="Nothing waiting" line="Paste a Spotify link above, or share one from your phone, and it lands here."><button className="btn btn-primary" onClick={() => quickAdd()}>Add a link</button></Empty></>;
 
   const row = (it: ItemSummary, group: ItemSummary[], n: number) => (
-    <div key={it.id} className={`row grid-cols-[16px_minmax(0,1fr)_70px_90px_80px_104px_64px] ${drag === it.id ? "opacity-50" : ""}`}
+    <div key={it.id} className={`row grid-cols-[16px_minmax(0,1fr)_70px_90px_80px_104px_72px] ${drag === it.id ? "opacity-50" : ""}`}
       draggable={sort === "order"} onDragStart={() => setDrag(it.id)} onDragEnd={() => setDrag(null)}
       onDragOver={(e) => { if (drag != null && group.some((g) => g.id === drag)) e.preventDefault(); }}
       onDrop={(e) => { e.preventDefault(); if (drag != null && drag !== it.id) reorder(drag, it.id); setDrag(null); }}>
@@ -110,7 +110,7 @@ export default function Backlog() {
       <span className="font-mono text-faint text-xs">{age(it.added_at)}</span>
       <span className="justify-self-end">{it.status === "in_progress" ? <StatusBadge>In progress</StatusBadge>
         : <button className="btn btn-secondary s" onClick={() => start(it)} aria-label={`Start ${nameOf(it)}`}>Start</button>}</span>
-      <span className="flex flex-wrap gap-1 items-center justify-self-end">{sort === "order" && <>
+      <span className="flex gap-1 items-center justify-self-end">{sort === "order" && <>
         <button className="icon-btn w-8 h-8" disabled={n === 0} onClick={() => reorder(it.id, group[n - 1].id)} aria-label={`Move ${nameOf(it)} up`}><ArrowUpIcon size={14} aria-hidden /></button>
         <button className="icon-btn w-8 h-8" disabled={n === group.length - 1} onClick={() => reorder(it.id, group[n + 1].id)} aria-label={`Move ${nameOf(it)} down`}><ArrowDownIcon size={14} aria-hidden /></button>
       </>}</span>

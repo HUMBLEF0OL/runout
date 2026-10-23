@@ -62,8 +62,9 @@ export function Seg<T extends string>({ label, options, value, onChange, radio, 
   );
 }
 
-export function Stat({ k, v, d, act }: { k: ReactNode; v: ReactNode; d?: ReactNode; act?: boolean }) {
-  return <div className="card stat hover"><span className="k">{k}</span><span className="v">{v}</span>{d != null && <span className={`d${act ? " act" : ""}`}>{d}</span>}</div>;
+/** `txt`: the value is a name, not a number, so it is set in sans (DESIGN §2.5 keeps mono for numbers). Lifts on hover only inside a link. */
+export function Stat({ k, v, d, act, txt }: { k: ReactNode; v: ReactNode; d?: ReactNode; act?: boolean; txt?: boolean }) {
+  return <div className="card stat"><span className="k">{k}</span><span className={`v${txt ? " txt" : ""}`}>{v}</span>{d != null && <span className={`d${act ? " act" : ""}`}>{d}</span>}</div>;
 }
 
 export function Empty({ h, line, children }: { h: ReactNode; line: ReactNode; children?: ReactNode }) {

@@ -75,7 +75,7 @@ function Listening({ range }: { range: Range }) {
         <span className="text-muted text-xs leading-[1.45]">Only albums whose tracks you've added.{take.data?.data.unfinished_unknown ? ` ${pl(take.data.data.unfinished_unknown, "other album")} can't be checked.` : ""}</span>
         {take.loading ? <SkelRows n={3} /> : take.error ? <ErrorBanner error={take.error} title="Couldn't load unfinished albums." onRetry={take.reload} />
           : take.data?.data.unfinished_albums.length ? take.data.data.unfinished_albums.map((u) => (
-          <Link key={u.item.id} to={`/item/${u.item.id}`} className="flex justify-between items-baseline gap-3 text-text py-[3px]">
+          <Link key={u.item.id} to={`/item/${u.item.id}`} className="lrow flex justify-between items-baseline gap-3 text-text py-[3px]">
             <span className="font-semibold">{nameOf(u.item)}</span><span className="font-mono text-text-2 whitespace-nowrap text-xs">{u.played} of {u.total} played</span>
           </Link>)) : <span className="text-muted">Nothing here.</span>}
       </Card>
@@ -140,7 +140,7 @@ function Take() {
       {groups.map(([title, rows]) => (
         <Card key={title} title={title} res={src} className="flex-[1_1_300px]">
           {rows.length ? rows.map((x) => (
-            <Link key={x.item.id} to={`/item/${x.item.id}`} className="flex flex-col gap-0.5 px-2.5 py-2 rounded-control bg-surface-2 text-text">
+            <Link key={x.item.id} to={`/item/${x.item.id}`} className="flex flex-col gap-0.5 px-2.5 py-2 rounded-control bg-surface-2 text-text transition hover:bg-surface-hover active:scale-[0.98]">
               <span className="font-semibold">{nameOf(x.item)}</span><span className="text-text-2 text-sm">{x.line}</span>
             </Link>)) : <span className="text-muted">Nothing here.</span>}
         </Card>
@@ -165,12 +165,12 @@ function Year() {
     {yr.loading ? <SkelBlock h={280} /> : yr.error ? <ErrorBanner error={yr.error} title="Couldn't load your year." onRetry={yr.reload} />
       : !y?.plays ? <Empty h={`No listening in ${year}`} line="Import your Spotify history to see this year." ><Link className="btn btn-secondary" to="/import/1">Import history</Link></Empty>
       : (
-        <section className="card p-8 flex flex-col gap-[18px] bg-[radial-gradient(120%_160%_at_0%_0%,rgba(245,181,68,0.16)_0%,rgba(23,25,28,0)_55%),var(--elev-1-bg)]">
+        <section className="card year p-8 flex flex-col gap-[18px]">
           <span className="text-muted">Your {y.year} in Runout</span>
-          <h2 className="text-[40px] font-extrabold tracking-[-0.03em]">{pl(y.hours, "hour")}, {pl(y.plays, "play")}.</h2>
+          <h2 className="text-3xl font-extrabold tracking-[-0.03em]">{pl(y.hours, "hour")}, {pl(y.plays, "play")}.</h2>
           <div className="stats">
-            <Stat k="Top artist" v={y.top_artist.name} d={pl(y.top_artist.plays, "play")} />
-            <Stat k="Top album" v={y.top_album.name} d={y.top_album.by} />
+            <Stat txt k="Top artist" v={y.top_artist.name} d={pl(y.top_artist.plays, "play")} />
+            <Stat txt k="Top album" v={y.top_album.name} d={y.top_album.by} />
             <Stat k="Explored" v={y.explored} d="Records you finished" />
             <Stat k="Reviews" v={y.reviews} d="Written this year" />
           </div>

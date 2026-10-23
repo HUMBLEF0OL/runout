@@ -57,9 +57,15 @@ fn push(out: &mut Export, name: String, r: impl Read) -> Result<()> {
     let Some(k) = kind(&name) else { return Ok(()) };
     let mut bytes = Vec::new();
     // A damaged zip entry (bad CRC, truncated) surfaces here as an io error: name the file (TSD §6).
-    r.take(MAX_FILE + 1).read_to_end(&mut bytes).map_err(|e| {
-        unrecognized("An export file couldn't be read.").with_detail(format!("{name}: {e}"))
-    })?;
+    // Other io errors (permission denied, file locked) stay io errors: the export isn't at fault.
+    r.take(MAX_FILE + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::InvalidData | std::io::ErrorKind::UnexpectedEof => {
+                unrecognized("An export file couldn't be read.").with_detail(format!("{name}: {e}"))
+            }
+            _ => e.into(),
+        })?;
     if bytes.len() as u64 > MAX_FILE {
         return Err(unrecognized("An export file is far larger than expected.").with_detail(name));
     }

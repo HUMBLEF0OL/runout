@@ -216,7 +216,7 @@ function BacklogCard() {
       <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">Backlog</h2><span className="font-mono text-muted text-xs">{b.data ? `${num(b.data.total)} waiting` : ""}</span></div>
       {b.data && !top3.length && <span className="text-muted">Nothing waiting. Paste a link to add one.</span>}
       {top3.map((it) => (
-        <Link key={it.id} to={`/item/${it.id}`} className="flex justify-between items-baseline gap-3 text-text py-1">
+        <Link key={it.id} to={`/item/${it.id}`} className="lrow flex justify-between items-baseline gap-3 text-text py-1">
           <span className="flex flex-col gap-0.5"><span className="font-semibold">{nameOf(it)}</span>
             <span className="text-muted text-xs">{TYPE[it.type]}{it.recommended_by ? `, from ${it.recommended_by}` : ""}</span></span>
           <span className={`text-xs ${it.priority === "high" ? "text-accent" : "text-muted"}`}>{it.status === "in_progress" ? "In progress" : it.priority ? PRIO[it.priority] : "Planned"}</span>

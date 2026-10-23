@@ -221,8 +221,9 @@ impl Spotify {
         while let Some(path) = next.take() {
             let page = self.request(Method::GET, &path, None).await?;
             let items = page["items"].as_array().map_or(&[][..], Vec::as_slice);
-            if items.is_empty() {
-                break; // a `next` past an empty page would loop forever on a malformed answer
+            let link = page["next"].as_str();
+            if items.is_empty() && link.map(url) == Some(url(&path)) {
+                break; // an empty page linking to itself would loop forever; other empty pages page on
             }
             for it in items {
                 out.push(serde_json::from_value(it.clone())?);
@@ -381,5 +382,16 @@ mod tests {
         let all: Vec<Value> = block(connected(&d, &stub).paginate("/me/playlists", 100)).unwrap();
         assert!(all.is_empty());
         assert_eq!(stub.calls().len(), 1);
+        // an empty page mid-list with a fresh `next` is paged past, not taken as the end
+        let d = temp_dir("client-gap");
+        let stub = Stub::new(&[
+            (
+                200,
+                &format!(r#"{{"items":[],"next":"{API}/me/playlists?offset=50"}}"#),
+            ),
+            (200, r#"{"items":[7],"next":null}"#),
+        ]);
+        let all: Vec<Value> = block(connected(&d, &stub).paginate("/me/playlists", 100)).unwrap();
+        assert_eq!(all.len(), 1);
     }
 }

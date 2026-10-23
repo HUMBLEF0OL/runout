@@ -27,11 +27,15 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>) {
             let apps = st.settings.lock().unwrap().logger_apps.clone();
             // SMTC calls block briefly: no lock held. A failed read skips this tick.
             let snap = watcher.as_mut().map(|w| w.snapshot(&apps));
+            let before = chrono::Utc::now();
             let lg = app.state::<Mutex<Logger>>();
             let mut lg = lg.lock().unwrap();
             let db = st.db.lock().unwrap();
             let s = st.settings.lock().unwrap().clone();
             let now = chrono::Utc::now();
+            if (now - before).num_seconds() > 1 {
+                lg.awake_since(before); // a long import held the locks; that wait isn't sleep
+            }
             match snap {
                 None => lg.error = true,
                 Some(Ok(snap)) => {

@@ -50,8 +50,8 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
 
 // `p` is the playlist id (check-up) or uri (Studio): names are not unique on Spotify.
 const PlaylistLink = ({ tab, id, name, sel, children }: { tab: Tab; id: string; name: string; sel: boolean; children: ReactNode }) => (
-  <Link to={`/playlists/${tab}?p=${encodeURIComponent(id)}`} className={`row grid-cols-[minmax(0,1fr)] ${sel ? "bg-surface-2" : ""}`} aria-current={sel ? "page" : undefined}>
-    <span className="flex flex-col gap-0.5 min-w-0"><span className="truncate font-semibold text-text">{name}</span><span className="text-muted text-xs">{children}</span></span>
+  <Link to={`/playlists/${tab}?p=${encodeURIComponent(id)}`} className="row grid-cols-[minmax(0,1fr)]" aria-current={sel ? "page" : undefined}>
+    <span className="flex flex-col gap-0.5 min-w-0"><span className="truncate font-semibold text-text">{name}</span><span className="text-muted text-xs font-mono">{children}</span></span>
   </Link>
 );
 

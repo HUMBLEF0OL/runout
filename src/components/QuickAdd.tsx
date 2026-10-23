@@ -199,7 +199,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
       foot = <>{cancel}<button type="button" className="btn btn-primary" disabled={saving} onClick={saveLater}>{saving ? <Dots /> : "Save for later"}</button></>;
       break;
     case "duplicate":
-      body = <div className="card flex flex-col gap-3 border-[rgba(245,181,68,0.35)]">
+      body = <div className="card warn flex flex-col gap-3">
         <span className="text-accent font-bold text-sm">Already saved</span>
         <span>{dup ? `${nameOf(dup)} is already in your library, ${STATUS[dup.status]} since ${day(dup.history[0]?.at ?? dup.added_at)}.` : "This is already in your library."}</span></div>;
       foot = <>

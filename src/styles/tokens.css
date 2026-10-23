@@ -3,7 +3,7 @@
    exist are these tokens (bg-surface, text-muted, border-line-strong, rounded-control, text-sm, font-mono, ...). */
 @theme {
   --color-*: initial;
-  --color-bg: #101113; --color-rail: #0B0C0E; --color-surface: #17191C; --color-surface-2: #1F2226; --color-surface-3: #23262B;
+  --color-bg: #101113; --color-rail: #0B0C0E; --color-surface: #17191C; --color-surface-2: #1F2226; --color-surface-3: #23262B; --color-surface-hover: #2A2D32;
   --color-line: #23262B; --color-line-2: #2E3238; --color-line-strong: #3A3F46; --color-line-hover: #4A5059;
   --color-text: #ECEDEF; --color-text-2: #C3C7CE; --color-muted: #A9AEB7; --color-faint: #9A9FA8;
   --color-accent: #F5B544; --color-accent-ink: #101113; --color-link: #F5C46B; --color-link-hover: #FFDCA0;

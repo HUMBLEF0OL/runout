@@ -14,7 +14,7 @@ const RESTART_MS: i64 = 3000;
 
 /// Snapshots arrive at least every `poll::POLL` (5 s). A longer silence (PC asleep, hibernated) or
 /// the wall clock moving backwards ends the play at the last snapshot seen: the gap is never play time.
-// ponytail: generous so a db lock held by a long import doesn't split a play; sleeps under 5 min still count.
+// ponytail: sleeps under 5 min still count as play time; a long lock wait is vouched for by `awake_since`.
 const MAX_GAP_MS: i64 = 5 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +115,15 @@ impl Accumulator {
         match self.last_seen {
             Some(l) if at < l || (at - l).num_milliseconds() > MAX_GAP_MS => l,
             _ => at,
+        }
+    }
+
+    /// The poll thread was blocked (lock held by an import or backup) from `from` until the next
+    /// snapshot: that wait is awake time, so the next snapshot is not clamped as a sleep.
+    // ponytail: a PC that sleeps during the lock wait itself still counts; needs a monotonic-vs-wall clock compare.
+    pub fn awake_since(&mut self, from: DateTime<Utc>) {
+        if self.clamp(from) == from {
+            self.last_seen = None;
         }
     }
 
@@ -300,6 +309,21 @@ mod tests {
         a.observe(Some((song("A"), Playing)), t(0.0));
         a.observe(Some((song("A"), Playing)), t(60.0));
         assert_eq!(a.close(t(9_000.0)).unwrap().ms_played, 60_000);
+    }
+
+    #[test]
+    fn a_long_lock_wait_is_play_time_not_sleep() {
+        let mut a = Accumulator::default();
+        a.observe(Some((song("A"), Playing)), t(0.0));
+        a.observe(Some((song("A"), Playing)), t(5.0));
+        a.awake_since(t(10.0)); // poll thread waited 10 min for the db lock from here
+        assert_eq!(a.observe(Some((song("A"), Playing)), t(610.0)), None);
+        assert_eq!(a.observe(None, t(615.0)).unwrap().ms_played, 615_000);
+        // a real sleep before the wait still clamps
+        let mut b = Accumulator::default();
+        b.observe(Some((song("A"), Playing)), t(0.0));
+        b.awake_since(t(3_600.0));
+        assert_eq!(b.observe(None, t(3_605.0)), None); // 0 ms played, nothing written
     }
 
     #[test]
