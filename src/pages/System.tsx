@@ -5,7 +5,7 @@ import type { Status } from "../api";
 import { Attribution, Dots, Empty, EmbedSlot, LiveDot, NameNeeded, Rating, SkelRows, Stat, StatusBadge, StatusControl, TagChips, useToast } from "../components/ui";
 
 const SW: [string, string, string][] = [["--bg", "#101113", "Page canvas"], ["--rail", "#0B0C0E", "Sidebar"], ["--surface", "#17191C", "Cards, inputs"], ["--surface-2", "#1F2226", "Hover, selected"], ["--line", "#23262B", "Dividers"],
-  ["--line-strong", "#3A3F46", "Control borders"], ["--text", "#ECEDEF", "Primary text, 16.1:1"], ["--text-2", "#C3C7CE", "Secondary, 11.1:1"], ["--muted", "#A9AEB7", "Labels, 8.5:1"], ["--faint", "#9A9FA8", "Ranks, times, 7.1:1"],
+  ["--line-strong", "#3A3F46", "Control borders"], ["--text", "#ECEDEF", "Primary text, 16.1:1"], ["--text-2", "#C3C7CE", "Secondary, 11.1:1"], ["--muted", "#B6BBC3", "Labels, 9.8:1"], ["--faint", "#9A9FA8", "Ranks, times, 7.1:1"],
   ["--accent", "#F5B544", "Needs you, 10.4:1"], ["--link", "#F5C46B", "Links, 11.7:1"], ["--bar", "#4A5059", "Chart bars"], ["--danger", "#FF7A6B", "Destructive, 7.4:1"], ["--accent-ink", "#101113", "Text on accent, 10.4:1"]];
 const STATES = ["Default", "Hover", "Pressed", "Focus", "Disabled", "Loading"];
 // Static pictures of each interaction state (the live row below has the real ones).

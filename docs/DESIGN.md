@@ -41,7 +41,7 @@ Tailwind v4 `@theme` in `src/styles/tokens.css` (M2): colors are `--color-<token
 | `--line-strong` | `#3A3F46` | Secondary button and chip borders |
 | `--text` | `#ECEDEF` | Primary text |
 | `--text-2` | `#C3C7CE` | Secondary text |
-| `--muted` | `#A9AEB7` | Labels, metadata (≥ 7:1 on `--bg`) |
+| `--muted` | `#B6BBC3` | Labels, metadata (≥ 7:1 on every surface incl. hover fills; was `#A9AEB7` until M8) |
 | `--faint` | `#9A9FA8` | Ranks, timestamps (≥ 6:1 on `--bg`) |
 | `--accent` | `#F5B544` | Attention, primary button fill, active bar |
 | `--accent-ink` | `#101113` | Text on accent |
