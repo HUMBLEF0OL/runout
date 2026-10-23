@@ -56,7 +56,10 @@ pub fn unrecognized(message: &str) -> AppError {
 fn push(out: &mut Export, name: String, r: impl Read) -> Result<()> {
     let Some(k) = kind(&name) else { return Ok(()) };
     let mut bytes = Vec::new();
-    r.take(MAX_FILE + 1).read_to_end(&mut bytes)?;
+    // A damaged zip entry (bad CRC, truncated) surfaces here as an io error: name the file (TSD §6).
+    r.take(MAX_FILE + 1).read_to_end(&mut bytes).map_err(|e| {
+        unrecognized("An export file couldn't be read.").with_detail(format!("{name}: {e}"))
+    })?;
     if bytes.len() as u64 > MAX_FILE {
         return Err(unrecognized("An export file is far larger than expected.").with_detail(name));
     }
@@ -237,5 +240,38 @@ mod walk_tests {
         let e = read(&root).unwrap();
         assert_eq!(e.streaming.len(), 1, "only the shallow file is read");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A damaged entry inside the .zip (CRC mismatch) or truncated JSON names the file
+    /// (`import_unrecognized`, TSD §6), never a bare I/O error.
+    #[test]
+    fn damaged_zip_entry_names_the_file() {
+        use std::io::Write;
+        let body = br#"[{"ts": "2026-01-01T00:00:00Z", "ms_played": 1000}]"#;
+        let zp = std::env::temp_dir().join(format!("runout-src-bad-{}.zip", std::process::id()));
+        let mut w = zip::ZipWriter::new(FsFile::create(&zp).unwrap());
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        w.start_file("x/Streaming_History_Audio_2026.json", opts)
+            .unwrap();
+        w.write_all(body).unwrap();
+        w.finish().unwrap();
+        let mut bytes = std::fs::read(&zp).unwrap();
+        let at = bytes
+            .windows(body.len())
+            .position(|win| win == body)
+            .unwrap();
+        bytes[at + 10] ^= 0x55; // corrupt the stored data; the CRC no longer matches
+        std::fs::write(&zp, &bytes).unwrap();
+        let e = read(&zp).err().unwrap();
+        let _ = std::fs::remove_file(&zp);
+        assert_eq!(e.code, Code::ImportUnrecognized, "{e:?}");
+        assert_eq!(
+            e.detail
+                .as_deref()
+                .map(|d| d.starts_with("Streaming_History_Audio_2026.json")),
+            Some(true),
+            "{e:?}"
+        );
     }
 }

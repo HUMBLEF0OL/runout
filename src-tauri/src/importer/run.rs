@@ -185,6 +185,41 @@ mod tests {
         assert_eq!((imports[1].kind, imports[1].record_count), ("account", 2));
     }
 
+    /// Rows with null metadata, 0 ms and exact repeats inside one file import without error;
+    /// a repeat is a duplicate, a 0 ms row is stored but isn't a play.
+    #[test]
+    fn sparse_and_repeated_rows_import_cleanly() {
+        let d = std::env::temp_dir().join(format!("runout-sparse-import-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let row = |ts: &str, ms: u32| {
+            format!(
+                r#"{{"ts": "{ts}", "ms_played": {ms}, "platform": null, "master_metadata_track_name": null,
+                    "master_metadata_album_artist_name": null, "master_metadata_album_album_name": null,
+                    "spotify_track_uri": "spotify:track:AAAAAAAAAAAAAAAAAAAAAA", "reason_start": null,
+                    "reason_end": null, "shuffle": null, "skipped": null, "offline": null, "incognito_mode": null}}"#
+            )
+        };
+        let a = row("2026-01-01T00:00:00Z", 0);
+        let b = row("2026-01-01T00:05:00Z", 90_000);
+        std::fs::write(
+            d.join("Streaming_History_Audio_2026.json"),
+            format!("[{a}, {b}, {b}]"),
+        )
+        .unwrap();
+        let mut c = db::open_in_memory().unwrap();
+        let r = run(&mut c, &load(&d).unwrap()).unwrap();
+        let _ = std::fs::remove_dir_all(&d);
+        assert_eq!((r.added, r.duplicates), (2, 1));
+        assert_eq!(
+            count(
+                &c,
+                "SELECT count(*) FROM listening_event WHERE counts_as_play"
+            ),
+            1
+        );
+    }
+
     #[test]
     fn bad_file_aborts_everything() {
         let d = std::env::temp_dir().join(format!("runout-bad-import-{}", std::process::id()));

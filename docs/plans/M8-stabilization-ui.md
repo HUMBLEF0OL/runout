@@ -51,6 +51,16 @@ Agents: `react-ui` (UI streamline & states), `rust-core` (gap resolution & backe
 
 4. **Future Candidates Evaluation (WI 4):**
    - Review BRD §4.4 candidate items (e.g., deep listening analytics, markdown/CSV export) based on user preference and priority.
+   - **Evaluated 23 Oct 2026** (building any of them is a scope change, so the user picks; none started):
+
+     | Candidate | Value | Cost / risk | Recommendation |
+     |---|---|---|---|
+     | Deep listening analytics (trends, streaks, charts by period, clock, discovery rate) | High: 180k imported plays + live log already in SQLite; extends Insights | Medium: new `insights` queries + 1–2 screens; compliance-clean (sources U/S/E only, BRD §4.3) | **Do first** (M9 candidate) |
+     | Markdown / CSV export | Medium: data portability, Obsidian notes | Low: one Rust command + file dialog; export only source U/S/E fields (promoted fields marked, BRD §5.2) | **Do second** |
+     | Custom fields; per-track tracking in albums | Medium | Medium–high: schema + contract + FTS changes | Wait for U-5 daily-use feedback |
+     | PWA companion over local Wi-Fi | Low since the Runout Inbox covers phone capture (D33) | High: new network surface, auth on LAN | Drop unless U-5 shows a need |
+     | Cross-device sync via user-owned storage | Low (one Windows device) | High: SQLite file conflicts | Drop |
+     | Links to other services | Low | Compliance: never in the same row/set as Spotify content (S10) | Drop |
 
 5. **Verification & Audit:**
    - Full automated test suite passes: `python scripts/check.py` clean.

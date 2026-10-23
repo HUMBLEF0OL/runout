@@ -466,4 +466,52 @@ mod tests {
             .unwrap();
         assert_eq!(n, 0);
     }
+
+    /// Empty library, one play, a record with no plays: every insights read answers (no NULL
+    /// aggregate decode error, no panic) and no figure is NaN or infinite.
+    #[test]
+    fn sparse_libraries_give_finite_answers() {
+        use fixture::{ev, now, put};
+        use plays::{PlayQuery, Tab};
+        let c = crate::db::open_in_memory().unwrap();
+        let all = |c: &Connection, item: Option<i64>| {
+            let mut out = format!("{:?}", freshness(c).unwrap());
+            for r in [Range::Week, Range::Month, Range::Year, Range::All] {
+                let q = PlayQuery {
+                    tab: Tab::All,
+                    range: r,
+                    offset: 0,
+                    limit: 50,
+                };
+                out += &format!(
+                    "{:?}{:?}{:?}",
+                    listening::listening(c, r, true, now()).unwrap(),
+                    collection::collection(c, r, now()).unwrap(),
+                    plays::list_plays(c, &q, true, now()).unwrap(),
+                );
+            }
+            out += &format!(
+                "{:?}{:?}{:?}",
+                take::take(c, true, now()).unwrap(),
+                listening::year_review(c, 2026, true).unwrap(),
+                plays::list_unmatched(c, true).unwrap(),
+            );
+            if let Some(id) = item {
+                out += &format!("{:?}", plays::item_listening(c, id, true, now()).unwrap());
+            }
+            assert!(!out.contains("NaN") && !out.contains("inf"), "{out}");
+        };
+        all(&c, None);
+        c.execute_batch(
+            "INSERT INTO item(id, type, display_name, status, added_at, modified_at) VALUES
+               (1, 'track', 'Lone', 'planned', '2026-10-01T10:00:00Z', '2026-10-01T10:00:00Z'),
+               (2, 'album', 'Unplayed', 'explored', '2026-10-01T10:00:00Z', '2026-10-01T10:00:00Z')",
+        )
+        .unwrap();
+        all(&c, Some(2));
+        put(&c, ev("2026-10-18T10:00:00Z", 0, "Lone", Some(1)));
+        put(&c, ev("2026-10-18T11:00:00Z", 45_000, "Lone", Some(1)));
+        all(&c, Some(1));
+        all(&c, Some(2));
+    }
 }

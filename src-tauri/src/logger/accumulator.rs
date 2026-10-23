@@ -12,6 +12,11 @@ pub const MIN_MS: i64 = 1000;
 // ponytail: position-based; a seek to 0:01 also counts as a replay, which matches Spotify's own rows.
 const RESTART_MS: i64 = 3000;
 
+/// Snapshots arrive at least every `poll::POLL` (5 s). A longer silence (PC asleep, hibernated) or
+/// the wall clock moving backwards ends the play at the last snapshot seen: the gap is never play time.
+// ponytail: generous so a db lock held by a long import doesn't split a play; sleeps under 5 min still count.
+const MAX_GAP_MS: i64 = 5 * 60 * 1000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayState {
     Playing,
@@ -54,6 +59,8 @@ pub struct Accumulator {
     last_played: Option<DateTime<Utc>>,
     /// Furthest timeline position seen for this play (replay detection).
     pos_ms: i64,
+    /// Time of the previous snapshot (sleep / clock-jump detection).
+    last_seen: Option<DateTime<Utc>>,
 }
 
 impl Accumulator {
@@ -63,6 +70,8 @@ impl Accumulator {
         now: Option<(Track, PlayState)>,
         at: DateTime<Utc>,
     ) -> Option<Closed> {
+        let gap = self.clamp(at) != at;
+        let gap_closed = if gap { self.close(at) } else { None };
         let changed = match (&self.track, &now) {
             (Some(cur), Some((t, _))) => {
                 !cur.same(t) || (t.position_ms < RESTART_MS && self.pos_ms >= RESTART_MS)
@@ -70,7 +79,8 @@ impl Accumulator {
             (None, None) => false,
             _ => true,
         };
-        let closed = if changed { self.close(at) } else { None };
+        let closed = if changed { self.close(at) } else { None }.or(gap_closed);
+        self.last_seen = Some(at);
         let Some((track, state)) = now else {
             return closed;
         };
@@ -100,12 +110,21 @@ impl Accumulator {
                 .map_or(0, |s| (at - s).num_milliseconds().max(0))
     }
 
+    /// `at`, or the last snapshot time when `at` is after a sleep-sized gap or before it.
+    fn clamp(&self, at: DateTime<Utc>) -> DateTime<Utc> {
+        match self.last_seen {
+            Some(l) if at < l || (at - l).num_milliseconds() > MAX_GAP_MS => l,
+            _ => at,
+        }
+    }
+
     pub fn track(&self) -> Option<&Track> {
         self.track.as_ref()
     }
 
     /// Finish the current track at `at` (track change, session end, logger paused or turned off).
     pub fn close(&mut self, at: DateTime<Utc>) -> Option<Closed> {
+        let at = self.clamp(at);
         let ms = self.ms_played(at);
         let ended_at = if self.playing_since.is_some() {
             Some(at)
@@ -244,6 +263,43 @@ mod tests {
         b.observe(at(1), t(0.0));
         b.observe(at(2), t(2.0));
         assert_eq!(b.observe(at(2), t(5.0)), None);
+    }
+
+    #[test]
+    fn sleep_or_clock_jump_never_counts_as_play_time() {
+        // PC sleeps 8 h while "Playing": the play ends at the last tick before the gap.
+        assert_eq!(
+            run(&[
+                (0.0, Some(("A", Playing))),
+                (30.0, Some(("A", Playing))),
+                (30.0 + 8.0 * 3600.0, Some(("A", Paused))),
+                (30.0 + 8.0 * 3600.0 + 5.0, None),
+            ]),
+            vec![("A".to_string(), 30_000, 30.0)]
+        );
+        // after the gap the same track playing on is a fresh play
+        let r = run(&[
+            (0.0, Some(("A", Playing))),
+            (10.0, Some(("A", Playing))),
+            (10_000.0, Some(("A", Playing))),
+            (10_020.0, None),
+        ]);
+        assert_eq!(r[0], ("A".to_string(), 10_000, 10.0));
+        assert_eq!(r[1].1, 20_000);
+        // wall clock set back an hour mid-play: time before the jump is kept, none is invented
+        let r = run(&[
+            (3_600.0, Some(("A", Playing))),
+            (3_620.0, Some(("A", Playing))),
+            (25.0, Some(("A", Playing))),
+            (40.0, None),
+        ]);
+        assert_eq!(r[0], ("A".to_string(), 20_000, 3_620.0));
+        assert_eq!(r[1].1, 15_000);
+        // exit flush right after resume (no tick in between) also stops at the last tick
+        let mut a = Accumulator::default();
+        a.observe(Some((song("A"), Playing)), t(0.0));
+        a.observe(Some((song("A"), Playing)), t(60.0));
+        assert_eq!(a.close(t(9_000.0)).unwrap().ms_played, 60_000);
     }
 
     #[test]

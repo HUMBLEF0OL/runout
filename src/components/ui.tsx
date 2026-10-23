@@ -35,12 +35,29 @@ export function Seg<T extends string>({ label, options, value, onChange, radio, 
     onChange(options[n][0]);
     (ref.current?.children[n] as HTMLElement | undefined)?.focus();
   };
+  // Indicator slides under the selected button (DESIGN §2.4); re-measured when the control resizes (rail collapse, wrap).
+  const [ind, setInd] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const sel = options.findIndex((o) => o[0] === value);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const place = () => {
+      const b = el.children[sel] as HTMLElement | undefined;
+      setInd(b ? { left: b.offsetLeft, top: b.offsetTop, width: b.offsetWidth, height: b.offsetHeight } : null);
+    };
+    place();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [sel, options.length]);
   return (
-    <div ref={ref} className={`seg${accent ? " accent" : ""}`} role={radio ? "radiogroup" : "tablist"} aria-label={label}>
+    <div ref={ref} className={`seg${accent ? " accent" : ""}${ind ? " slid" : ""}`} role={radio ? "radiogroup" : "tablist"} aria-label={label}>
       {options.map(([v, t], i) => (
         <button key={v} type="button" role={radio ? "radio" : "tab"} {...(radio ? { "aria-checked": v === value } : { "aria-selected": v === value })}
           tabIndex={v === value || (!options.some((o) => o[0] === value) && i === 0) ? 0 : -1} onClick={() => onChange(v)} onKeyDown={(e) => move(e, i)}>{t}</button>
       ))}
+      {ind && <span className="seg-ind" style={ind} aria-hidden />}
     </div>
   );
 }

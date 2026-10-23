@@ -220,7 +220,11 @@ impl Spotify {
         let mut next = Some(first.to_string());
         while let Some(path) = next.take() {
             let page = self.request(Method::GET, &path, None).await?;
-            for it in page["items"].as_array().into_iter().flatten() {
+            let items = page["items"].as_array().map_or(&[][..], Vec::as_slice);
+            if items.is_empty() {
+                break; // a `next` past an empty page would loop forever on a malformed answer
+            }
+            for it in items {
                 out.push(serde_json::from_value(it.clone())?);
                 if out.len() >= max {
                     return Ok(out);
@@ -332,5 +336,50 @@ mod tests {
         let sp = connected(&d, &stub);
         let e = block(sp.get_json::<Value>("/me/top/tracks")).unwrap_err();
         assert_eq!(e.code, Code::SpotifyForbidden);
+    }
+
+    /// Every failure shape ends as a typed error, and only 4xx counts as "write refused".
+    #[test]
+    fn http_failures_map_to_typed_errors() {
+        let d = temp_dir("client-errors");
+        let get = |resps: &[(u16, &str)]| {
+            let stub = Stub::new(resps);
+            block(connected(&d, &stub).get_json::<Value>("/me")).unwrap_err()
+        };
+        // 401 twice: one refresh, then sign-in expired
+        let e = get(&[
+            (401, "{}"),
+            (200, r#"{"access_token":"a2","expires_in":3600}"#),
+            (401, "{}"),
+        ]);
+        assert_eq!(e.code, Code::SpotifyAuth);
+        let e = get(&[(503, "<html>")]);
+        assert_eq!(
+            (e.code, e.detail.as_deref()),
+            (Code::Internal, Some("HTTP 503"))
+        );
+        assert!(!refused(&e), "a 5xx write may have landed");
+        assert!(refused(&get(&[(400, "{}")])));
+        // malformed 2xx bodies
+        assert_eq!(get(&[(200, "{\"items\": [")]).code, Code::Internal);
+        let stub = Stub::new(&[(200, r#"{"id": 5}"#)]);
+        let e = block(connected(&d, &stub).get_json::<Vec<bool>>("/x")).unwrap_err();
+        assert_eq!(e.code, Code::Internal);
+    }
+
+    /// A page with no items ends paging even if `next` points back at it.
+    #[test]
+    fn paginate_stops_on_an_empty_page() {
+        let d = temp_dir("client-loop");
+        let stub = Stub::new(&[]);
+        for _ in 0..5 {
+            stub.push(
+                200,
+                &format!(r#"{{"items": [], "next": "{API}/me/playlists"}}"#),
+            );
+        }
+        let all: Vec<Value> = block(connected(&d, &stub).paginate("/me/playlists", 100)).unwrap();
+        assert!(all.is_empty());
+        assert_eq!(stub.calls().len(), 1);
     }
 }
