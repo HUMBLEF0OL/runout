@@ -58,14 +58,14 @@ fn push(out: &mut Export, name: String, r: impl Read) -> Result<()> {
     let mut bytes = Vec::new();
     // A damaged zip entry (bad CRC, truncated) surfaces here as an io error: name the file (TSD §6).
     // Other io errors (permission denied, file locked) stay io errors: the export isn't at fault.
-    r.take(MAX_FILE + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::InvalidData | std::io::ErrorKind::UnexpectedEof => {
-                unrecognized("An export file couldn't be read.").with_detail(format!("{name}: {e}"))
-            }
-            _ => e.into(),
-        })?;
+    r.take(MAX_FILE + 1).read_to_end(&mut bytes).map_err(|e| {
+        // Decoder errors carry no OS code (zip: bad CRC = InvalidData; flate2: bad stream = InvalidInput).
+        if e.raw_os_error().is_some() || e.kind() == std::io::ErrorKind::PermissionDenied {
+            e.into()
+        } else {
+            unrecognized("An export file couldn't be read.").with_detail(format!("{name}: {e}"))
+        }
+    })?;
     if bytes.len() as u64 > MAX_FILE {
         return Err(unrecognized("An export file is far larger than expected.").with_detail(name));
     }
@@ -253,31 +253,33 @@ mod walk_tests {
     #[test]
     fn damaged_zip_entry_names_the_file() {
         use std::io::Write;
-        let body = br#"[{"ts": "2026-01-01T00:00:00Z", "ms_played": 1000}]"#;
-        let zp = std::env::temp_dir().join(format!("runout-src-bad-{}.zip", std::process::id()));
-        let mut w = zip::ZipWriter::new(FsFile::create(&zp).unwrap());
-        let opts = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
-        w.start_file("x/Streaming_History_Audio_2026.json", opts)
-            .unwrap();
-        w.write_all(body).unwrap();
-        w.finish().unwrap();
-        let mut bytes = std::fs::read(&zp).unwrap();
-        let at = bytes
-            .windows(body.len())
-            .position(|win| win == body)
-            .unwrap();
-        bytes[at + 10] ^= 0x55; // corrupt the stored data; the CRC no longer matches
-        std::fs::write(&zp, &bytes).unwrap();
-        let e = read(&zp).err().unwrap();
-        let _ = std::fs::remove_file(&zp);
-        assert_eq!(e.code, Code::ImportUnrecognized, "{e:?}");
-        assert_eq!(
-            e.detail
-                .as_deref()
-                .map(|d| d.starts_with("Streaming_History_Audio_2026.json")),
-            Some(true),
-            "{e:?}"
-        );
+        use zip::CompressionMethod::{Deflated, Stored};
+        let body = br#"[{"ts": "2026-01-01T00:00:00Z", "ms_played": 1000}]"#.repeat(40);
+        let name = "x/Streaming_History_Audio_2026.json";
+        for (i, method) in [Stored, Deflated].into_iter().enumerate() {
+            let zp =
+                std::env::temp_dir().join(format!("runout-src-bad-{}-{i}.zip", std::process::id()));
+            let mut w = zip::ZipWriter::new(FsFile::create(&zp).unwrap());
+            let opts = zip::write::SimpleFileOptions::default().compression_method(method);
+            w.start_file(name, opts).unwrap();
+            w.write_all(&body).unwrap();
+            w.finish().unwrap();
+            let mut bytes = std::fs::read(&zp).unwrap();
+            // entry data starts after the 30-byte local header, the name and the extra field
+            let extra = u16::from_le_bytes([bytes[28], bytes[29]]) as usize;
+            let at = 30 + name.len() + extra;
+            for b in &mut bytes[at + 4..at + 12] {
+                *b ^= 0xA5; // stored: CRC mismatch; deflated: broken stream or CRC mismatch
+            }
+            std::fs::write(&zp, &bytes).unwrap();
+            let e = read(&zp).err().unwrap();
+            let _ = std::fs::remove_file(&zp);
+            assert_eq!(e.code, Code::ImportUnrecognized, "{method:?} {e:?}");
+            let detail = e.detail.as_deref().unwrap_or("");
+            assert!(
+                detail.starts_with("Streaming_History_Audio_2026.json"),
+                "{method:?} {e:?}"
+            );
+        }
     }
 }

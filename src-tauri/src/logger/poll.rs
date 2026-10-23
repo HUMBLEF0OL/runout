@@ -33,12 +33,14 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>) {
             let db = st.db.lock().unwrap();
             let s = st.settings.lock().unwrap().clone();
             let now = chrono::Utc::now();
-            if (now - before).num_seconds() > 1 {
-                lg.awake_since(before); // a long import held the locks; that wait isn't sleep
-            }
             match snap {
                 None => lg.error = true,
                 Some(Ok(snap)) => {
+                    // A long import held the locks; that wait isn't sleep. Only here: a tick that
+                    // doesn't observe must leave `last_seen` set, or the next gap goes unclamped.
+                    if (now - before).num_seconds() > 1 {
+                        lg.awake_since(before);
+                    }
                     if let Ok(Some(id)) = lg.observe(&db, &s, snap, now)
                         && let Ok(p) = play(&db, id)
                     {

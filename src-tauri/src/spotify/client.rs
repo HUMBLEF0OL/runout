@@ -218,13 +218,13 @@ impl Spotify {
     pub async fn paginate<T: DeserializeOwned>(&self, first: &str, max: usize) -> Result<Vec<T>> {
         let mut out = Vec::new();
         let mut next = Some(first.to_string());
+        let mut seen = std::collections::HashSet::new();
         while let Some(path) = next.take() {
+            if !seen.insert(url(&path)) {
+                break; // a malformed answer linking back to a page already read (A→B→A)
+            }
             let page = self.request(Method::GET, &path, None).await?;
             let items = page["items"].as_array().map_or(&[][..], Vec::as_slice);
-            let link = page["next"].as_str();
-            if items.is_empty() && link.map(url) == Some(url(&path)) {
-                break; // an empty page linking to itself would loop forever; other empty pages page on
-            }
             for it in items {
                 out.push(serde_json::from_value(it.clone())?);
                 if out.len() >= max {
@@ -393,5 +393,17 @@ mod tests {
         ]);
         let all: Vec<Value> = block(connected(&d, &stub).paginate("/me/playlists", 100)).unwrap();
         assert_eq!(all.len(), 1);
+        // empty pages linking in a cycle (A→B→A) stop once a page repeats
+        let d = temp_dir("client-cycle");
+        let b = format!("{API}/me/playlists?offset=50");
+        let a = format!("{API}/me/playlists");
+        let stub = Stub::new(&[
+            (200, &format!(r#"{{"items":[],"next":"{b}"}}"#)),
+            (200, &format!(r#"{{"items":[],"next":"{a}"}}"#)),
+            (200, &format!(r#"{{"items":[],"next":"{b}"}}"#)),
+        ]);
+        let all: Vec<Value> = block(connected(&d, &stub).paginate("/me/playlists", 100)).unwrap();
+        assert!(all.is_empty());
+        assert_eq!(stub.calls().len(), 2);
     }
 }
