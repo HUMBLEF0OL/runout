@@ -1,6 +1,7 @@
 # Sample outbound TCP connections of runout.exe and its WebView2 child processes; map IPs to names via the DNS cache.
-param([int]$Seconds = 60, [string]$Out = "net.csv")
-$root = (Get-Process runout -ErrorAction Stop | Select-Object -First 1).Id
+# -RootPid picks one instance when another runout.exe (e.g. the installed app) is also running.
+param([int]$Seconds = 60, [string]$Out = "net.csv", [int]$RootPid = 0)
+$root = if ($RootPid) { $RootPid } else { (Get-Process runout -ErrorAction Stop | Select-Object -First 1).Id }
 $seen = @{}
 for ($i = 0; $i -lt $Seconds; $i++) {
   $all = Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name
