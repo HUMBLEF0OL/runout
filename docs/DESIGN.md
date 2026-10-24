@@ -78,13 +78,13 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | Hover | Surface one step lighter (`--surface` → `--surface-2`) or `--elev-1-hover`; text unchanged |
 | Pressed | `scale(0.98)`; primary button gradient flips darker (`#F0A92E` → `#E39A1F`) |
 | Focus (keyboard) | 2px `--accent` outline, 2px offset; never removed |
-| Selected | Light fill (`#ECEDEF` on dark text) for segments; `--indicator` for nav; accent underline for page-level tabs (`Seg line`); accent fill + ink check for checkboxes; accent track + ink thumb for switches |
+| Selected | Light fill (`#ECEDEF` on dark text) for value segments; nav and current list row: bright bold label + accent icon + 2×20 px accent marker, no fill; accent underline for page-level tabs (`Seg line`); accent fill + ink check for checkboxes; accent track + ink thumb for switches |
 | Disabled | 40% opacity, no hover, `cursor: not-allowed`, still announced |
 | Loading | Label replaced by a 3-dot progress (no spinner); width kept |
 | Error | `--danger` border + message below the control |
 
 ## 4. Layout
-- **Shell:** left rail 208–220 px (logo, nav with counts, data-freshness box) + main content (max 1200 px, fluid). Rail collapses to icons below 1100 px window width.
+- **Shell:** left rail 216 px + main content (max 1240 px, fluid). Rail (M9 redesign, 24 Oct 2026): wordmark + **Quick add** button (Ctrl+N made visible); nav grouped by what you're doing: Home, then *Listening* (Recent plays, Insights), *Collection* (Backlog, Library, Rediscover with mono counts), *Spotify* (Playlists, From Spotify), group names in 12 px `--faint`, never uppercase; icons always shown; the current page has no fill (user, 24 Oct 2026: the grey pill + accent edge read as generic): its label goes bright and bold, its icon takes the accent, and a short 2×20 px accent marker sitting on the rail's divider springs to it (360 ms); list rows use the same marker; **Settings** sits apart at the foot; one status card at the bottom: **Now playing** (live dot, track, artist; on every screen, opens Home) above data freshness. Below 1100 px the rail collapses to icons with tooltips, groups become hairline dividers, the status card hides.
 - **Top bar** in main: one combined field “Search your library, or paste a Spotify link to add it” + Add, and the page’s range or filter control.
 - Window minimum 900 × 600 (TSD tauri.conf).
 

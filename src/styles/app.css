@@ -19,15 +19,28 @@ mark { background: rgba(245,181,68,0.3); color: var(--color-text); border-radius
 h1, h2 { text-wrap: balance; }
 .tile .t, .card a, .card span { overflow-wrap: break-word; hyphens: auto; }
 
-.rail { align-self: flex-start; flex: 0 0 216px; background: var(--color-rail); border-right: 1px solid var(--color-line); padding: 22px 14px; display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; }
+.rail { align-self: flex-start; flex: 0 0 216px; background: var(--color-rail); border-right: 1px solid var(--color-line); padding: 18px 14px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; }
 .logo { padding: 0 10px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em; color: var(--color-text); }
-.nav { display: flex; flex-direction: column; gap: 2px; }
-.nav-item { display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; color: var(--color-text-2); transition: background 150ms, color 150ms; }
-.nav-item:hover { background: var(--color-surface); color: var(--color-text); }
-.nav-item:active { background: var(--color-surface-2); }
-.nav-item[aria-current="page"] { background: var(--color-surface-2); color: var(--color-text); font-weight: 700; box-shadow: inset 3px 0 0 var(--color-accent); }
+/* M9 rail: head (wordmark + Quick add), grouped nav with one springing indicator, Settings at the foot, now playing + freshness */
+.rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rail-add { width: 30px; height: 30px; background: var(--color-surface); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
+.nav { position: relative; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
+.nav-group-name { padding: 0 10px 4px; font-size: 12px; font-weight: 600; color: var(--color-faint); }
+.nav-foot { margin-top: auto; padding-top: 10px; display: flex; flex-direction: column; }
+/* Selected page: no fill. A short accent marker rides the rail edge (on its divider) and springs to the page; the label goes bright + bold and the icon takes the accent. */
+.nav-ind { position: absolute; right: -15px; top: 0; width: 2px; height: 20px; z-index: 2; border-radius: var(--radius-bar); background: var(--color-accent); transition: transform 360ms var(--ease-spring); pointer-events: none; }
+
+/* Now playing tops the status card; a hairline separates it from freshness */
+.rail-now { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: -6px -6px 6px; padding: 6px 6px 10px; border-radius: var(--radius-thumb) var(--radius-thumb) 0 0; border-bottom: 1px solid var(--color-line-2); color: var(--color-text); font-size: 13px; transition: background 150ms; }
+.rail-now:hover { background: var(--color-surface-2); color: var(--color-text); }
+.rail-now:active { background: var(--color-surface-3); }
+.nav-item { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; color: var(--color-text-2); transition: background 150ms, color 150ms, transform 100ms var(--ease-out); }
+.nav-item:hover:not([aria-current="page"]) { background: var(--color-surface); color: var(--color-text); }
+.nav-item:active:not([aria-current="page"]) { transform: scale(0.98); }
+.nav-item[aria-current="page"] { color: var(--color-text); font-weight: 700; }
 .nav-item .count { font-family: var(--font-mono); font-size: 12px; color: var(--color-faint); }
-.rail-box { margin-top: auto; display: flex; flex-direction: column; gap: 4px; padding: 12px 10px; border-radius: 10px; background: var(--color-surface); font-size: 12px; }
+.rail-box { display: flex; flex-direction: column; gap: 4px; padding: 12px 10px; border-radius: 10px; background: var(--color-surface); font-size: 12px; }
 .main { flex: 1 1 auto; min-width: 0; padding: 20px 32px 48px; display: flex; flex-direction: column; gap: 24px; max-width: 1240px; }
 .topbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .topbar form { flex: 1 1 380px; display: flex; gap: 8px; min-width: 0; }
@@ -149,7 +162,9 @@ a.row:active, button.row:active { background: var(--color-surface-3); }
 .list > .row { animation: enter 200ms var(--ease-out) both; }
 @keyframes enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .row.sel { background: var(--color-surface-2); }
-a.row[aria-current="page"] { background: var(--color-surface-2); box-shadow: inset 3px 0 0 var(--color-accent); }
+/* Current row: same language as the rail, a short accent marker and a bright label, no fill */
+a.row[aria-current="page"] { position: relative; color: var(--color-text); font-weight: 700; }
+a.row[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 50%; width: 2px; height: 20px; margin-top: -10px; border-radius: var(--radius-bar); background: var(--color-accent); }
 /* Plain list links (name + count): same hover/pressed as rows without a row's grid and padding. */
 a.lrow { border-radius: 10px; margin-inline: -8px; padding-inline: 8px; transition: background 150ms; }
 a.lrow:hover { background: var(--color-surface-2); }
@@ -265,13 +280,15 @@ input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 .proto a { color: #7A4A00; }
 .proto .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
 
-@media (max-width: 1100px) { .rail { flex-basis: 72px; } .rail .count, .rail-box { display: none; } }
+@media (max-width: 1100px) { .rail { flex-basis: 72px; } .rail .count, .rail-box, .rail-now, .nav-group-name { display: none; } .rail-head { flex-direction: column; } .nav-group { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--color-line); } }
 
 /* ---------- React port additions */
 dialog.dialog { color: var(--color-text); margin: 72px auto auto; }
 dialog.dialog::backdrop { background: rgba(5,6,7,0.62); }
 .nav-label { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
-.nav-icon { display: none; }
+.nav-icon { display: inline-flex; color: var(--color-muted); transition: color 150ms; }
+.nav-item:hover .nav-icon { color: var(--color-text); }
+.nav-item[aria-current="page"] .nav-icon { color: var(--color-accent); }
 a.card { display: flex; }
 @media (max-width: 1100px) {
   .app.has-rail { background: linear-gradient(90deg, var(--color-rail) 0 72px, var(--color-line) 72px 73px, var(--color-bg) 73px); }

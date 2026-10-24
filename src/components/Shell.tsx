@@ -1,15 +1,17 @@
-// App shell (DESIGN §4): rail with nav + mono counts + freshness box, main column, offline banner,
+// App shell (DESIGN §4): rail (wordmark + Quick add, grouped nav with one springing indicator, Settings at the foot,
+// status card = now playing + freshness), main column, offline banner,
 // global quick-add dialog and shortcuts. Pages render their own <Topbar>.
-import { lazy, Suspense, useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  ArrowsClockwiseIcon, BooksIcon, ChartBarIcon, ClockCounterClockwiseIcon, CompassIcon, GearSixIcon, HouseIcon, PlaylistIcon, QueueIcon,
+  ArrowsClockwiseIcon, BooksIcon, ChartBarIcon, ClockCounterClockwiseIcon, CompassIcon, GearSixIcon, HouseIcon, PlaylistIcon, PlusIcon, QueueIcon,
 } from "@phosphor-icons/react";
-import { getCapture, getCounts, getFreshness, getLoggerStatus, invalidateOnDataEvents, MOCK, onEvent, recordPageVisit } from "../api";
+import { getCapture, getCounts, getFreshness, getLoggerStatus, invalidateOnDataEvents, MOCK, onEvent, recordPageVisit, type LoggerStatus } from "../api";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { useShortcuts, type ShortcutAction } from "../hooks/useShortcuts";
 import { fieldButton, freshnessText } from "./logic";
+import { LiveDot } from "./ui";
 import { QuickAddCtx, useQuickAdd, type QuickAddOpts } from "./QuickAddContext";
 import QuickAdd from "./QuickAdd";
 import { pl } from "../lib/format";
@@ -17,34 +19,86 @@ import { pl } from "../lib/format";
 // Dev builds only: a shipped build drops the switcher. The mocks themselves go only when VITE_MOCK=0 (api.ts).
 const DevSwitcher = import.meta.env.DEV && MOCK ? lazy(() => import("./DevSwitcher")) : () => null;
 
-const NAV: { to: string; label: string; icon: ReactNode; count?: "backlog" | "library" | "revisit"; rel?: "r2" | "r3" }[] = [
-  { to: "/home", label: "Home", icon: <HouseIcon size={20} /> },
-  { to: "/plays", label: "Recent plays", icon: <ClockCounterClockwiseIcon size={20} />, rel: "r2" },
-  { to: "/insights", label: "Insights", icon: <ChartBarIcon size={20} />, rel: "r2" },
-  { to: "/backlog", label: "Backlog", icon: <QueueIcon size={20} />, count: "backlog" },
-  { to: "/library", label: "Library", icon: <BooksIcon size={20} />, count: "library" },
-  { to: "/rediscover", label: "Rediscover", icon: <ArrowsClockwiseIcon size={20} />, count: "revisit" },
-  { to: "/playlists", label: "Playlists", icon: <PlaylistIcon size={20} />, rel: "r2" },
-  { to: "/spotify", label: "From Spotify", icon: <CompassIcon size={20} />, rel: "r3" },
-  { to: "/settings", label: "Settings", icon: <GearSixIcon size={20} /> },
+type Nav = { to: string; label: string; icon: ReactNode; count?: "backlog" | "library" | "revisit"; rel?: "r2" | "r3" };
+// M9 rail: grouped by what you're doing (DESIGN §4). Home stands alone; Settings sits apart at the bottom.
+const GROUPS: { name?: string; items: Nav[] }[] = [
+  { items: [{ to: "/home", label: "Home", icon: <HouseIcon size={20} /> }] },
+  { name: "Listening", items: [
+    { to: "/plays", label: "Recent plays", icon: <ClockCounterClockwiseIcon size={20} />, rel: "r2" },
+    { to: "/insights", label: "Insights", icon: <ChartBarIcon size={20} />, rel: "r2" },
+  ] },
+  { name: "Collection", items: [
+    { to: "/backlog", label: "Backlog", icon: <QueueIcon size={20} />, count: "backlog" },
+    { to: "/library", label: "Library", icon: <BooksIcon size={20} />, count: "library" },
+    { to: "/rediscover", label: "Rediscover", icon: <ArrowsClockwiseIcon size={20} />, count: "revisit" },
+  ] },
+  { name: "Spotify", items: [
+    { to: "/playlists", label: "Playlists", icon: <PlaylistIcon size={20} />, rel: "r2" },
+    { to: "/spotify", label: "From Spotify", icon: <CompassIcon size={20} />, rel: "r3" },
+  ] },
 ];
+const SETTINGS: Nav = { to: "/settings", label: "Settings", icon: <GearSixIcon size={20} /> };
 
 function Rail() {
   const { r2, r3 } = useRelease();
   const counts = useApi(getCounts).data;
+  const add = useQuickAdd();
+  const loc = useLocation();
+  const ref = useRef<HTMLElement>(null);
+  // One accent marker on the rail edge springs to the current page (same spring as the tabs).
+  const [ind, setInd] = useState<{ y: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const place = () => {
+      const a = el.querySelector<HTMLElement>('.nav-item[aria-current="page"]');
+      setInd(a ? { y: a.offsetTop + (a.offsetHeight - 20) / 2 } : null); // 20 = marker height
+    };
+    place();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loc.pathname, r2, r3]);
+  const link = (n: Nav) => (
+    <NavLink key={n.to} to={n.to} className="nav-item" aria-label={n.label} title={n.label}>
+      <span className="nav-label"><span className="nav-icon" aria-hidden>{n.icon}</span><span className="nav-text">{n.label}</span></span>
+      <span className="count">{n.count && counts ? counts[n.count] : ""}</span>
+    </NavLink>
+  );
+  const shown = (n: Nav) => !n.rel || (n.rel === "r2" ? r2 : r3);
   return (
     <aside className="rail">
-      <NavLink className="logo" to="/home">Runout</NavLink>
-      <nav className="nav" aria-label="Main">
-        {NAV.filter((n) => !n.rel || (n.rel === "r2" ? r2 : r3)).map((n) => (
-          <NavLink key={n.to} to={n.to} className="nav-item" aria-label={n.label}>
-            <span className="nav-label"><span className="nav-icon" aria-hidden>{n.icon}</span><span className="nav-text">{n.label}</span></span>
-            <span className="count">{n.count && counts ? counts[n.count] : ""}</span>
-          </NavLink>
-        ))}
+      <div className="rail-head">
+        <NavLink className="logo" to="/home">Runout</NavLink>
+        <button type="button" className="icon-btn rail-add" aria-label="Quick add" title="Quick add (Ctrl+N)" onClick={() => add()}><PlusIcon size={18} weight="bold" /></button>
+      </div>
+      <nav ref={ref} className="nav" aria-label="Main">
+        {GROUPS.map((g) => {
+          const items = g.items.filter(shown);
+          if (!items.length) return null;
+          return g.name
+            ? <div key={g.name} role="group" aria-label={g.name} className="nav-group"><span className="nav-group-name" aria-hidden>{g.name}</span>{items.map(link)}</div>
+            : items.map(link);
+        })}
+        <div className="nav-foot">{link(SETTINGS)}</div>
+        {ind && <span className="nav-ind" style={{ transform: `translateY(${ind.y}px)` }} aria-hidden />}
       </nav>
       {r2 ? <FreshnessBox /> : <CaptureBox waiting={counts?.name_needed ?? 0} />}
     </aside>
+  );
+}
+
+/** What's playing, on every screen (was Home only): live dot, track, artist; opens Home's Now playing card. */
+function NowMini({ logger }: { logger: LoggerStatus | undefined }) {
+  const t = logger?.state === "listening" ? logger.now_playing : null;
+  if (!t) return null;
+  return (
+    <NavLink to="/home" className="rail-now" aria-label={`Now playing: ${t.track_name} by ${t.artist_name}`}>
+      <span className="flex items-center gap-1.5 text-xs text-muted"><LiveDot />Now playing</span>
+      <span className="font-semibold truncate">{t.track_name}</span>
+      <span className="text-muted text-xs truncate">{t.artist_name}</span>
+    </NavLink>
   );
 }
 
@@ -53,6 +107,7 @@ function FreshnessBox() {
   const logger = useApi(getLoggerStatus).data;
   return (
     <div className="rail-box">
+      <NowMini logger={logger} />
       <span className="font-semibold">Data freshness</span>
       <span className="text-muted leading-[1.45]">{freshnessText(f, logger?.state)}</span>
       <NavLink to="/import/1" className="font-semibold">Import a newer export</NavLink>
