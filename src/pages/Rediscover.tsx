@@ -1,16 +1,21 @@
 // SC-07 Rediscover: shelves from your own rules, filters, saved filters (FR-013); R2 "Loved, not played lately";
 // R3 "Make a Spotify playlist" (SC-07b, FR-039). Nothing here is chosen by Spotify.
-import { useState, type ReactNode } from "react";
+// M9 (taste + Motion): each shelf is a horizontal rail that snaps card by card and rises in when reached; saved
+// filters are "your shelves" and show as a rail too.
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { m, useReducedMotion } from "motion/react";
+import { CaretLeftIcon, CaretRightIcon } from "@phosphor-icons/react";
 import {
   createPlaylistFromFilter, createPlaylistFromItems, deleteSavedFilter, getRediscover, getTakeInsights, listItems, listSavedFilters, listTags,
   saveFilter, toAppError, type AppError, type ItemFilter, type ItemSummary, type SavedFilter, type Status,
 } from "../api";
 import { Topbar } from "../components/Shell";
-import { Dialog, Dots, Empty, ErrorBanner, ItemSet, SkelTiles, Attribution, Switch, useToast } from "../components/ui";
+import { ArtTiles, Attribution, CollectionCard, Dialog, Dots, Empty, ErrorBanner, SkelTiles, spot, Switch, useToast } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { age, nameOf, pl, stars, STATUS, STATUS_ORDER, TYPE } from "../lib/format";
+import { RISE } from "../lib/motion";
 import { safeUri } from "../lib/sanitize";
 
 interface Shelf { name: string; rule: string; items: ItemSummary[]; meta: (it: ItemSummary) => ReactNode; act?: boolean }
@@ -47,84 +52,128 @@ export default function Rediscover() {
     ...(r2 ? [{ name: "Loved, not played lately", rule: "Rated 4.5 or more, no plays in 90 days (your records and your plays)",
       items: loved.map((t) => t.item), meta: (it: ItemSummary) => loved.find((t) => t.item.id === it.id)?.line ?? "" }] : []),
   ] satisfies Shelf[]).map((s) => ({ ...s, items: s.items.filter(ok) })).filter((s) => s.items.length) : [];
+  const filtering = !!(f.tag || f.min || f.revisit);
 
   const tagNames = (tags.data ?? []).map((t) => t.name).sort();
-  const playlistBtn = (m: Make, label = "Make a Spotify playlist") => r3 && (
-    <button className="btn btn-light s" disabled={!online} title={online ? undefined : "Needs a connection"} onClick={() => setMake(m)}
-      aria-label={`${label} from ${m.title}`}>{label}</button>);
+  const playlistBtn = (mk: Make, label = "Make a Spotify playlist") => r3 && (
+    <button className="btn btn-light s" disabled={!online} title={online ? undefined : "Needs a connection"} onClick={() => setMake(mk)}
+      aria-label={`${label} from ${mk.title}`}>{label}</button>);
 
   return (
     <>
       <Topbar />
-      <div className="page-head">
-        <div className="flex flex-col gap-1">
-          <h1 className="page-title">Rediscover</h1>
-          <span className="text-muted">Shelves built from your own rules. Nothing here is chosen by Spotify.</span>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <label className="sr-only" htmlFor="rd-tag">Tag</label>
-          <select id="rd-tag" className="input surface" value={f.tag} onChange={(e) => setF({ ...f, tag: e.target.value })}>
-            <option value="">All tags</option>{tagNames.map((t) => <option key={t}>{t}</option>)}
-          </select>
-          <label className="sr-only" htmlFor="rd-min">Rating</label>
-          <select id="rd-min" className="input surface" value={f.min} onChange={(e) => setF({ ...f, min: Number(e.target.value) })}>
-            <option value={0}>Any rating</option>{[4, 4.5, 5].map((n) => <option key={n} value={n}>{n} and up</option>)}
-          </select>
-          <Switch label="Revisit only" on={f.revisit} onChange={async (v) => { setF({ ...f, revisit: v }); return true; }} />
-          <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />
+      <div className="flex flex-col gap-3.5">
+        <div className="page-head">
+          <div className="flex flex-col gap-1">
+            <h1 className="page-title">Rediscover</h1>
+            <span className="text-muted">Shelves built from your own rules. Nothing here is chosen by Spotify.</span>
+          </div>
           <button className="btn btn-primary" onClick={() => setNewShelf(true)}>New shelf</button>
         </div>
-      </div>
-      <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-muted text-sm">Saved filters:</span>
-        {saved.data?.length ? saved.data.map((s) => (
-          <button key={s.id} className={`chip${active?.id === s.id ? " on" : ""}`} aria-pressed={active?.id === s.id} onClick={() => setActive(active?.id === s.id ? null : s)}>{s.name}</button>
-        )) : <span className="text-faint text-sm">None yet. New shelf saves one.</span>}
+        <div className="lb-bar">
+          <div className="lb-group">
+            <label className="label" htmlFor="rd-tag">Tag</label>
+            <select id="rd-tag" className="input surface" value={f.tag} onChange={(e) => setF({ ...f, tag: e.target.value })}>
+              <option value="">All tags</option>{tagNames.map((t) => <option key={t}>{t}</option>)}
+            </select>
+            <label className="label" htmlFor="rd-min">Rating</label>
+            <select id="rd-min" className="input surface" value={f.min} onChange={(e) => setF({ ...f, min: Number(e.target.value) })}>
+              <option value={0}>Any</option>{[4, 4.5, 5].map((n) => <option key={n} value={n}>{n} and up</option>)}
+            </select>
+            <Switch label="Revisit only" on={f.revisit} onChange={async (v) => { setF({ ...f, revisit: v }); return true; }} />
+            {filtering && <button className="btn btn-ghost s" onClick={() => setF({ tag: "", min: 0, revisit: false })}>Clear filters</button>}
+          </div>
+          <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-muted text-sm">Your shelves:</span>
+          {saved.data?.length ? saved.data.map((s) => (
+            <button key={s.id} className={`chip${active?.id === s.id ? " on" : ""}`} aria-pressed={active?.id === s.id} onClick={() => setActive(active?.id === s.id ? null : s)}>{s.name}</button>
+          )) : <span className="text-faint text-sm">None yet. New shelf saves one.</span>}
+        </div>
       </div>
 
-      {active && (
-        <section className="flex flex-col gap-3" aria-label={`Saved filter ${active.name}`}>
-          <div className="flex justify-between items-baseline gap-3">
-            <div className="flex flex-col gap-0.5"><h2 className="section-title">{active.name}</h2><span className="text-muted text-sm">Your saved filter</span></div>
-            <span className="flex flex-wrap gap-2 items-center">
-              {playlistBtn({ title: active.name, items: activeRows.data?.rows ?? [], kind: "filter", filterId: active.id }, "Make a Spotify playlist")}
+      <div className="lit flex flex-col gap-8" onPointerMove={spot}>
+        {active && (
+          <ShelfRail key={`saved-${active.id}`} name={active.name} rule="Your saved shelf" art={art} total={activeRows.data?.total}
+            actions={<>
+              {playlistBtn({ title: active.name, items: activeRows.data?.rows ?? [], kind: "filter", filterId: active.id })}
               <button className="btn btn-danger s" onClick={async () => {
                 const gone = active; setActive(null); await deleteSavedFilter(gone.id);
-                toast(`Filter ${gone.name} deleted`, () => saveFilter(gone.name, gone.definition));
-              }}>Delete filter</button>
-              {activeRows.data && <span className="font-mono text-faint text-xs">{pl(activeRows.data.total, "record")}</span>}
-            </span>
-          </div>
-          {activeRows.loading ? <SkelTiles n={6} /> : activeRows.error ? <ErrorBanner title="Couldn’t load this filter." error={activeRows.error} onRetry={activeRows.reload} />
-            : activeRows.data?.rows.length ? <ItemSet items={activeRows.data.rows.slice(0, 6)} total={activeRows.data.total} art={art} meta={(it) => (it.rating ? stars(it.rating) : STATUS[it.status])} />
-            : <span className="text-muted">Nothing matches this filter right now.</span>}
-        </section>
-      )}
+                toast(`Shelf ${gone.name} deleted`, () => saveFilter(gone.name, gone.definition));
+              }}>Delete shelf</button>
+            </>}
+            body={activeRows.loading ? <SkelTiles n={6} /> : activeRows.error ? <ErrorBanner title="Couldn’t load this shelf." error={activeRows.error} onRetry={activeRows.reload} />
+              : activeRows.data?.rows.length ? null : <span className="text-muted">Nothing matches this shelf right now.</span>}
+            items={activeRows.data?.rows ?? []} meta={(it) => (it.rating ? stars(it.rating) : STATUS[it.status])} />
+        )}
 
-      {red.loading ? <><SkelTiles n={6} /><SkelTiles n={6} /></>
-        : red.error ? <ErrorBanner title="Couldn’t load your shelves." error={red.error} onRetry={red.reload} />
-        : !shelves.length ? (
-          <Empty h="No shelves yet" line={f.tag || f.min || f.revisit ? "No records match these filters. Clear a filter to see more." : "Shelves fill up as you rate, review and flag records. Try rating a few things you’ve explored."}>
-            {f.tag || f.min || f.revisit
-              ? <button className="btn btn-secondary" onClick={() => setF({ tag: "", min: 0, revisit: false })}>Clear filters</button>
-              : <Link className="btn btn-secondary" to="/library">Open your library</Link>}
-          </Empty>)
-        : shelves.map((s) => (
-          <section key={s.name} className="flex flex-col gap-3" aria-label={s.name}>
-            <div className="flex justify-between items-baseline gap-3">
-              <div className="flex flex-col gap-0.5"><h2 className="section-title">{s.name}</h2><span className="text-muted text-sm">{s.rule}</span></div>
-              <span className="flex flex-wrap gap-2 items-center">
-                {playlistBtn({ title: s.name, items: s.items, kind: "shelf" })}
-                <span className="font-mono text-faint text-xs">{pl(s.items.length, "record")}</span>
-              </span>
-            </div>
-            <ItemSet items={s.items.slice(0, 6)} total={s.items.length} art={art} meta={s.meta} act={() => !!s.act} />
-          </section>
-        ))}
+        {red.loading ? <><SkelTiles n={6} /><SkelTiles n={6} /></>
+          : red.error ? <ErrorBanner title="Couldn’t load your shelves." error={red.error} onRetry={red.reload} />
+          : !shelves.length ? (
+            <Empty h="No shelves yet" line={filtering ? "No records match these filters. Clear a filter to see more." : "Shelves fill up as you rate, review and flag records. Try rating a few things you’ve explored."}>
+              {filtering
+                ? <button className="btn btn-secondary" onClick={() => setF({ tag: "", min: 0, revisit: false })}>Clear filters</button>
+                : <Link className="btn btn-secondary" to="/library">Open your library</Link>}
+            </Empty>)
+          : shelves.map((s) => (
+            <ShelfRail key={s.name} name={s.name} rule={s.rule} art={art} items={s.items} total={s.items.length} meta={s.meta} act={s.act}
+              actions={playlistBtn({ title: s.name, items: s.items, kind: "shelf" })} />
+          ))}
+      </div>
 
       {make && <MakePlaylistDialog make={make} onClose={() => setMake(null)} />}
       {newShelf && <NewShelfDialog tags={tagNames} start={f} onClose={() => setNewShelf(false)} onSaved={(s) => { setActive(s); setNewShelf(false); }} />}
     </>
+  );
+}
+
+/** One shelf: a horizontal rail of up to 20 cards that snaps card by card, with edge fades and scroll buttons; it rises
+ *  in when scrolled into view. Artwork mode shows Spotify's attributed set instead (≤ 20, ends with Open Spotify). */
+function ShelfRail({ name, rule, items, total, meta, act, art, actions, body }: {
+  name: string; rule: string; items: ItemSummary[]; total?: number; meta: (it: ItemSummary) => ReactNode; act?: boolean; art: boolean;
+  actions?: ReactNode; body?: ReactNode;
+}) {
+  const reduce = useReducedMotion();
+  const rail = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ start: true, end: true });
+  // Edge state changes only at the ends, so a scroll sets React state a handful of times, not every frame.
+  const measure = () => {
+    const el = rail.current;
+    if (!el) return;
+    const start = el.scrollLeft <= 6, end = el.scrollLeft + el.clientWidth >= el.scrollWidth - 6;
+    setEdge((e) => (e.start === start && e.end === end ? e : { start, end }));
+  };
+  useLayoutEffect(() => {
+    measure();
+    const el = rail.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [items.length, art]); // eslint-disable-line react-hooks/exhaustive-deps
+  const page = (d: 1 | -1) => rail.current?.scrollBy({ left: d * rail.current.clientWidth * 0.85, behavior: reduce ? "auto" : "smooth" });
+  const shown = items.slice(0, 20);
+  return (
+    <m.section className="flex flex-col gap-3" aria-label={name} variants={RISE} initial={reduce ? false : "hidden"} whileInView="show" viewport={{ once: true, amount: 0.15 }}>
+      <div className="rd-head">
+        <div className="flex flex-col gap-0.5 min-w-0"><h2 className="section-title">{name}</h2><span className="text-muted text-sm">{rule}</span></div>
+        <span className="flex flex-wrap gap-2 items-center">
+          {actions}
+          {total != null && <span className="font-mono text-faint text-xs">{pl(total, "record")}</span>}
+          {!art && !(edge.start && edge.end) && <>
+            <button type="button" className="icon-btn" aria-label={`Scroll ${name} back`} disabled={edge.start} onClick={() => page(-1)}><CaretLeftIcon size={16} /></button>
+            <button type="button" className="icon-btn" aria-label={`Scroll ${name} on`} disabled={edge.end} onClick={() => page(1)}><CaretRightIcon size={16} /></button>
+          </>}
+        </span>
+      </div>
+      {body ?? (art ? <ArtTiles items={items} total={total} meta={meta} />
+        : <m.div ref={rail} className={`rd-rail${edge.start ? " at-start" : ""}${edge.end ? " at-end" : ""}`} onScroll={measure}
+            initial={reduce ? false : "hidden"} whileInView="show" viewport={{ once: true, amount: 0.15 }}>
+            {shown.map((it, i) => <CollectionCard key={it.id} it={it} i={i} meta={meta(it)} act={!!act} />)}
+          </m.div>)}
+      {!art && !body && (total ?? items.length) > shown.length && <span className="font-mono text-faint text-xs">{shown.length} of {total ?? items.length}, the rest in your library</span>}
+    </m.section>
   );
 }
 

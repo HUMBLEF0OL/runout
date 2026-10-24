@@ -336,6 +336,30 @@ a.hm-lead-name:hover { color: var(--color-link-hover); }
 .pl-state { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border-radius: var(--radius-thumb); background: var(--color-surface-2); color: var(--color-text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .pl-state.on { color: var(--color-text); }
 
+/* ---------- Library + Rediscover (M9): collection cards, filter bar, rails. Motion (CollectionCard, ShelfRail) moves
+   them; these recipes only draw. */
+.cc-cell { min-width: 0; display: flex; }
+.cc-card { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; min-height: 148px; color: var(--color-text); }
+.cc-card:hover { color: var(--color-text); }
+.cc-type { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; color: var(--color-muted); }
+.cc-name { font-size: 15px; font-weight: 700; line-height: 1.25; letter-spacing: -0.005em; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; } /* a link still waiting for a name stays two lines */
+.cc-sub { font-size: 13px; color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: auto -18px -18px; padding: 10px 18px 12px; border-top: 1px solid var(--color-line); }
+.lb-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.lb-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lb-result { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--color-text-2); font-size: 13px; }
+.lb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.lb-more { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 4px; }
+.rd-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; }
+/* A rail scrolls sideways and snaps per card; the ends fade only where more cards hide (set by ShelfRail) */
+.rd-rail { display: flex; gap: 14px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 4px; padding: 6px 4px 12px; margin: -6px -4px -4px;
+  scrollbar-width: thin; scrollbar-color: var(--color-line-2) transparent;
+  mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+.rd-rail.at-start { mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+.rd-rail.at-end { mask-image: linear-gradient(90deg, transparent, #000 32px); }
+.rd-rail.at-start.at-end { mask-image: none; }
+.rd-rail > .cc-cell { flex: 0 0 224px; scroll-snap-align: start; }
+
 /* ---------- prototype controls (not product UI) */
 .proto { position: fixed; right: 16px; bottom: 16px; z-index: 40; width: 280px; font-size: 12px; background: #F3F1EA; color: #1B1B1B; border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); font-family: var(--font-mono); }
 .proto summary { padding: 10px 12px; cursor: pointer; font-weight: 600; }

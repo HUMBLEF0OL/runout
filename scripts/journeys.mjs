@@ -308,7 +308,7 @@ await step("D3 update artist status and notes", async () => {
 });
 
 /* E — rediscover */
-const shelfCount = `$$("main section[aria-label]").map((s) => s.getAttribute("aria-label") + ":" + s.querySelectorAll(".tiles > *").length).join("|")`;
+const shelfCount = `$$("main section[aria-label]").map((s) => s.getAttribute("aria-label") + ":" + s.querySelectorAll(":is(.tiles, .rd-rail) > *").length).join("|")`;
 await step("E1 filter by tag", async () => {
   await go("Rediscover", "#/rediscover");
   await waitFor(`$$("main section[aria-label]").length > 0`);

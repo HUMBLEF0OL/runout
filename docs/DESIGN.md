@@ -121,6 +121,9 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | Page tabs (M9) | `Seg line` + a keyed `.tab-panel` that slides in from the picked side (`useSlide`): Settings, Insights groups, Playlists mode. List filters stay filled segments |
 | Disclosure (M9) | `.st-details`: caret rotates, content height animates (`::details-content`) |
 | Copy button (M9) | `CopyButton`: icon button beside a value the user types elsewhere (pairing code, capture URL, address, paths); check-mark pop + status message |
+| Collection card (M9) | `CollectionCard`: Library grid and Rediscover rails. Type (+ Revisit badge), title (two lines at most), artist, then a full-width hairline footer: your status in mono (accent when it asks for action) or the shelf's line, and your stars; rises in with `RISE`, card spotlight via `.lit` |
+| Library toolbar (M9) | Filters on their own row under the tabs: Status, Rating, Sort (Last change, Recently added, Rating, Name); Save as filter, Manage tags, Artwork at the end. A result line says what is shown and offers Clear filters. "Show 20 more" appends (new cards rise) instead of numbered pages |
+| Shelf rail (M9) | Rediscover: each shelf (and each saved shelf) is a horizontal rail of up to 20 cards that snaps card by card; the ends fade only where cards hide; back/on buttons page it and disable at the ends; the shelf rises in when scrolled to. Artwork mode keeps Spotify's attributed set (≤ 20, ends with Open Spotify) |
 | Count-up number (M9) | `CountUp`: stat and metric numbers count up once on first view (keeps “6,519” grouping); screen readers get the final value |
 
 The **design system page** (`#/system`; in the prototype for M1–M2, in the app since) shows every token and component above in all its states. From M8 the app's `src/styles` is the reference; the prototype stays as the M1 record and is not updated.

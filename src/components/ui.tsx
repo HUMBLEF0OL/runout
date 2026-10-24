@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { Link } from "react-router-dom";
 import { CheckIcon, CopyIcon, XIcon as X } from "@phosphor-icons/react";
 import { animate, inView, m, useReducedMotion } from "motion/react";
-import { ARRIVE, LAND, PRESS } from "../lib/motion";
+import { ARRIVE, LAND, PRESS, RISE } from "../lib/motion";
 import type { AppError, Freshness, ItemSummary, Play, Priority, Source, Sourced, Status } from "../api";
 import { ago, mmss, time, nameOf, openUrl, PRIO, STATUS, STATUS_ORDER, stars, statusMeta, sub, TYPE } from "../lib/format";
 import { freshnessText, ratingClick, ratingKey, sourcedText, sourceText } from "./logic";
@@ -310,6 +310,25 @@ export function RecordCard({ it, meta, act }: { it: ItemSummary; meta?: ReactNod
 
 /** Rank bar row: rank, name + your-status suffix, bar without track, mono count. */
 /** Play row: track, artist, your stars or a Rate button, mono relative time. Skipped text in --faint (never opacity). */
+/** Collection card (Library grid, Rediscover rails; M9): type + Revisit, title, artist, then a hairline footer with your
+ *  status (accent when it asks for action) or the shelf's own line, and your stars. Rises in with `RISE` (custom = index). */
+export function CollectionCard({ it, i = 0, meta, act }: { it: ItemSummary; i?: number; meta?: ReactNode; act?: boolean }) {
+  const hot = act ?? it.status === "in_progress";
+  return (
+    <m.div variants={RISE} custom={i} className="cc-cell">
+      <Link to={`/item/${it.id}`} className="card hover cc-card">
+        <span className="cc-type">{TYPE[it.type]}{it.revisit && <span className="badge status">Revisit</span>}</span>
+        <span className="cc-name">{nameOf(it)}</span>
+        {it.type !== "artist" && <span className="cc-sub">{sub(it)}</span>}
+        <span className="cc-foot">
+          <span className={`font-mono text-xs ${hot ? "text-accent" : "text-text-2"}`}>{meta ?? STATUS[it.status]}</span>
+          {meta == null && (it.rating ? <Stars r={it.rating} /> : <span className="text-faint text-xs">Unrated</span>)}
+        </span>
+      </Link>
+    </m.div>
+  );
+}
+
 export function PlayRow({ p, onRate, onSave, wide }: { p: Play; onRate?: (p: Play) => void; onSave?: (p: Play) => void; wide?: boolean }) {
   if (wide) return <PlayRowWide p={p} onRate={onRate} onSave={onSave} />;
   return (
