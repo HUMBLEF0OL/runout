@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, Navigate, useLocation, useNavigate, useNavigationType, useParams, useSearchParams } from "react-router-dom";
 import * as api from "../api";
 import type { AppError, Draft, StudioDiff } from "../api";
-import { Attribution, Dialog, Dots, Empty, ErrorBanner, Seg, SkelRows, SourceTag, Stat, Stars, useToast } from "../components/ui";
+import { Attribution, Dialog, Dots, Empty, ErrorBanner, Seg, SkelRows, SourceTag, Stars, Stat, TabPanel, useToast } from "../components/ui";
 import { Topbar } from "../components/Shell";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
@@ -28,7 +28,7 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
     if (how !== "POP" && (loc.state as { modeFocus?: boolean } | null)?.modeFocus) head.current?.querySelector<HTMLElement>('[aria-label="Mode"] [aria-selected="true"]')?.focus();
   }, [loc.key, loc.state]);
   // the two modes are separate pages, so the slide direction travels in the history state (Check-up is left of Studio)
-  const dir = (loc.state as { slide?: string } | null)?.slide ?? "from-right";
+  const dir = (loc.state as { slide?: "from-right" | "from-left" } | null)?.slide ?? "from-right";
   return (
     <>
       <Topbar />
@@ -43,7 +43,7 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
             {r3 && <Seg label="Mode" value={tab} onChange={(t) => nav(`/playlists/${t}?${sp}`, { state: { modeFocus: true, slide: t === "studio" ? "from-right" : "from-left" } })}
               options={[["checkup", exp ? `Check-up (export of ${day(exp)})` : "Check-up"], ["studio", "Studio (live from Spotify)"]]} />}
           </div>
-          <div key={tab} role="tabpanel" aria-label={tab === "studio" ? "Studio" : "Check-up"} className={`tab-panel ${dir} flex flex-col gap-3.5`}>{children}</div>
+          <TabPanel key={tab} dir={dir} label={tab === "studio" ? "Studio" : "Check-up"} className="flex flex-col gap-3.5">{children}</TabPanel>
         </div>
       </div>
     </>

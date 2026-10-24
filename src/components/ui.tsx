@@ -2,6 +2,8 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { CheckIcon, CopyIcon, XIcon as X } from "@phosphor-icons/react";
+import { animate, inView, m, useReducedMotion } from "motion/react";
+import { ARRIVE, LAND, PRESS } from "../lib/motion";
 import type { AppError, Freshness, ItemSummary, Play, Priority, Source, Sourced, Status } from "../api";
 import { ago, mmss, time, nameOf, openUrl, PRIO, STATUS, STATUS_ORDER, stars, statusMeta, sub, TYPE } from "../lib/format";
 import { freshnessText, ratingClick, ratingKey, sourcedText, sourceText } from "./logic";
@@ -22,10 +24,23 @@ export function PageHead({ title, children, sub: subline }: { title: ReactNode; 
   );
 }
 
-/** Page tabs (Seg `line`): the keyed `.tab-panel` slides in from the side of the tab picked. Call `slide(next)` when switching. */
+/** Page tabs (Seg `line`): the keyed `TabPanel` slides in from the side of the tab picked. Call `slide(next)` when switching. */
 export function useSlide(order: string[], cur: string) {
   const [dir, setDir] = useState<"from-right" | "from-left">("from-right");
   return [dir, (next: string) => setDir(order.indexOf(next) >= order.indexOf(cur) ? "from-right" : "from-left")] as const;
+}
+
+/** The content a tab switches. Give it `key={tab}` so a switch remounts it; it slides 18 px in from the picked side
+ *  and fades (Motion, transform + opacity). `as="section"` where the panel is a landmark. */
+export function TabPanel({ dir, label, className = "", as = "div", still, onPointerMove, children }: {
+  dir: "from-right" | "from-left"; label?: string; className?: string; as?: "div" | "section"; still?: boolean;
+  onPointerMove?: (e: React.PointerEvent) => void; children: ReactNode;
+}) {
+  const C = as === "section" ? m.section : m.div;
+  return (
+    <C role="tabpanel" aria-label={label} className={className} onPointerMove={onPointerMove}
+      initial={still ? false : { opacity: 0, x: dir === "from-right" ? 18 : -18 }} animate={{ opacity: 1, x: 0 }} transition={ARRIVE}>{children}</C>
+  );
 }
 
 /** Segmented control. `role` tablist for views, radiogroup for values (status). Every tablist (views) is drawn as tabs, an accent underline (`.seg.line`, M9); radio groups (values: status, keep/cut) stay a filled segment. */
@@ -63,7 +78,8 @@ export function Seg<T extends string>({ label, options, value, onChange, radio, 
         <button key={v} type="button" role={radio ? "radio" : "tab"} {...(radio ? { "aria-checked": v === value } : { "aria-selected": v === value })}
           tabIndex={v === value || (!options.some((o) => o[0] === value) && i === 0) ? 0 : -1} onClick={() => onChange(v)} onKeyDown={(e) => move(e, i)}>{t}</button>
       ))}
-      {ind && <span className="seg-ind" style={ind} aria-hidden />}
+      {ind && <m.span className="seg-ind" initial={false} animate={{ x: ind.left, y: ind.top, width: ind.width, height: ind.height }}
+        transition={LAND} aria-hidden />}
     </div>
   );
 }
@@ -79,7 +95,6 @@ export const spot = (e: React.PointerEvent) => {
   c.style.setProperty("--my", `${e.clientY - r.top}px`);
 };
 
-const reduced = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 /** On/off setting (DESIGN §3 Controls). Flips at once (the write takes a moment); `onChange` resolves falsy when the write
  *  failed (useRun → undefined, Item's run → false), and the switch goes back to the saved value, unless a later click
@@ -90,11 +105,16 @@ export function Switch({ label, on, onChange, disabled }: { label: string; on: b
   const saved = useRef(on);
   saved.current = on;
   useEffect(() => setV(on), [on]);
+  const [down, setDown] = useState(false); // pressed: the thumb stretches toward where it will go
   return (
-    <label className="switch-row">
+    <label className="switch-row" onPointerDown={() => !disabled && setDown(true)} onPointerUp={() => setDown(false)} onPointerLeave={() => setDown(false)}>
       <span>{label}</span>
-      <input type="checkbox" role="switch" className="toggle" checked={v} disabled={disabled}
-        onChange={(e) => { const n = e.target.checked, k = ++seq.current; setV(n); onChange(n).then((r) => { if (!r && k === seq.current) setV(saved.current); }); }} />
+      <span className="toggle-wrap">
+        <input type="checkbox" role="switch" className="toggle" checked={v} disabled={disabled}
+          onChange={(e) => { const n = e.target.checked, k = ++seq.current; setV(n); onChange(n).then((r) => { if (!r && k === seq.current) setV(saved.current); }); }} />
+        <m.span className="toggle-thumb" aria-hidden initial={false} style={{ originX: v ? 1 : 0 }}
+          animate={{ x: v ? 16 : 0, scaleX: down ? 1.25 : 1 }} transition={{ x: LAND, scaleX: PRESS }} />
+      </span>
     </label>
   );
 }
@@ -103,30 +123,21 @@ export function Switch({ label, on, onChange, disabled }: { label: string; on: b
  *  of the text ("%", " s", "h 40m") stays. Screen readers get the final text only. */
 export function CountUp({ text }: { text: string }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const reduce = useReducedMotion();
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.textContent = text;
     const m = /^(\d[\d,]*)(\.\d+)?/.exec(text);
-    if (!m || reduced() || typeof IntersectionObserver === "undefined") return;
+    if (!m || reduce || typeof IntersectionObserver === "undefined") return;
     const to = Number(m[1].replace(/,/g, "") + (m[2] ?? "")), dp = m[2] ? m[2].length - 1 : 0, rest = text.slice(m[0].length);
     const fmt = (x: number) => (m[1].includes(",") ? Math.round(x).toLocaleString("en-US") : x.toFixed(dp)) + rest;
     el.textContent = fmt(0);
-    let raf = 0;
-    const io = new IntersectionObserver(([e]) => {
-      if (!e.isIntersecting) return;
-      io.disconnect();
-      const t0 = performance.now();
-      const tick = (t: number) => {
-        const p = Math.min(1, (t - t0) / 900);
-        el.textContent = fmt(to * (1 - (1 - p) ** 3));
-        if (p < 1) raf = requestAnimationFrame(tick);
-      };
-      raf = requestAnimationFrame(tick);
-    });
-    io.observe(el);
-    return () => { io.disconnect(); cancelAnimationFrame(raf); el.textContent = text; };
-  }, [text]);
+    let run: { stop: () => void } | undefined;
+    // Writes text straight to the node each frame: no React render per frame.
+    const stopView = inView(el, () => { run = animate(0, to, { duration: 0.9, ease: [0.16, 1, 0.3, 1], onUpdate: (x) => { el.textContent = fmt(x); } }); });
+    return () => { stopView(); run?.stop(); el.textContent = text; };
+  }, [text, reduce]);
   return <><span className="sr-only">{text}</span><span ref={ref} aria-hidden /></>;
 }
 /** Copy a value the user types elsewhere (pairing code, capture URL); a check mark and a status message confirm it. */
@@ -138,7 +149,9 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
     <>
       <button type="button" className={`icon-btn copy${done ? " done" : ""}`} aria-label={label}
         onClick={() => (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => setDone(true), () => toast("Couldn’t copy. Select the code and copy it instead."))}>
-        {done ? <CheckIcon size={16} weight="bold" /> : <CopyIcon size={16} />}
+        <m.span key={done ? "done" : "copy"} className="inline-flex" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={LAND}>
+          {done ? <CheckIcon size={16} weight="bold" /> : <CopyIcon size={16} />}
+        </m.span>
       </button>
       <span className="sr-only" role="status">{done ? "Copied" : ""}</span>
     </>

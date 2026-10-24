@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { getCounts, listItems, saveFilter, toAppError, type AppError, type ItemFilter, type ItemType, type Status } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
-import { ArtTiles, Dialog, Empty, ErrorBanner, RecordCard, Seg, SkelTiles, Switch, useSlide, useToast } from "../components/ui";
+import { ArtTiles, Dialog, Empty, ErrorBanner, RecordCard, Seg, SkelTiles, Switch, TabPanel, useSlide, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { pl, STATUS, STATUS_ORDER, statusMeta, TYPE } from "../lib/format";
 
@@ -76,7 +76,7 @@ export default function Library() {
     <>
       <Topbar />
       {head}
-      <div key={tab} role="tabpanel" aria-label={`${TYPE[tab]}s`} className={`tab-panel ${dir} flex flex-col gap-6`}>{body}</div>
+      <TabPanel key={tab} dir={dir} label={`${TYPE[tab]}s`} className="flex flex-col gap-6">{body}</TabPanel>
       {saving && <SaveFilter filter={filter} onClose={() => setSaving(false)} onSaved={() => { setSaving(false); toast("Filter saved"); }} />}
     </>
   );

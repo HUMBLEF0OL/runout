@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Status } from "../api";
 import { CaretRight } from "@phosphor-icons/react";
-import { Attribution, CopyButton, Dots, Empty, EmbedSlot, LiveDot, NameNeeded, Rating, Seg, SkelRows, Stat, StatusBadge, StatusControl, Switch, TagChips, useSlide, useToast } from "../components/ui";
+import { Attribution, CopyButton, Dots, EmbedSlot, Empty, LiveDot, NameNeeded, Rating, Seg, SkelRows, Stat, StatusBadge, StatusControl, Switch, TabPanel, TagChips, useSlide, useToast } from "../components/ui";
 
 const SW: [string, string, string][] = [["--bg", "#101113", "Page canvas"], ["--rail", "#0B0C0E", "Sidebar"], ["--surface", "#17191C", "Cards, inputs"], ["--surface-2", "#1F2226", "Hover, selected"],
   ["--surface-3", "#23262B", "Pressed, switch track"], ["--surface-hover", "#2A2D32", "Row hover"], ["--line", "#23262B", "Dividers"], ["--line-2", "#2E3238", "Input borders"],
@@ -121,7 +121,7 @@ export default function System() {
               </div>
               <span className="label">Tabs (views) and a value picker</span>
               <Seg label="Example tabs" value={tab} onChange={(t) => { slide(t); setTab(t); }} options={[["one", "Listening"], ["two", "Collection"], ["three", "Your take"]]} />
-              <div key={tab} role="tabpanel" aria-label={`Example panel ${tab}`} className={`tab-panel ${dir} text-text-2`}>The panel slides in from the side of the tab picked.</div>
+              <TabPanel key={tab} dir={dir} label={`Example panel ${tab}`} className="text-text-2">The panel slides in from the side of the tab picked.</TabPanel>
               <Seg label="Example keep or cut" radio value={keep} onChange={setKeep} options={[["keep", "Keep"], ["cut", "Cut"]]} />
               <details className="st-details">
                 <summary><CaretRight size={14} weight="bold" aria-hidden />Disclosure</summary>

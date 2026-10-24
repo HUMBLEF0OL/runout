@@ -3,6 +3,7 @@
 // global quick-add dialog and shortcuts. Pages render their own <Topbar>.
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { m, stagger, useAnimate, useReducedMotion } from "motion/react";
 import {
   ArrowsClockwiseIcon, BooksIcon, ChartBarIcon, ClockCounterClockwiseIcon, CompassIcon, GearSixIcon, HouseIcon, PlaylistIcon, PlusIcon, QueueIcon, SidebarSimpleIcon,
 } from "@phosphor-icons/react";
@@ -15,6 +16,7 @@ import { LiveDot } from "./ui";
 import { QuickAddCtx, useQuickAdd, type QuickAddOpts } from "./QuickAddContext";
 import QuickAdd from "./QuickAdd";
 import { pl } from "../lib/format";
+import { LAND, PRESS } from "../lib/motion";
 import appIcon from "../../src-tauri/icons/icon.svg"; // the app icon master: one source for the rail and the installer
 
 // Dev builds only: a shipped build drops the switcher. The mocks themselves go only when VITE_MOCK=0 (api.ts).
@@ -54,12 +56,24 @@ function useRailMini() {
   return { mini: narrow || pref, narrow, toggle };
 }
 
+// Motion links: press feedback (whileTap) on the rail's links; the icon turns a little when the wordmark is hovered.
+const MLink = m.create(NavLink);
+const TAP = { scale: 0.97 } as const;
+
 function Rail({ mini, narrow, toggle }: { mini: boolean; narrow: boolean; toggle: () => void }) {
   const { r2, r3 } = useRelease();
   const counts = useApi(getCounts).data;
   const add = useQuickAdd();
   const loc = useLocation();
   const ref = useRef<HTMLElement>(null);
+  const [scope, run] = useAnimate();
+  const reduce = useReducedMotion();
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    if (mini || reduce || !scope.current) return;
+    run(".nav-text, .count", { opacity: [0, 1], x: [-4, 0] }, { duration: 0.22, ease: [0.16, 1, 0.3, 1], delay: stagger(0.012) });
+  }, [mini]); // eslint-disable-line react-hooks/exhaustive-deps
   // One accent marker on the rail edge springs to the current page (same spring as the tabs).
   const [ind, setInd] = useState<{ y: number } | null>(null);
   useLayoutEffect(() => {
@@ -76,22 +90,24 @@ function Rail({ mini, narrow, toggle }: { mini: boolean; narrow: boolean; toggle
     return () => ro.disconnect();
   }, [loc.pathname, r2, r3, mini]);
   const link = (n: Nav) => (
-    <NavLink key={n.to} to={n.to} className="nav-item" aria-label={n.label} title={n.label}>
+    <MLink key={n.to} to={n.to} className="nav-item" aria-label={n.label} title={n.label} whileTap={TAP} transition={PRESS}>
       <span className="nav-label"><span className="nav-icon" aria-hidden>{n.icon}</span><span className="nav-text">{n.label}</span></span>
       <span className="count">{n.count && counts ? counts[n.count] : ""}</span>
-    </NavLink>
+    </MLink>
   );
   const shown = (n: Nav) => !n.rel || (n.rel === "r2" ? r2 : r3);
   return (
-    <aside className={`rail${mini ? " mini" : ""}`}>
+    <aside ref={scope} className={`rail${mini ? " mini" : ""}`}>
       <div className="rail-head">
-        <NavLink className="logo" to="/home" aria-label="Runout, home"><img src={appIcon} alt="" className="logo-icon" /><span className="nav-text">Runout</span></NavLink>
-        {!narrow && <button type="button" className="icon-btn rail-toggle" aria-label={mini ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!mini}
-          title={`${mini ? "Expand" : "Collapse"} sidebar (Ctrl+B)`} onClick={toggle}><SidebarSimpleIcon size={18} /></button>}
+        <MLink className="logo" to="/home" aria-label="Runout, home" whileHover="turn">
+          <m.img src={appIcon} alt="" className="logo-icon" variants={{ turn: { rotate: -24 } }} transition={LAND} /><span className="nav-text">Runout</span>
+        </MLink>
+        {!narrow && <m.button type="button" whileTap={TAP} transition={PRESS} className="icon-btn rail-toggle" aria-label={mini ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!mini}
+          title={`${mini ? "Expand" : "Collapse"} sidebar (Ctrl+B)`} onClick={toggle}><SidebarSimpleIcon size={18} /></m.button>}
       </div>
-      <button type="button" className="rail-add" aria-label="Quick add" title="Quick add (Ctrl+N)" onClick={() => add()}>
+      <m.button type="button" whileTap={TAP} transition={PRESS} className="rail-add" aria-label="Quick add" title="Quick add (Ctrl+N)" onClick={() => add()}>
         <PlusIcon size={18} weight="bold" aria-hidden /><span className="nav-text">Quick add</span><span className="kbd nav-text ml-auto">Ctrl N</span>
-      </button>
+      </m.button>
       <nav ref={ref} className="nav" aria-label="Main">
         {GROUPS.map((g) => {
           const items = g.items.filter(shown);
@@ -101,7 +117,7 @@ function Rail({ mini, narrow, toggle }: { mini: boolean; narrow: boolean; toggle
             : items.map(link);
         })}
         <div className="nav-foot">{link(SETTINGS)}</div>
-        {ind && <span className="nav-ind" style={{ transform: `translateY(${ind.y}px)` }} aria-hidden />}
+        {ind && <m.span className="nav-ind" initial={false} animate={{ y: ind.y }} transition={LAND} aria-hidden />}
       </nav>
       {!mini && (r2 ? <FreshnessBox /> : <CaptureBox waiting={counts?.name_needed ?? 0} />)}
     </aside>

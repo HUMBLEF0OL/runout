@@ -9,7 +9,7 @@ import {
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
-import { ArtTiles, Empty, ErrorBanner, NameNeeded, PageHead, Seg, SkelRows, StatusBadge, Switch, useSlide, useToast } from "../components/ui";
+import { ArtTiles, Empty, ErrorBanner, NameNeeded, PageHead, Seg, SkelRows, StatusBadge, Switch, TabPanel, useSlide, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { age, ago, nameOf, pl, statusMeta, sub, TYPE } from "../lib/format";
 import { moveTo } from "../lib/backlog";
@@ -126,7 +126,7 @@ export default function Backlog() {
       {head}
       {tabs}
       {actErr && <ErrorBanner title="Couldn’t save that change." error={actErr} />}
-      <div key={type} role="tabpanel" aria-label={TYPES.find((t) => t[0] === type)![1]} className={`tab-panel ${dir} flex flex-col gap-6`}>
+      <TabPanel key={type} dir={dir} label={TYPES.find((t) => t[0] === type)![1]} className="flex flex-col gap-6">
       {(needName.length > 0 || unresolved.length > 0) && !filtered && (
         <section className="flex flex-col gap-1.5">
           <h2 className="text-accent text-sm font-bold">Waiting for a name</h2>
@@ -161,7 +161,7 @@ export default function Backlog() {
             <div className="card pad-s"><div className="list">{rows.map((it, n) => row(it, rows, n))}</div></div>
           </section>))}
       <span className="font-mono text-faint text-xs">{list.length} of {named.length} shown</span>
-      </div>
+      </TabPanel>
       {sel.size > 0 && (
         <div className="selbar" role="region" aria-label="Selection actions">
           <span className="font-bold px-1.5">{sel.size} selected</span>

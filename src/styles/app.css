@@ -18,24 +18,22 @@ mark { background: rgba(245,181,68,0.3); color: var(--color-text); border-radius
 h1, h2 { text-wrap: balance; }
 .tile .t, .card a, .card span { overflow-wrap: break-word; hyphens: auto; }
 
-.rail { align-self: flex-start; flex: 0 0 216px; overflow-x: clip; transition: flex-basis 240ms var(--ease-out); background: var(--color-rail); border-right: 1px solid var(--color-line); padding: 18px 14px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; }
+.rail { align-self: flex-start; flex: 0 0 216px; overflow-x: clip; background: var(--color-rail); border-right: 1px solid var(--color-line); padding: 18px 14px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; }
 .logo { display: inline-flex; align-items: center; gap: 9px; padding: 0 4px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em; color: var(--color-text); white-space: nowrap; }
 .logo:hover { color: var(--color-text); }
-.logo-icon { width: 26px; height: 26px; flex: none; transition: transform 280ms var(--ease-spring); }
-.logo:hover .logo-icon { transform: rotate(-24deg); } /* the record turns a little */
+.logo-icon { width: 26px; height: 26px; flex: none; }
 /* M9 rail: head (wordmark + Quick add), grouped nav with one springing indicator, Settings at the foot, now playing + freshness */
 .rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .rail-toggle { width: 30px; height: 30px; background: transparent; color: var(--color-muted); }
 .rail-toggle:hover:not([disabled]) { color: var(--color-text); }
 .rail-add { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border: var(--hair); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font-weight: 600; white-space: nowrap; cursor: pointer; transition: background 150ms, border-color 150ms, transform 100ms var(--ease-out); }
 .rail-add:hover { background: var(--color-surface-2); border-color: rgba(255,255,255,0.10); }
-.rail-add:active { transform: scale(0.98); }
 .nav { position: relative; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
 .nav-group-name { padding: 0 10px 4px; font-size: 12px; font-weight: 600; color: var(--color-faint); }
 .nav-foot { margin-top: auto; padding-top: 10px; display: flex; flex-direction: column; }
 /* Selected page: no fill. A short accent marker rides the rail edge (on its divider) and springs to the page; the label goes bright + bold and the icon takes the accent. */
-.nav-ind { position: absolute; right: -14px; top: 0; width: 2px; height: 20px; z-index: 2; border-radius: var(--radius-bar); background: var(--color-accent); transition: transform 360ms var(--ease-spring); pointer-events: none; }
+.nav-ind { position: absolute; right: -14px; top: 0; width: 2px; height: 20px; z-index: 2; border-radius: var(--radius-bar); background: var(--color-accent); pointer-events: none; }
 
 /* Now playing tops the status card; a hairline separates it from freshness */
 .rail-now { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: -6px -6px 6px; padding: 6px 6px 10px; border-radius: var(--radius-thumb) var(--radius-thumb) 0 0; border-bottom: 1px solid var(--color-line-2); color: var(--color-text); font-size: 13px; transition: background 150ms; }
@@ -43,7 +41,6 @@ h1, h2 { text-wrap: balance; }
 .rail-now:active { background: var(--color-surface-3); }
 .nav-item { position: relative; z-index: 1; white-space: nowrap; display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; color: var(--color-text-2); transition: background 150ms, color 150ms, transform 100ms var(--ease-out); }
 .nav-item:hover:not([aria-current="page"]) { background: var(--color-surface); color: var(--color-text); }
-.nav-item:active:not([aria-current="page"]) { transform: scale(0.98); }
 .nav-item[aria-current="page"] { color: var(--color-text); font-weight: 700; }
 .nav-item .count { font-family: var(--font-mono); font-size: 12px; color: var(--color-faint); }
 .rail-box { display: flex; flex-direction: column; gap: 4px; padding: 12px 10px; border-radius: 10px; background: var(--color-surface); font-size: 12px; }
@@ -121,7 +118,7 @@ input[type="checkbox"]:disabled { opacity: 0.4; cursor: not-allowed; }
 .seg button[aria-selected="true"], .seg button[aria-checked="true"] { background: var(--color-text); color: var(--color-accent-ink); font-weight: 700; }
 .seg.accent button[aria-checked="true"] { background: var(--color-accent); }
 /* Sliding indicator (DESIGN §2.4): Seg positions it under the selected button; once placed, the button itself goes clear. */
-.seg-ind { position: absolute; z-index: 0; border-radius: var(--radius-thumb); background: var(--color-text); transition: left 280ms var(--ease-spring), top 280ms var(--ease-spring), width 280ms var(--ease-spring); pointer-events: none; }
+.seg-ind { position: absolute; left: 0; top: 0; z-index: 0; border-radius: var(--radius-thumb); background: var(--color-text); pointer-events: none; }
 .seg.accent .seg-ind { background: var(--color-accent); }
 .seg.slid button[aria-selected="true"], .seg.slid button[aria-checked="true"] { background: transparent; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 10px; background: var(--color-surface-2); font-size: 13px; border: 0; color: var(--color-text); }
@@ -226,14 +223,13 @@ a.lrow:active { background: var(--color-surface-3); }
 
 /* ---------- toggle switch (M9): rounded-rect, not a pill (DESIGN §3 shape); the thumb overshoots a little and stretches on press */
 input.toggle { appearance: none; position: relative; flex: none; width: 38px; height: 22px; margin: 0; border-radius: var(--radius-thumb); background: var(--color-surface-3); box-shadow: inset 0 0 0 1px var(--color-line-2); cursor: pointer; transition: background 220ms var(--ease-out), box-shadow 150ms; }
-input.toggle::before { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: var(--radius-thumb); background: var(--color-text-2); box-shadow: 0 1px 3px rgba(0,0,0,0.45); transform-origin: left; transition: transform 280ms var(--ease-spring), background 220ms; }
+.toggle-wrap { position: relative; display: inline-flex; flex: none; }
+.toggle-thumb { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: var(--radius-thumb); background: var(--color-text-2); box-shadow: 0 1px 3px rgba(0,0,0,0.45); pointer-events: none; transition: background 220ms; }
 input.toggle:not(:checked):hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--color-line-hover); }
-input.toggle:not(:checked):hover:not(:disabled)::before { background: var(--color-text); }
-input.toggle:active:not(:disabled)::before { transform: scaleX(1.25); }
+input.toggle:not(:checked):hover:not(:disabled) + .toggle-thumb { background: var(--color-text); }
 input.toggle:checked { background: var(--color-accent); box-shadow: inset 0 1px 0 rgba(255,255,255,0.3); }
-input.toggle:checked::before { transform: translateX(16px); background: var(--color-accent-ink); transform-origin: right; }
-input.toggle:checked:active:not(:disabled)::before { transform: translateX(16px) scaleX(1.25); }
-input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+input.toggle:checked + .toggle-thumb { background: var(--color-accent-ink); }
+input.toggle:disabled, input.toggle:disabled + .toggle-thumb { opacity: 0.4; cursor: not-allowed; }
 
 /* ---------- Settings (M9) */
 .switch-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-inline: -8px; padding: 6px 8px; border-radius: 10px; cursor: pointer; transition: background 150ms; }
@@ -247,14 +243,10 @@ input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 .seg.line button { height: 38px; padding: 0 12px; border-radius: var(--radius-control) var(--radius-control) 0 0; color: var(--color-muted); font-size: 14px; font-weight: 600; }
 .seg.line button:hover:not([disabled]):not([aria-selected="true"]) { background: var(--color-surface); }
 .seg.line button[aria-selected="true"] { background: transparent; color: var(--color-text); font-weight: 700; }
-.seg.line .seg-ind { background: transparent; border-radius: 0; box-shadow: inset 0 -2px 0 var(--color-accent); transition-duration: 320ms; }
+.seg.line .seg-ind { background: transparent; border-radius: 0; box-shadow: inset 0 -2px 0 var(--color-accent); }
 /* One panel at a time; it slides in from the side of the tab picked (DESIGN §3, M9) */
 .st-panel { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
 /* Any tab panel (Settings, Insights, Playlists mode): slides in from the side of the tab picked (useSlide) */
-.tab-panel.from-right { animation: panel-in 320ms var(--ease-out) both; }
-.tab-panel.from-left { animation: panel-in-l 320ms var(--ease-out) both; }
-@keyframes panel-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
-@keyframes panel-in-l { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
 :is(.st-panel, .hm-page) .card { position: relative; }
 :is(.st-panel, .hm-page) .card:not(.danger):hover { border-color: rgba(255,255,255,0.10); }
 /* Spotlight: a light that follows the pointer along the card's hairline (--mx/--my set by Settings `spot`). */
@@ -264,19 +256,12 @@ input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 .hm-page .card:not(.danger)::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: radial-gradient(420px circle at var(--mx, 50%) var(--my, -420px), rgba(255,255,255,0.035), transparent 65%); opacity: 0; transition: opacity 250ms; pointer-events: none; }
 .hm-page .card:not(.danger):hover::after { opacity: 1; }
 .st-metric { display: flex; flex-direction: column; gap: 2px; }
-.st-details { interpolate-size: allow-keywords; }
-.st-details::details-content { block-size: 0; overflow: clip; transition: block-size 300ms var(--ease-out), content-visibility 300ms allow-discrete; }
-.st-details[open]::details-content { block-size: auto; }
-.st-details summary { display: flex; align-items: center; gap: 8px; width: fit-content; margin-inline: -6px; padding: 4px 6px; border-radius: var(--radius-control); cursor: pointer; list-style: none; color: var(--color-text-2); transition: color 150ms, background 150ms; }
+.st-summary, .st-details summary { border: 0; background: transparent; font: inherit; display: flex; align-items: center; gap: 8px; width: fit-content; margin-inline: -6px; padding: 4px 6px; border-radius: var(--radius-control); cursor: pointer; list-style: none; color: var(--color-text-2); transition: color 150ms, background 150ms; }
 .st-details summary::-webkit-details-marker { display: none; }
-.st-details summary:hover { color: var(--color-text); background: var(--color-surface-2); }
-.st-details summary:active { background: var(--color-surface-3); }
-.st-details summary svg { transition: transform 220ms var(--ease-spring); }
-.st-details[open] summary svg { transform: rotate(90deg); }
+.st-summary:hover, .st-details summary:hover { color: var(--color-text); background: var(--color-surface-2); }
+.st-summary:active, .st-details summary:active { background: var(--color-surface-3); }
 .copy { width: 30px; height: 30px; }
 .copy.done { color: var(--color-accent); }
-.copy svg { animation: pop-in 260ms var(--ease-spring); }
-@keyframes pop-in { from { transform: scale(0.5); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---------- Home (M9): your last 12 months (bars, scrubbable), the period, most played (lead + ranks). Motion for React
    drives arrivals and springs; these recipes draw and give hover/press. Sizes stay fixed whatever the history (top 10, 12 months). */
@@ -313,6 +298,21 @@ a.hm-lead-name:hover { color: var(--color-link-hover); }
 .hm-ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
 .hm-ring circle { fill: none; stroke-width: 5; }
 .hm-ring .track { stroke: var(--color-line-2); }
+.hm-ring .fill { stroke: var(--color-text); stroke-linecap: round; }
+.hm-ring span { font-family: var(--font-mono); font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+/* Ranks 2–10 flow down two columns when there is room, one when not; the whole row is the target */
+.hm-ranks { flex: 2.6 1 440px; min-width: 0; margin: 0; padding: 0; list-style: none; columns: 2 280px; column-gap: 24px; }
+.hm-rank { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 28px; gap: 12px; align-items: center; margin-inline: -8px; padding: 7px 8px; border-radius: var(--radius-control); break-inside: avoid; transition: background 150ms, transform 100ms var(--ease-out); }
+.hm-rank:hover { background: var(--color-surface-2); }
+.hm-rank:has(.hm-stretch:active) { transform: scale(0.99); background: var(--color-surface-3); }
+.hm-rank-n { font-family: var(--font-mono); font-size: 13px; color: var(--color-faint); transition: color 150ms; }
+.hm-rank:hover .hm-rank-n { color: var(--color-text); }
+.hm-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; } /* row-wide click target */
+.hm-save { position: relative; z-index: 1; width: 28px; height: 28px; border-radius: var(--radius-thumb); }
+.hm-bar { display: block; height: 4px; border-radius: var(--radius-bar); background: var(--color-bar); transition: background 150ms; }
+.hm-bar.hot { background: var(--color-accent); }
+.hm-rank:hover .hm-bar:not(.hot) { background: var(--color-text-2); }
+
 /* ---------- Recent plays (M9): days as sections with a sticky head and a 24-hour strip; rows are whole-row targets.
    Off-screen days skip layout and paint, so years of plays stay cheap to scroll. Motion for React drives row arrival. */
 .pl-day { display: flex; flex-direction: column; gap: 8px; content-visibility: auto; contain-intrinsic-size: auto 520px; }
@@ -335,21 +335,6 @@ a.hm-lead-name:hover { color: var(--color-link-hover); }
 .pl-side { position: sticky; top: 20px; }
 .pl-state { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border-radius: var(--radius-thumb); background: var(--color-surface-2); color: var(--color-text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .pl-state.on { color: var(--color-text); }
-
-.hm-ring .fill { stroke: var(--color-text); stroke-linecap: round; }
-.hm-ring span { font-family: var(--font-mono); font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
-/* Ranks 2–10 flow down two columns when there is room, one when not; the whole row is the target */
-.hm-ranks { flex: 2.6 1 440px; min-width: 0; margin: 0; padding: 0; list-style: none; columns: 2 280px; column-gap: 24px; }
-.hm-rank { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 28px; gap: 12px; align-items: center; margin-inline: -8px; padding: 7px 8px; border-radius: var(--radius-control); break-inside: avoid; transition: background 150ms, transform 100ms var(--ease-out); }
-.hm-rank:hover { background: var(--color-surface-2); }
-.hm-rank:has(.hm-stretch:active) { transform: scale(0.99); background: var(--color-surface-3); }
-.hm-rank-n { font-family: var(--font-mono); font-size: 13px; color: var(--color-faint); transition: color 150ms; }
-.hm-rank:hover .hm-rank-n { color: var(--color-text); }
-.hm-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; } /* row-wide click target */
-.hm-save { position: relative; z-index: 1; width: 28px; height: 28px; border-radius: var(--radius-thumb); }
-.hm-bar { display: block; height: 4px; border-radius: var(--radius-bar); background: var(--color-bar); transition: background 150ms; }
-.hm-bar.hot { background: var(--color-accent); }
-.hm-rank:hover .hm-bar:not(.hot) { background: var(--color-text-2); }
 
 /* ---------- prototype controls (not product UI) */
 .proto { position: fixed; right: 16px; bottom: 16px; z-index: 40; width: 280px; font-size: 12px; background: #F3F1EA; color: #1B1B1B; border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); font-family: var(--font-mono); }

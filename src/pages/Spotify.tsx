@@ -3,7 +3,7 @@
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import * as api from "../api";
 import type { SpotifyEntry } from "../api";
-import { Attribution, Empty, ErrorBanner, Seg, SkelRows, SpotifyLogo, useSlide } from "../components/ui";
+import { Attribution, Empty, ErrorBanner, Seg, SkelRows, SpotifyLogo, TabPanel, useSlide } from "../components/ui";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import { useApi, useOnline } from "../hooks/useApi";
@@ -72,7 +72,7 @@ export default function Spotify() {
     const rows = top.data!.slice(0, MAX);
     body = (
       <div className="flex flex-wrap gap-7 items-start">
-        <section key={kind} role="tabpanel" className={`tab-panel ${dir} flex-[1.5_1_520px] min-w-0 flex flex-col gap-3.5`} aria-label={`Your top ${kind} on Spotify`}>
+        <TabPanel key={kind} dir={dir} label={`Your top ${kind} on Spotify`} className="flex-[1.5_1_520px] min-w-0 flex flex-col gap-3.5" as="section">
           {rows.length ? <div className="card pad-s"><div className="list">
             {rows.map((t, i) => (
               <div key={t.uri} className="row grid-cols-[28px_minmax(0,1fr)_auto]">
@@ -86,7 +86,7 @@ export default function Spotify() {
             <Attribution name="your top items" />
             {top.data!.length > 0 && <span className="font-mono text-faint text-xs">{rows.length} of {top.data!.length}</span>}
           </div>
-        </section>
+        </TabPanel>
         <aside className="flex-[1_1_320px] min-w-0 flex flex-col gap-5">
           <section className="card flex flex-col gap-3" aria-labelledby="fs-recent">
             <h2 id="fs-recent" className="card-title">Recently played on Spotify</h2>

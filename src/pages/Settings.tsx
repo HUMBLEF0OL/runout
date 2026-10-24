@@ -2,6 +2,7 @@
 // Tray menu and the NSIS uninstall dialog are native, not React.
 import { useEffect, useState, type ReactNode } from "react";
 import { CaretRight } from "@phosphor-icons/react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   backupNow, checkBackup, checkInbox, chooseBackupDir, createInbox, deleteLibrary, getInbox, setInboxOptions, disconnectSpotify, exportLibrary, getCapture, getLoggerStatus,
@@ -10,10 +11,11 @@ import {
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { ConnectDialog, ShortcutDialog } from "../components/SetupDialogs";
-import { CopyButton, CountUp, Dialog, Dots, ErrorBanner, Seg, SkelRows, Switch, spot, useSlide, useToast } from "../components/ui";
+import { CopyButton, CountUp, Dialog, Dots, ErrorBanner, Seg, SkelRows, spot, Switch, TabPanel, useSlide, useToast } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { day, dayY, pl, time } from "../lib/format";
+import { ARRIVE, LAND, PRESS, swap } from "../lib/motion";
 
 const mb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
 const backupLabel = (b: Backup, i: number) => `${day(b.created_at)}, ${time(b.created_at)}${i === 0 ? " (latest)" : ""}`;
@@ -60,6 +62,8 @@ export default function Settings() {
   const [capOff, setCapOff] = useState<"wrong_code" | "error">();
   const [warn, setWarn] = useState("");
   const [params, setParams] = useSearchParams();
+  const [wifiOpen, setWifiOpen] = useState(false); // the optional Wi-Fi capture disclosure
+  const reduce = useReducedMotion();
   const [ibGone, setIbGone] = useState(false); // Check now found the Inbox deleted in Spotify (check_inbox → not_found)
   useEffect(() => onEvent("capture-disabled", (p) => setCapOff(p.reason)), []);
   useEffect(() => { if (s.data) setWarn(String(s.data.size_warn_mb)); }, [s.data]);
@@ -104,7 +108,7 @@ export default function Settings() {
           <button className="btn btn-secondary s" onClick={() => run("limit", () => updateSettings({ size_warn_mb: st.size_warn_mb + 50 })).then((r) => r && toast(`Limit raised to ${r.size_warn_mb} MB`))}>Raise the limit</button>
         </div>
       )}
-      <div key={tab} role="tabpanel" aria-label={tabs[idx][1]} className={`st-panel tab-panel ${dir}`} onPointerMove={spot}>
+      <TabPanel key={tab} dir={dir} label={tabs[idx][1]} className="st-panel" onPointerMove={spot}>
         {tab === "data" && <Card id="data" title="Your data">
           <div className="field">
             <span className="label">Library location</span>
@@ -210,8 +214,16 @@ export default function Settings() {
               <div className="banner err" role="alert"><span><b className="text-danger">Phone capture turned itself off.</b> <span className="text-text-2">{capOff === "wrong_code" ? "5 wrong pairing codes in a row. Make a new code and update your Shortcut." : "The listener stopped. Turn it on again to keep saving from your iPhone."}</span></span></div>
               <div><button className="btn btn-primary" onClick={() => run("code", async () => { await newPairingCode(); await setCaptureEnabled(true); }).then(() => { setCapOff(undefined); toast("New pairing code. Update it in your iPhone Shortcut."); })}>New code and turn on</button></div>
             </> : (
-            <details className="st-details">
-              <summary><CaretRight size={14} weight="bold" aria-hidden />Optional: instant capture on home Wi-Fi</summary>
+            <div className="st-details">
+              <m.button type="button" className="st-summary" aria-expanded={wifiOpen} aria-controls="st-wifi" onClick={() => setWifiOpen((o) => !o)}
+                whileTap={{ scale: 0.98 }} transition={PRESS}>
+                <m.span className="inline-flex" initial={false} animate={{ rotate: wifiOpen ? 90 : 0 }} transition={LAND} aria-hidden><CaretRight size={14} weight="bold" /></m.span>
+                Optional: instant capture on home Wi-Fi
+              </m.button>
+              {/* Height to auto (Motion): small content, so the per-frame layout is cheap; reduced motion opens at once */}
+              <AnimatePresence initial={false}>
+              {wifiOpen && <m.div id="st-wifi" key="wifi" className="overflow-hidden" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }} transition={swap(reduce, ARRIVE)}>
               <div className="flex flex-col gap-3 pt-3">
                 <Switch label="Accept shares from my iPhone on this Wi-Fi" on={cap.data.on} onChange={(v) => run("cap", () => setCaptureEnabled(v))} />
                 <div className="tiles grid-cols-2">
@@ -224,7 +236,9 @@ export default function Settings() {
                   <button className="btn btn-secondary" onClick={() => run("code", newPairingCode).then((c) => c && toast("New pairing code. Update it in your iPhone Shortcut."))}>New code</button>
                 </div>
               </div>
-            </details>)}
+              </m.div>}
+              </AnimatePresence>
+            </div>)}
         </Card>}
 
         {r2 && tab === "import" && (
@@ -270,7 +284,7 @@ export default function Settings() {
         </div>
         <button className="btn btn-danger" onClick={() => setDlg("delete")}>Delete library</button>
         </section>}
-      </div>
+      </TabPanel>
 
       {dlg === "restore" && <RestoreDialog backups={backups.data ?? []} onClose={() => setDlg(null)} />}
       {dlg === "shortcut" && <ShortcutDialog onClose={() => setDlg(null)} />}

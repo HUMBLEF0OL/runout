@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import * as api from "../api";
 import type { Freshness, Range, RankRow as Rank, Sourced } from "../api";
-import { Empty, ErrorBanner, FreshnessNote, InsightCard as Card, Seg, SkelBlock, SkelRows, SourcedTag, Stat, useSlide } from "../components/ui";
+import { Empty, ErrorBanner, FreshnessNote, InsightCard as Card, Seg, SkelBlock, SkelRows, SourcedTag, Stat, TabPanel, useSlide } from "../components/ui";
 import { Topbar } from "../components/Shell";
 import { useApi, type ApiState } from "../hooks/useApi";
 import { day, daysSince, hm, monthName, nameOf, num, pl, STATUS, today } from "../lib/format";
@@ -226,15 +226,15 @@ export default function Insights() {
           {probe.data ? ` ${pl(probe.data.data.totals.private_excluded, "private-session play")} excluded. Nothing here comes from the Spotify API.` : ""}
         </p>
         <StaleBanner f={fresh.data} />
-        <div key={tab} role="tabpanel" aria-label={groups.find((g) => g[0] === tab)?.[1]} className={`tab-panel ${dir} flex flex-col gap-6`}>
+        <TabPanel key={tab} dir={dir} label={groups.find((g) => g[0] === tab)?.[1]} className="flex flex-col gap-6">
           {tab === "listening" && (
-            <div key={range} role="tabpanel" aria-label={ranges.find((r) => r[0] === range)?.[1]} className={`${ranged ? `tab-panel ${rdir} ` : ""}flex flex-col gap-6`}>
+            <TabPanel key={range} dir={rdir} still={!ranged} label={ranges.find((r) => r[0] === range)?.[1]} className="flex flex-col gap-6">
               <Listening range={range} />
-            </div>)}
+            </TabPanel>)}
           {tab === "collection" && <Collection />}
           {tab === "take" && <Take />}
           {tab === "year" && <Year />}
-        </div>
+        </TabPanel>
       </>}
     </>
   );
