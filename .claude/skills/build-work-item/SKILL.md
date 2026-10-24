@@ -35,3 +35,4 @@ description: Implement one Runout milestone work item from docs/MILESTONES.md en
 
 ## Gotchas
 <!-- Lessons from corrections go here, newest first. Promote to scripts/check.py when automatable. -->
+- **UI redesign "looks static and flat" (24 Oct 2026, M9 Home).** Motion on arrival alone isn't enough. Before calling a UI item done, look at your own screenshots at 900 / 1280 / 1440 and check that: every card or row responds to the pointer (hover fill, spotlight, press); the focused data point is shown by the one accent; numbers have a visual next to them (bars, ring), not text alone; hairlines run the full width of their container; no embed is narrower than Spotify's layout (compact player ≥ 250 px). Reduced motion is enforced by `check.py` "reduced motion (JS)".
