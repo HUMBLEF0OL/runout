@@ -183,6 +183,7 @@ function filterItems(f: ItemFilter): Page<ItemSummary> {
 
 const freshness = (): Freshness => ({ logger_last_event: L.freshness.logger_last, export_latest_event: L.freshness.export_until });
 const sourced = <T,>(data: T, sources: Source[]) => ({ data, sources, freshness: freshness() });
+const PLAYS_MAX_PAGE = 200;
 const RANGE_DAYS: Record<Range, number> = { "7d": 7, "30d": 30, "12m": 365, all: 1e6 };
 const sumByName = (type: MItem["type"], name: string, by?: string) => items.find((i) => i.type === type && i.display_name === name && (!by || type === "artist" || i.artist === by));
 function play(e: any, n: number): Play {
@@ -394,7 +395,8 @@ const H: Record<string, Handler> = {
     let rows = (dev.view === "heavy" ? heavyPlays() : allPlays()).filter((p) => daysBetween(p.ended_at_local, TODAY) < days);
     if (q.tab === "unrated") rows = rows.filter((p) => p.counts_as_play && p.item && p.item.rating == null);
     if (q.tab === "missing") rows = rows.filter((p) => !p.item);
-    return { rows: rows.slice(q.offset, q.offset + q.limit), total: rows.length, offset: q.offset };
+    const limit = Math.min(Math.max(q.limit, 1), PLAYS_MAX_PAGE); // as Rust clamps it (insights/plays.rs MAX_PAGE)
+    return { rows: rows.slice(q.offset, q.offset + limit), total: rows.length, offset: q.offset };
   },
   list_unmatched: () => L.unmatched.map((u: any, n: number) => ({ norm_key: `${u.artist}|${u.track}`.toLowerCase(), track_name: u.track, artist_name: u.artist, plays: u.plays, detail: u.detail, suggestion: u.choice, event_id: 1000 + n,
     candidates: [sumByName("track", u.track, u.artist), ...items.filter((i) => i.type === "album" && i.artist === u.artist)].filter(Boolean).map((i) => summary(i!)) })),

@@ -1,15 +1,14 @@
 // SC-08 Recent plays: plays by day, desktop logger control, unmatched plays (CAP-18, 20, 21).
 // M9 (24 Oct 2026, user: "refactor the recent play feature using taste + motion"): built for years of history. Plays load
-// newest first in pages as you scroll (one query, a growing limit), each day is a section with its own numbers and a
+// newest first, a page at a time as you scroll (offset pages appended), each day is a section with its own numbers and a
 // 24-hour strip, and off-screen days skip layout and paint (`content-visibility`). Motion: rows arrive, a day opens.
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { DesktopIcon, DeviceMobileIcon } from "@phosphor-icons/react";
 import * as api from "../api";
-import { playSources } from "../components/logic";
 import type { Play, Unmatched } from "../api";
-import { Dialog, Dots, Empty, ErrorBanner, FreshnessNote, LiveDot, PageHead, Seg, SkelRows, SourceTag, Stars, useSlide, useToast } from "../components/ui";
+import { Dialog, Dots, Empty, ErrorBanner, FreshnessNote, LiveDot, PageHead, Seg, SkelRows, SourceTag, Stars, TabPanel, useSlide, useToast } from "../components/ui";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import { useApi } from "../hooks/useApi";
@@ -17,7 +16,8 @@ import { daysSince, day, hm, mmss, nameOf, num, pl, stars, sub, time } from "../
 
 type Tab = "all" | "unrated" | "missing";
 const TABS: Tab[] = ["all", "unrated", "missing"];
-const PAGE = 150; // plays per page; a long day still opens in place
+/** Plays per request; at most Rust's `MAX_PAGE` (200, insights/plays.rs; the mock applies it too, check.py "plays page"). */
+export const PAGE = 150;
 const PER_DAY = 12;
 const EASE = [0.16, 1, 0.3, 1] as const;
 /** Reduced motion: MotionConfig stops transforms but still fades, and AnimatePresence still waits; go instant. */
@@ -64,7 +64,7 @@ function PlayLine({ p, i, onRate, onSave }: { p: Play; i: number; onRate: (p: Pl
 }
 
 /* ------------------------------------------------------------------ one day: numbers, hour strip, plays */
-function DayGroup({ k, plays }: { k: string; plays: Play[] }) {
+function DayGroupView({ k, plays }: { k: string; plays: Play[] }) {
   const reduce = useReducedMotion();
   const [all, setAll] = useState(false);
   const nav = useNavigate();
@@ -118,6 +118,8 @@ function DayGroup({ k, plays }: { k: string; plays: Play[] }) {
     </section>
   );
 }
+
+const DayGroup = memo(DayGroupView, (a, b) => a.k === b.k && a.plays.length === b.plays.length && a.plays.every((p, i) => p === b.plays[i]));
 
 /* ------------------------------------------------------------------ side: logger, unmatched */
 function Logger() {
@@ -191,32 +193,53 @@ function UnmatchedCard() {
 }
 
 /* ------------------------------------------------------------------ page */
+/** Newest page live (refetched on every write and new play); earlier pages appended once by offset. A new play shifts
+ *  offsets by one, so pages are merged by play id. */
+function usePlayPages(tab: Tab) {
+  const first = useApi(() => api.listPlays({ tab, range: "all", offset: 0, limit: PAGE }).then((page) => ({ tab, page })), [tab]);
+  const [older, setOlder] = useState<{ tab: Tab; rows: Play[]; end: boolean }>({ tab, rows: [], end: false });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<api.AppError>();
+  const cur = first.data?.tab === tab ? first.data.page : undefined; // never show the previous tab's rows
+  const mine = older.tab === tab ? older : { tab, rows: [], end: false };
+  const seen = new Set<number>();
+  const rows = [...(cur?.rows ?? []), ...mine.rows].filter((p) => !seen.has(p.id) && !!seen.add(p.id));
+  const end = !cur || cur.rows.length < PAGE || mine.end || rows.length >= cur.total;
+  // ponytail: older pages don't refetch on writes (a Save there shows on the next visit); the newest page does.
+  const more = useCallback(() => {
+    if (busy || end) return;
+    setBusy(true); setError(undefined);
+    api.listPlays({ tab, range: "all", offset: rows.length, limit: PAGE }).then(
+      (pg) => setOlder((o) => ({ tab, rows: [...(o.tab === tab ? o.rows : []), ...pg.rows], end: pg.rows.length < PAGE })),
+      (e) => setError(api.toAppError(e)),
+    ).finally(() => setBusy(false));
+  }, [busy, end, tab, rows.length]);
+  return { loading: !cur && !first.error, error: first.error, reload: first.reload, rows, total: cur?.total ?? 0, end, busy, more, moreError: error };
+}
+
 export default function Plays() {
   const tab = (useParams().tab ?? "all") as Tab;
   const nav = useNavigate();
-  const [limit, setLimit] = useState(PAGE);
-  useEffect(() => setLimit(PAGE), [tab]);
-  // ponytail: one query with a growing limit (refetches the loaded plays on each page); keyset paging if pages get slow.
-  const plays = useApi(() => api.listPlays({ tab, range: "all", offset: 0, limit }), [tab, limit]);
-  const unrated = useApi(() => api.listPlays({ tab: "unrated", range: "all", offset: 0, limit: 0 }));
-  const missing = useApi(() => api.listPlays({ tab: "missing", range: "all", offset: 0, limit: 0 }));
+  const plays = usePlayPages(tab);
+  const unrated = useApi(() => api.listPlays({ tab: "unrated", range: "all", offset: 0, limit: 1 }));
+  const missing = useApi(() => api.listPlays({ tab: "missing", range: "all", offset: 0, limit: 1 }));
   const fresh = useApi(api.getFreshness);
   const logger = useApi(api.getLoggerStatus);
   const [dir, slide] = useSlide(TABS, tab);
-  const rows = plays.data?.rows ?? [];
-  const total = plays.data?.total ?? 0;
-  const more = rows.length < total;
-  const ready = more && rows.length >= limit; // the last page has arrived, so the next can be asked for
+  const { rows, total, end, busy, more } = plays;
   const sentinel = useRef<HTMLDivElement>(null);
   // The next page loads before you reach the end (600 px ahead); the button below does the same by keyboard.
+  // Re-armed per tab and per page: the panel remounts on a tab switch, and an observer fires once per entry.
   useEffect(() => {
     const el = sentinel.current;
-    if (!el || !ready || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) setLimit((l) => l + PAGE); }, { rootMargin: "600px" });
+    if (!el || end || busy || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) more(); }, { rootMargin: "600px" });
     io.observe(el);
     return () => io.disconnect();
-  }, [ready]);
+  }, [end, busy, more, tab, rows.length]);
   const n = (s: typeof unrated) => (s.data ? ` ${num(s.data.total)}` : "");
+  // Sources of the whole history (FR-032), not only the pages loaded so far: the export and logger dates say which exist.
+  const sources: api.Source[] = [...(rows.some((p) => p.item) ? ["U" as const] : []), ...(fresh.data?.logger_last_event ? ["S" as const] : []), ...(fresh.data?.export_latest_event ? ["E" as const] : [])];
 
   let content;
   if (plays.loading) content = <SkelRows n={10} />;
@@ -232,8 +255,10 @@ export default function Plays() {
     {byDay(rows).map((d) => <DayGroup key={d.key} k={d.key} plays={d.plays} />)}
     <div ref={sentinel} className="pl-more">
       <span className="font-mono text-faint text-xs">{num(rows.length)} of {pl(total, "play")}</span>
-      {more ? (ready ? <button className="btn btn-secondary s" onClick={() => setLimit((l) => l + PAGE)}>Load earlier plays</button> : <Dots />)
-        : <span className="text-muted text-xs">That’s everything, back to your first play.</span>}
+      {plays.moreError ? <ErrorBanner error={plays.moreError} title="Couldn't load earlier plays." onRetry={more} />
+        : end ? <span className="text-muted text-xs">That’s everything, back to your first play.</span>
+        // One button stays mounted and focusable while a page loads (`disabled` would drop keyboard focus); more() ignores repeats
+        : <button className="btn btn-secondary s" onClick={more} aria-disabled={busy} aria-busy={busy}>{busy ? <Dots /> : "Load earlier plays"}</button>}
     </div>
   </>;
 
@@ -246,10 +271,10 @@ export default function Plays() {
             <Seg label="Which plays" value={tab} onChange={(t) => { slide(t); nav(`/plays/${t}`); }}
               options={[["all", "All"], ["unrated", `Not rated${n(unrated)}`], ["missing", `Not in library${n(missing)}`]]} />
           </PageHead>
-          <div key={tab} role="tabpanel" aria-label={tab === "all" ? "All plays" : tab === "unrated" ? "Not rated" : "Not in library"} className={`tab-panel ${dir} flex flex-col gap-5`}>
-            <span className="flex flex-wrap gap-1.5 items-center">{rows.length > 0 && <SourceTag sources={playSources(rows)} />}<FreshnessNote freshness={fresh.data} loggerState={logger.data?.state} /></span>
+          <TabPanel key={tab} dir={dir} label={tab === "all" ? "All plays" : tab === "unrated" ? "Not rated" : "Not in library"} className="flex flex-col gap-5">
+            <span className="flex flex-wrap gap-1.5 items-center">{rows.length > 0 && <SourceTag sources={sources} />}<FreshnessNote freshness={fresh.data} loggerState={logger.data?.state} /></span>
             {content}
-          </div>
+          </TabPanel>
         </section>
         <aside className="pl-side flex-[1_1_320px] min-w-0 flex flex-col gap-3">
           <Logger />

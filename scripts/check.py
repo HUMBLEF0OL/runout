@@ -789,6 +789,27 @@ def check_reduced_motion_js():
         print("--- reduced motion (JS): ok")
 
 
+def check_plays_page():
+    # M9 WI 4 review: Rust clamps list_plays to MAX_PAGE rows; the mock didn't, so paging that asked for more passed
+    # every UI check and stalled in the real app. The mock applies the same cap, and the Recent plays page asks for no more.
+    rs = re.search(r"const MAX_PAGE: i64 = (\d+);", (ROOT / "src-tauri/src/insights/plays.rs").read_text(encoding="utf-8"))
+    mock = re.search(r"const PLAYS_MAX_PAGE = (\d+);", (ROOT / "src/mocks/index.ts").read_text(encoding="utf-8"))
+    page = re.search(r"export const PAGE = (\d+);", (ROOT / "src/pages/Plays.tsx").read_text(encoding="utf-8"))
+    bad = []
+    if not (rs and mock and page):
+        bad.append("MAX_PAGE (plays.rs), PLAYS_MAX_PAGE (mocks) or PAGE (Plays.tsx) not found")
+    else:
+        if rs.group(1) != mock.group(1):
+            bad.append(f"mock PLAYS_MAX_PAGE {mock.group(1)} != Rust MAX_PAGE {rs.group(1)}")
+        if int(page.group(1)) > int(rs.group(1)):
+            bad.append(f"Plays.tsx PAGE {page.group(1)} > Rust MAX_PAGE {rs.group(1)}")
+    if bad:
+        failures.append("plays page")
+        print("--- plays page: FAIL\n" + "\n".join("  " + b for b in bad))
+    else:
+        print("--- plays page: ok")
+
+
 def check_control_consistency():
     # M9 consistency sweep: radii stay on DESIGN §3's scale (3 bars, 6 thumbnails + small/nested controls, 10 controls,
     # 16 cards); `.embed` is Spotify's own 12px, `.proto` is dev-only. An aria-pressed toggle keeps one label (WAI-ARIA);
@@ -880,6 +901,7 @@ check_design()
 check_exit_flush()
 check_hover_keeps_selected()
 check_reduced_motion_js()
+check_plays_page()
 check_control_consistency()
 check_doc_line_endings()
 check_doc_drift()

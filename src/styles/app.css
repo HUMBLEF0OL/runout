@@ -329,7 +329,7 @@ a.hm-lead-name:hover { color: var(--color-link-hover); }
 .pl-row:has(.pl-stretch:active) { transform: scale(0.995); background: var(--color-surface-3); }
 .pl-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; } /* the whole row opens the record */
 .pl-act { position: relative; z-index: 1; }
-.pl-dev { display: inline-flex; color: var(--color-faint); transition: color 150ms; }
+.pl-dev { position: relative; z-index: 1; display: inline-flex; color: var(--color-faint); transition: color 150ms; }
 .pl-row:hover .pl-dev { color: var(--color-text-2); }
 .pl-more { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-height: 44px; padding: 8px 4px; }
 .pl-side { position: sticky; top: 20px; }
