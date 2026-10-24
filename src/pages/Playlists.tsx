@@ -1,15 +1,20 @@
 // SC-11 Playlists: read-only check-up from the export (R2, CAP-22) and Studio live from Spotify (R3, CAP-29, 30).
 // Studio suggests cuts from your own ratings and duplicates only; it never shows listening stats (D27).
+// M9 (24 Oct 2026, user: "refactor the playlists and from spotify feature using taste + motion"): each exported playlist
+// shows its share of issues as a bar; the check-up draws where the issues sit along the playlist and can show only those;
+// Studio keeps its draft panel in view, a kept/cut meter springs with every choice, and changes slide in and out.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { Link, Navigate, useLocation, useNavigate, useNavigationType, useParams, useSearchParams } from "react-router-dom";
 import * as api from "../api";
 import type { AppError, Draft, StudioDiff } from "../api";
-import { Attribution, Dialog, Dots, Empty, ErrorBanner, Seg, SkelRows, SourceTag, Stars, Stat, TabPanel, useToast } from "../components/ui";
+import { Attribution, Dialog, Dots, Empty, ErrorBanner, Seg, SkelRows, SourceTag, spot, Stars, Stat, TabPanel, useSlide, useToast } from "../components/ui";
 import { Topbar } from "../components/Shell";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
-import { cutReason, keepList } from "../lib/studio";
+import { cutReason, keepList, stripBg } from "../lib/studio";
 import { day, pl } from "../lib/format";
+import { EASE, LAND, swap } from "../lib/motion";
 
 type Tab = "checkup" | "studio";
 
@@ -32,7 +37,7 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
   return (
     <>
       <Topbar />
-      <div className="flex flex-wrap gap-7 items-start">
+      <div className="py-page lit flex flex-wrap gap-7 items-start" onPointerMove={spot}>
         <nav className="flex flex-col gap-1.5 flex-[0_0_240px]" aria-label="Playlists">
           <h2 className="text-muted text-sm font-bold px-2">{tab === "studio" ? "Your playlists on Spotify" : exp ? `From your export of ${day(exp)}` : "From your export"}</h2>
           {list}
@@ -51,21 +56,45 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
 }
 
 // `p` is the playlist id (check-up) or uri (Studio): names are not unique on Spotify.
-const PlaylistLink = ({ tab, id, name, sel, children }: { tab: Tab; id: string; name: string; sel: boolean; children: ReactNode }) => (
+// `issues` (check-up only): the share of tracks flagged, drawn as a bar under the counts.
+const PlaylistLink = ({ tab, id, name, sel, issues, children }: { tab: Tab; id: string; name: string; sel: boolean; issues?: number; children: ReactNode }) => (
   <Link to={`/playlists/${tab}?p=${encodeURIComponent(id)}`} className="row grid-cols-[minmax(0,1fr)]" aria-current={sel ? "page" : undefined}>
-    <span className="flex flex-col gap-0.5 min-w-0"><span className="truncate font-semibold text-text">{name}</span><span className="text-muted text-xs font-mono">{children}</span></span>
+    <span className="flex flex-col gap-0.5 min-w-0"><span className="truncate font-semibold text-text">{name}</span><span className="text-muted text-xs font-mono">{children}</span>
+      {issues != null && <span className="py-health" aria-hidden><i style={{ width: `${issues ? Math.max(4, issues * 100) : 0}%` }} /></span>}</span>
   </Link>
 );
+
+/** A row rising in: capped so a long playlist is in place within ~0.5 s. */
+const rise = (reduce: boolean | null, i: number) => ({
+  initial: reduce ? false : { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.28, ease: EASE, delay: Math.min(i, 14) * 0.025 },
+} as const);
+
+/** Where the flagged tracks sit along the playlist (`stripBg`: one element whatever the length). */
+function Strip({ flags, note }: { flags: boolean[]; note: string }) {
+  const reduce = useReducedMotion();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <m.div className="py-strip" style={{ background: stripBg(flags), originX: 0 }} initial={reduce ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.7, ease: EASE, delay: 0.1 }} aria-hidden />
+      <div className="flex justify-between items-baseline gap-3 text-[11px]">
+        <span className="font-mono text-faint" aria-hidden>Track 1</span><span className="text-muted text-xs text-center">{note}</span><span className="font-mono text-faint" aria-hidden>Track {flags.length}</span>
+      </div>
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ check-up (read-only) */
 function Checkup() {
   const { r3 } = useRelease();
+  const reduce = useReducedMotion();
+  const [show, setShow] = useState<"all" | "issues">("all");
+  const [dir, slide] = useSlide(["all", "issues"], show);
   const [sp] = useSearchParams();
   const pls = useApi(api.listExportedPlaylists);
   const sel = pls.data?.find((p) => String(p.id) === sp.get("p")) ?? pls.data?.[0];
   const cu = useApi(() => (sel ? api.getPlaylistCheckup(sel.id) : Promise.resolve(null)), [sel?.id]);
   const list = pls.data?.map((p) => (
-    <PlaylistLink key={p.id} tab="checkup" id={String(p.id)} name={p.name} sel={p === sel}>
+    <PlaylistLink key={p.id} tab="checkup" id={String(p.id)} name={p.name} sel={p === sel} issues={p.tracks ? Math.min(1, (p.dupes + p.low) / p.tracks) : 0}>
       {pl(p.tracks, "track")}{p.dupes > 0 && <>, <span className="text-accent">{pl(p.dupes, "duplicate")}</span></>}{p.low > 0 && <>, <span className="text-accent">{p.low} rated low</span></>}
     </PlaylistLink>
   ));
@@ -75,6 +104,9 @@ function Checkup() {
   if (!sel || !cu.data) return wrap(<Empty h="No playlists in your export" line="Import an Account data export from Spotify to check your playlists."><Link className="btn btn-primary" to="/import/1">Import history</Link></Empty>);
   const t = cu.data.tracks;
   const never = t.filter((x) => x.never_played).length;
+  const flag = (x: (typeof t)[number]) => x.dupe || (x.rating != null && x.rating <= 2);
+  const flagged = t.filter(flag).length;
+  const shown = show === "issues" ? t.filter(flag) : t;
   return wrap(<>
     <p className="text-text-2 m-0">Read-only. Shows the playlist as it was in your export. To change it, use Studio{r3 ? "" : " (Release 3)"}.</p>
     <SourceTag sources={["E", "U", "S"]} />
@@ -84,19 +116,23 @@ function Checkup() {
       <Stat k="Never played" v={never} d="In your plays" />
       <Stat k="Tracks" v={t.length} d="In the export" />
     </div>
-    <div className="card pad-s"><div className="list">
-      {t.map((x) => {
-        const low = x.rating != null && x.rating <= 2;
-        return (
-          <div key={x.position} className="row grid-cols-[28px_minmax(0,1fr)_80px_160px]">
-            <span className="font-mono text-faint text-xs">{x.position}</span>
-            <span className="flex flex-col gap-0.5"><span className="font-semibold">{x.name}</span><span className="text-muted text-xs">{x.artist}</span></span>
-            <span>{x.rating ? <Stars r={x.rating} /> : <span className="text-faint text-xs">Not rated</span>}</span>
-            <span className={`text-xs ${x.dupe || low ? "text-accent" : "text-muted"}`}>{x.dupe ? "Duplicate" : low ? "Rated low" : x.never_played ? "Never played" : ""}</span>
-          </div>
-        );
-      })}
-    </div></div>
+    <section className="card py-tracks" aria-label="Tracks">
+      <Seg label="Show" value={show} onChange={(v) => { slide(v); setShow(v); }} options={[["all", `All tracks (${t.length})`], ["issues", `Needs a look (${flagged})`]]} />
+      {t.length > 0 && <Strip flags={t.map(flag)} note={flagged ? `${pl(flagged, "track")} flagged, in accent along the playlist` : "Nothing flagged"} />}
+      <TabPanel key={show} dir={dir} label={show === "issues" ? "Tracks that need a look" : "All tracks"} className="list">
+        {shown.length ? shown.map((x, i) => {
+          const low = x.rating != null && x.rating <= 2;
+          return (
+            <m.div key={x.position} className={`row py-row${flag(x) ? " flag" : ""}`} {...rise(reduce, i)}>
+              <span className="font-mono text-faint text-xs">{x.position}</span>
+              <span className="flex flex-col gap-0.5 min-w-0"><span className="font-semibold truncate">{x.name}</span><span className="text-muted text-xs truncate">{x.artist}</span></span>
+              <span>{x.rating ? <Stars r={x.rating} /> : <span className="text-faint text-xs">Not rated</span>}</span>
+              <span className="justify-self-end">{x.dupe ? <span className="badge need">Duplicate</span> : low ? <span className="badge need">Rated low</span> : x.never_played ? <span className="text-faint text-xs">Never played</span> : null}</span>
+            </m.div>
+          );
+        }) : <span className="text-muted px-2.5 py-2">No duplicates or low ratings in this playlist.</span>}
+      </TabPanel>
+    </section>
     {r3 && <Link className="btn btn-primary self-start" to={`/playlists/studio?p=${encodeURIComponent(sel.name)}&tracks=${sel.tracks}`}>Open in Studio</Link>}
   </>);
 }
@@ -106,7 +142,29 @@ function Checkup() {
 const NOTHING_WRITTEN = new Set<AppError["code"]>(["conflict", "validation", "spotify_busy"]);
 const wait = (e: AppError) => (e.retry_after_s ? `in ${e.retry_after_s} s` : "in a moment");
 
+/** Kept against cut, as two bars that spring to their share with every choice (no track behind them). */
+function Meter({ kept, total }: { kept: number; total: number }) {
+  const reduce = useReducedMotion();
+  const cut = total - kept;
+  const t = total || 1;
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <AnimatePresence mode="popLayout" initial={false}>
+          <m.span key={kept} className="py-big" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={swap(reduce, LAND)}>{kept}</m.span>
+        </AnimatePresence>
+        <span className="text-muted text-sm">of {pl(total, "track")} kept</span>
+      </div>
+      <div className="py-meter" aria-hidden>
+        <m.i className="keep" style={{ originX: 0 }} initial={false} animate={{ scaleX: kept / t }} transition={LAND} />
+        <m.i className="cut" style={{ originX: 1 }} initial={false} animate={{ scaleX: cut / t }} transition={LAND} />
+      </div>
+    </div>
+  );
+}
+
 function Studio() {
+  const reduce = useReducedMotion();
   const [sp] = useSearchParams();
   const online = useOnline();
   const toast = useToast();
@@ -171,12 +229,12 @@ function Studio() {
         ? <ErrorBanner error={fail.e} title="This may have been partly applied on Spotify. If Undo is offered below, it puts the playlist back." />
         : <ErrorBanner error={fail.e} title="Nothing was changed on Spotify." />;
   // The warning and the Undo banner stay on screen even when a reload fails or the page is offline.
-  const top = <>{banner}{last.data?.uri === sel?.uri && last.data && (
-    <div className="banner">
+  const top = <>{banner}<AnimatePresence initial={false}>{last.data?.uri === sel?.uri && last.data && (
+    <m.div key="undo" className="banner" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: swap(reduce, { duration: 0.15 }) }} transition={swap(reduce, { duration: 0.32, ease: EASE })}>
       <span><b>Applied {day(last.data.applied_at)}.</b> <span className="text-text-2">Undo is available until {day(last.data.expires_at)}.</span></span>
       <button className="btn btn-secondary s" onClick={undo}>Undo last apply</button>
-    </div>
-  )}</>;
+    </m.div>
+  )}</AnimatePresence></>;
 
   const list = pls.data?.map((p) => <PlaylistLink key={p.uri} tab="studio" id={p.uri} name={p.name} sel={p === sel}>{pl(p.tracks, "track")}</PlaylistLink>);
   const wrap = (body: ReactNode) => <Layout tab="studio" list={list} title={sel?.name ?? "Studio"} subline={sel && `Your playlist, ${pl(sel.tracks, "track")}`}>{body}</Layout>;
@@ -215,25 +273,33 @@ function Studio() {
         {d.tracks.map((t, i) => {
           const isCut = cut.has(i); const why = cutReason(t, d.tracks); const also = crossNow?.also?.get(t.uri);
           return (
-            <div key={i} className={`row grid-cols-[24px_minmax(160px,1fr)_64px_auto] ${isCut ? " sel" : ""}`}>
+            <m.div key={i} className={`row py-row py-studio${isCut ? " cut" : ""}${why ? " flag" : ""}`} {...rise(reduce, i)}>
               <span className="font-mono text-faint text-xs">{i + 1}</span>
               <span className="flex flex-col gap-0.5 min-w-0">
-                <span className={`font-semibold ${isCut ? "line-through text-muted" : ""}`}>{t.name}</span>
+                <span className="py-name font-semibold truncate">{t.name}</span>
                 <span className="text-muted text-xs">{t.artist}{why && <span className="text-accent">, {why}</span>}{also && <span className="text-accent">, also in {also.join(", ")}</span>}</span>
               </span>
               <span>{t.rating ? <Stars r={t.rating} /> : null}</span>
-              <Seg label={`Keep or cut ${t.name}`} radio value={isCut ? "cut" : "keep"} onChange={(v) => toggle(i, v)} options={[["keep", "Keep"], ["cut", "Cut"]]} />
-            </div>
+              <Seg label={`Keep or cut ${t.name}`} radio accent={isCut} value={isCut ? "cut" : "keep"} onChange={(v) => toggle(i, v)} options={[["keep", "Keep"], ["cut", "Cut"]]} />
+            </m.div>
           );
         })}
       </div></div>
-      <aside className="card flex-[0_1_300px] min-w-0 flex flex-col gap-3">
+      <aside className="card py-side flex-[1_1_300px] min-w-0 flex flex-col gap-3">
         <h2 className="card-title">Your changes</h2>
+        <Meter kept={d.tracks.length - changes.length} total={d.tracks.length} />
         <span className="text-muted text-sm">Draft only. Nothing changes on Spotify until you apply.</span>
-        {changes.length ? changes.map(({ t, i }) => (
-          <div key={i} className="flex flex-col gap-0.5 px-3 py-2.5 rounded-control bg-surface-2">
-            <span className="text-accent text-xs font-bold">{t.dupe_of ? "Remove duplicate" : "Remove"}</span><span>{t.name}</span>
-          </div>)) : <span className="text-muted">No changes yet.</span>}
+        <div className="flex flex-col">
+          <AnimatePresence initial={false}>
+            {changes.map(({ t, i }) => (
+              <m.div key={i} className="overflow-hidden" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={swap(reduce, { duration: 0.24, ease: EASE })}>
+                <div className="flex flex-col gap-0.5 px-3 py-2.5 mb-2 rounded-control bg-surface-2 py-change">
+                  <span className="text-accent text-xs font-bold">{t.dupe_of ? "Remove duplicate" : "Remove"}</span><span className="truncate">{t.name}</span>
+                </div>
+              </m.div>))}
+          </AnimatePresence>
+          {!changes.length && <span className="text-muted">No changes yet.</span>}
+        </div>
         <button className="btn btn-primary" disabled={!changes.length || busy} onClick={openConfirm}>{busy && !confirm ? <Dots /> : `Apply ${pl(changes.length, "change")} to Spotify`}</button>
         <span className="text-muted text-xs leading-[1.45]">Runout checks the playlist hasn't changed on Spotify first. You can undo for 30 days.</span>
         <button className="btn btn-secondary" onClick={() => { setEdit(undefined); toast("Draft discarded"); }}>Discard draft</button>

@@ -247,11 +247,11 @@ input.toggle:disabled, input.toggle:disabled + .toggle-thumb { opacity: 0.4; cur
 /* One panel at a time; it slides in from the side of the tab picked (DESIGN §3, M9) */
 .st-panel { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
 /* Any tab panel (Settings, Insights, Playlists mode): slides in from the side of the tab picked (useSlide) */
-:is(.st-panel, .hm-page) .card { position: relative; }
-:is(.st-panel, .hm-page) .card:not(.danger):hover { border-color: rgba(255,255,255,0.10); }
+:is(.st-panel, .hm-page, .lit) .card { position: relative; }
+:is(.st-panel, .hm-page, .lit) .card:not(.danger):hover { border-color: rgba(255,255,255,0.10); }
 /* Spotlight: a light that follows the pointer along the card's hairline (--mx/--my set by Settings `spot`). */
-:is(.st-panel, .hm-page) .card:not(.danger)::before { content: ""; position: absolute; inset: -1px; padding: 1px; border-radius: inherit; background: radial-gradient(240px circle at var(--mx, 50%) var(--my, -240px), rgba(255,255,255,0.32), transparent 70%); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity: 0; transition: opacity 250ms; pointer-events: none; }
-:is(.st-panel, .hm-page) .card:not(.danger):hover::before { opacity: 1; }
+:is(.st-panel, .hm-page, .lit) .card:not(.danger)::before { content: ""; position: absolute; inset: -1px; padding: 1px; border-radius: inherit; background: radial-gradient(240px circle at var(--mx, 50%) var(--my, -240px), rgba(255,255,255,0.32), transparent 70%); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity: 0; transition: opacity 250ms; pointer-events: none; }
+:is(.st-panel, .hm-page, .lit) .card:not(.danger):hover::before { opacity: 1; }
 .hm-page .card { isolation: isolate; } /* the glow sits behind the card content, above its fill */
 .hm-page .card:not(.danger)::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: radial-gradient(420px circle at var(--mx, 50%) var(--my, -420px), rgba(255,255,255,0.035), transparent 65%); opacity: 0; transition: opacity 250ms; pointer-events: none; }
 .hm-page .card:not(.danger):hover::after { opacity: 1; }
@@ -335,6 +335,60 @@ a.hm-lead-name:hover { color: var(--color-link-hover); }
 .pl-side { position: sticky; top: 20px; }
 .pl-state { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border-radius: var(--radius-thumb); background: var(--color-surface-2); color: var(--color-text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .pl-state.on { color: var(--color-text); }
+
+/* ---------- Library + Rediscover (M9): collection cards, filter bar, rails. Motion (CollectionCard, ShelfRail) moves
+   them; these recipes only draw. */
+.cc-cell { min-width: 0; display: flex; }
+.cc-card { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; min-height: 148px; color: var(--color-text); }
+.cc-card:hover { color: var(--color-text); }
+.cc-type { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; color: var(--color-muted); }
+.cc-name { font-size: 15px; font-weight: 700; line-height: 1.25; letter-spacing: -0.005em; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; } /* a link still waiting for a name stays two lines */
+.cc-sub { font-size: 13px; color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: auto -18px -18px; padding: 10px 18px 12px; border-top: 1px solid var(--color-line); }
+.lb-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.lb-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lb-result { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--color-text-2); font-size: 13px; }
+.lb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.lb-more { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 4px; }
+.rd-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; }
+/* A rail scrolls sideways and snaps per card; the ends fade only where more cards hide (set by ShelfRail) */
+.rd-rail { display: flex; gap: 14px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 4px; padding: 6px 4px 12px; margin: -6px -4px -4px;
+  scrollbar-width: thin; scrollbar-color: var(--color-line-2) transparent;
+  mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+.rd-rail.at-start { mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+.rd-rail.at-end { mask-image: linear-gradient(90deg, transparent, #000 32px); }
+.rd-rail.at-start.at-end { mask-image: none; }
+.rd-rail > .cc-cell { flex: 0 0 224px; scroll-snap-align: start; }
+
+/* ---------- Playlists (M9): issue share per playlist, where issues sit along it, a kept/cut meter that springs (Motion).
+   Rows arrive through Motion, so the generic row entrance is off here. */
+.py-page .list > .row { animation: none; }
+.py-health { display: block; height: 3px; margin-top: 5px; border-radius: var(--radius-bar); background: var(--color-line-2); overflow: hidden; }
+.py-health i { display: block; height: 100%; border-radius: inherit; background: var(--color-accent); }
+.py-tracks { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+.py-tracks .seg.line { flex: 1 1 auto; }
+.py-strip { height: 10px; border-radius: var(--radius-bar); }
+.py-row { position: relative; grid-template-columns: 28px minmax(0, 1fr) 80px 130px; transition: background 150ms, opacity 200ms var(--ease-out); }
+.py-row.flag::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: var(--radius-bar); background: var(--color-accent); }
+.py-studio { grid-template-columns: 24px minmax(160px, 1fr) 64px auto; }
+.py-studio.cut { background: var(--color-surface-2); }
+.py-studio.cut > :not(.seg) { opacity: 0.55; }
+.py-studio .py-name { text-decoration: line-through; text-decoration-color: transparent; transition: text-decoration-color 200ms, color 200ms; }
+.py-studio.cut .py-name { text-decoration-color: currentColor; color: var(--color-muted); }
+.py-page .py-side { position: sticky; top: 20px; } /* beats `.lit .card` (relative), which would turn `top` into an offset */
+.py-big { display: inline-block; font-family: var(--font-mono); font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+.py-meter { position: relative; height: 6px; }
+.py-meter i { position: absolute; inset: 0; border-radius: var(--radius-bar); }
+.py-meter .keep { background: var(--color-text-2); }
+.py-meter .cut { background: var(--color-accent); }
+
+/* ---------- From Spotify (M9): reuses Home's lead and rank rows; library state as a check, not repeated text. */
+.fs-side { position: sticky; top: 20px; }
+.fs-lead { position: relative; flex-basis: 260px; } /* the #1 name's stretched link stays inside the lead */
+.fs-rank { grid-template-columns: 22px minmax(0, 1fr) 0 28px; }
+.fs-recent { margin: 0; padding: 0; list-style: none; }
+.fs-recent .fs-rank { grid-template-columns: minmax(0, 1fr) auto 28px; }
+.fs-in { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-thumb); color: var(--color-text-2); background: var(--color-surface-2); }
 
 /* ---------- Library + Rediscover (M9): collection cards, filter bar, rails. Motion (CollectionCard, ShelfRail) moves
    them; these recipes only draw. */
