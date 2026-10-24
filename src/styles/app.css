@@ -419,7 +419,9 @@ a.hm-lead-name:hover { color: var(--color-link-hover); }
 .py-meter .cut { background: var(--color-accent); }
 
 /* ---------- From Spotify (M9): reuses Home's lead and rank rows; library state as a check, not repeated text. */
-.fs-side { position: sticky; top: 20px; }
+.fs-set { display: flex; flex-direction: column; gap: 12px; padding-top: 18px; border-top: var(--hair); }
+.fs-set-h { margin: 0; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--color-muted); }
+.fs-set-h:focus { outline: none; } /* focus lands here after "Show 21 to 40" so reading continues; a heading, not a control */
 .fs-lead { position: relative; flex-basis: 260px; } /* the #1 name's stretched link stays inside the lead */
 .fs-rank { grid-template-columns: 22px minmax(0, 1fr) 0 28px; }
 .fs-recent { margin: 0; padding: 0; list-style: none; }

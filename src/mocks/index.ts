@@ -509,7 +509,14 @@ const H: Record<string, Handler> = {
       items.push(it); history.push({ item_id: it.id, from: null, to: it.status, at: TODAY, note: "Added from album" }); return [summary(it)];
     });
   },
-  get_top_items: ({ kind, range }) => (spotifyOn(), D.spotify[`top_${kind}`][range].map((e: any) => entry(e.track ?? e.artist, e.artist, kind === "artists" ? "artist" : "track"))),
+  get_top_items: ({ kind, range }) => {
+    spotifyOn();
+    const type = kind === "artists" ? "artist" : "track";
+    const top: SpotifyEntry[] = D.spotify[`top_${kind}`][range].map((e: any) => entry(e.track ?? e.artist, e.artist, type));
+    // Dev state "heavy": Spotify's full 50 (Rust asks for limit=50), so the 21-40 and 41-50 sets show.
+    const more = (i: number) => { const b = top[i % top.length]; const n = `${b.name} (Live ${Math.floor(i / top.length)})`; return entry(n, type === "artist" ? n : b.artist, type); };
+    return dev.view === "heavy" ? Array.from({ length: 50 }, (_, i) => (i < top.length ? top[i] : more(i))) : top;
+  },
   get_recent_plays_api: () => (spotifyOn(), D.spotify.recent.map((e: any) => ({ ...entry(e.track, e.artist, "track"), uri: e.spotify_uri, played_at: e.at }))),
   library_contains: ({ uris }: { uris: string[] }) => (spotifyOn(), trackOrAlbum(uris), uris.map((u) => savedInSpotify.has(u))),
   save_to_spotify_library: ({ uris }: { uris: string[] }) => { spotifyOn(); trackOrAlbum(uris); uris.forEach((u) => savedInSpotify.add(u)); },

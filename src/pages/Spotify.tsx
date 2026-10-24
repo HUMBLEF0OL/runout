@@ -1,7 +1,9 @@
 // SC-12 From Spotify (R3, CAP-32, 33, 34): Spotify's Top items and recent plays, shown as Spotify provides them,
 // with attribution. Source A: never mixed into insights, and none of your own listening stats here (D27).
 // M9 (24 Oct 2026, user: "refactor the playlists and from spotify feature using taste + motion"): Spotify's #1 leads,
-// 2-20 flow down two columns, each marked in your library (check) or not (+); the set slides when the kind or range changes, rows rise in staggered, recent plays mark library state with an icon.
+// 2-20 flow down two columns, then 21-40 and 41-50 open on request as their own sets (S10: each ends with Open Spotify);
+// each row is marked in your library (check) or not (+); the set slides when the kind or range changes, rows rise in staggered, recent plays show Spotify's last 20.
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { CheckIcon, PlusIcon } from "@phosphor-icons/react";
@@ -61,23 +63,52 @@ function Lead({ e, kind, range }: { e: SpotifyEntry; kind: Kind; range: SRange }
   );
 }
 
-function TopSet({ rows, kind, range }: { rows: SpotifyEntry[]; kind: Kind; range: SRange }) {
+/** Ranked rows from `from` (1-based); each rank is read once, from the list (the visible number is hidden). */
+function Ranks({ rows, from, kind }: { rows: SpotifyEntry[]; from: number; kind: Kind }) {
   const reduce = useReducedMotion();
-  if (!rows.length) return <Empty h="Nothing from Spotify yet" line="Spotify has no top items for this range. Try a longer one." />;
   return (
-    <div className="flex flex-wrap gap-x-8 gap-y-5 items-stretch">
-      <Lead e={rows[0]} kind={kind} range={range} />
-      <ol className="hm-ranks" start={2}>{rows.slice(1).map((e, i) => (
-        <m.li key={e.uri} className="hm-rank fs-rank" {...rise(reduce, i)}>
-          <span className="hm-rank-n" aria-hidden>{i + 2}</span>
-          <span className="min-w-0 flex flex-col gap-0.5">
-            <Name e={e} className="truncate font-semibold" />
-            {kind === "tracks" && <span className="text-muted text-xs truncate">{e.artist}</span>}
-          </span>
-          <span aria-hidden />
-          <Mark e={e} kind={kind} />
-        </m.li>))}
-      </ol>
+    <ol className="hm-ranks" start={from}>{rows.map((e, i) => (
+      <m.li key={e.uri} className="hm-rank fs-rank" {...rise(reduce, i)}>
+        <span className="hm-rank-n" aria-hidden>{from + i}</span>
+        <span className="min-w-0 flex flex-col gap-0.5">
+          <Name e={e} className="truncate font-semibold" />
+          {kind === "tracks" && <span className="text-muted text-xs truncate">{e.artist}</span>}
+        </span>
+        <span aria-hidden />
+        <Mark e={e} kind={kind} />
+      </m.li>))}
+    </ol>
+  );
+}
+
+/** Spotify's top items in sets of 20 (S10: each set ends with Open Spotify). The first set leads with #1; later sets
+ *  open on request, and focus moves to the new set's heading. Keyed by kind and range, so a change starts over. */
+function TopSets({ all, kind, range }: { all: SpotifyEntry[]; kind: Kind; range: SRange }) {
+  const [sets, setSets] = useState(1);
+  const heads = useRef<(HTMLHeadingElement | null)[]>([]);
+  useEffect(() => { if (sets > 1) heads.current[sets - 1]?.focus(); }, [sets]);
+  if (!all.length) return <Empty h="Nothing from Spotify yet" line="Spotify has no top items for this range. Try a longer one." />;
+  const shown = Math.min(all.length, sets * MAX);
+  const next = all.slice(shown, shown + MAX).length;
+  const span = (s: number) => `${s * MAX + 1} to ${Math.min(all.length, (s + 1) * MAX)}`;
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap gap-x-8 gap-y-5 items-stretch">
+        <Lead e={all[0]} kind={kind} range={range} />
+        <Ranks rows={all.slice(1, MAX)} from={2} kind={kind} />
+      </div>
+      <Attribution name="your top items" />
+      {Array.from({ length: sets - 1 }, (_, k) => k + 1).map((s) => (
+        <section key={s} className="fs-set" aria-labelledby={`fs-set-${s}`}>
+          <h3 id={`fs-set-${s}`} ref={(el) => { heads.current[s] = el; }} tabIndex={-1} className="fs-set-h">Ranks {span(s)}</h3>
+          <Ranks rows={all.slice(s * MAX, (s + 1) * MAX)} from={s * MAX + 1} kind={kind} />
+          <Attribution name="your top items" />
+        </section>
+      ))}
+      <div className="flex flex-wrap gap-3 items-center justify-between">
+        {next > 0 ? <button className="btn btn-secondary" onClick={() => setSets(sets + 1)}>Show {span(sets)}</button> : <span />}
+        <span className="font-mono text-faint text-xs">{shown} of {all.length}</span>
+      </div>
     </div>
   );
 }
@@ -123,7 +154,6 @@ export default function Spotify() {
   else if (!online || top.error?.code === "offline") body = <Empty h="You're offline" line="Top items and recent plays come straight from Spotify, so they aren't stored on this PC. They return when you reconnect." />;
   else if (top.error && !top.loading) body = <ErrorBanner error={top.error} title="Couldn't read from Spotify." onRetry={() => { top.reload(); recent.reload(); }} />;
   else {
-    const rows = top.data?.slice(0, MAX) ?? [];
     const label = `Your top ${kind} on Spotify`;
     body = (
       <div className="fs-page lit flex flex-wrap gap-6 items-start" onPointerMove={spot}>
@@ -139,13 +169,9 @@ export default function Spotify() {
             <m.div key={`${kind}-${range}`} role="tabpanel" aria-label={label} className="min-w-0"
               initial={{ opacity: 0, x: dir === "from-right" ? 18 : -18 }} animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, transition: swap(reduce, { duration: 0.12 }) }} transition={swap(reduce, ARRIVE)}>
-              {top.loading ? <SkelRows n={8} /> : <TopSet rows={rows} kind={kind} range={range} />}
+              {top.loading ? <SkelRows n={8} /> : <TopSets all={top.data ?? []} kind={kind} range={range} />}
             </m.div>
           </AnimatePresence>
-          <div className="flex flex-wrap gap-2 items-center justify-between">
-            <Attribution name="your top items" />
-            {!!top.data?.length && <span className="font-mono text-faint text-xs">{rows.length} of {top.data.length}</span>}
-          </div>
         </section>
         <aside className="fs-side flex-[1_1_300px] min-w-0">
           <section className="card flex flex-col gap-3" aria-labelledby="fs-recent">
@@ -155,7 +181,7 @@ export default function Spotify() {
             </div>
             {recent.error ? <ErrorBanner error={recent.error} onRetry={recent.reload} />
               : recent.loading ? <SkelRows n={4} />
-              : recent.data?.length ? <ol className="fs-recent">{recent.data.slice(0, 8).map((x, i) => (
+              : recent.data?.length ? <ol className="fs-recent">{recent.data.slice(0, MAX).map((x, i) => (
                 <m.li key={x.uri + x.played_at} className="hm-rank fs-rank" {...rise(reduce, i)}>
                   <span className="min-w-0 flex flex-col gap-0.5">
                     <Name e={x} className="truncate font-semibold" />
