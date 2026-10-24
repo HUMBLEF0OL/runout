@@ -768,6 +768,27 @@ def check_hover_keeps_selected():
         print("--- hover keeps selected: ok")
 
 
+def check_reduced_motion_js():
+    # M9 WI 3 review: MotionConfig reducedMotion="user" stops transform animations only. useSpring still glides and
+    # AnimatePresence still fades and waits, so a file using them must also read useReducedMotion and act on it.
+    bad = []
+    for f in (ROOT / "src").rglob("*.tsx"):
+        t = f.read_text(encoding="utf-8")
+        if '"motion/react"' not in t:
+            continue
+        rel = f.relative_to(ROOT).as_posix()
+        if "useSpring(" in t and not ("useReducedMotion" in t and ".jump(" in t):
+            bad.append(f"{rel}: useSpring without a reduced-motion jump()")
+        if "<AnimatePresence" in t and not re.search(r"transition=\{[^}]*reduce", t):
+            bad.append(f"{rel}: AnimatePresence swap without a reduced-motion transition (e.g. swap(reduce, ...))")
+    if bad:
+        failures.append("reduced motion (JS)")
+        print("--- reduced motion (JS): FAIL")
+        print("\n".join("  " + b for b in bad))
+    else:
+        print("--- reduced motion (JS): ok")
+
+
 def check_control_consistency():
     # M9 consistency sweep: radii stay on DESIGN §3's scale (3 bars, 6 thumbnails + small/nested controls, 10 controls,
     # 16 cards); `.embed` is Spotify's own 12px, `.proto` is dev-only. An aria-pressed toggle keeps one label (WAI-ARIA);
@@ -858,6 +879,7 @@ check_source_map()
 check_design()
 check_exit_flush()
 check_hover_keeps_selected()
+check_reduced_motion_js()
 check_control_consistency()
 check_doc_line_endings()
 check_doc_drift()

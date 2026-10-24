@@ -286,21 +286,6 @@ export function RecordCard({ it, meta, act }: { it: ItemSummary; meta?: ReactNod
 }
 
 /** Rank bar row: rank, name + your-status suffix, bar without track, mono count. */
-export function RankRow({ rank, name, by, href, suffix, value, max, label, hot }: {
-  rank: number; name: string; by?: string; href?: string; suffix?: ReactNode; value: number; max: number; label: ReactNode; hot?: boolean;
-}) {
-  return (
-    <div className="rank">
-      <span className="font-mono text-faint text-xs">{rank}</span>
-      <div className="min-w-0">
-        <div className="truncate">{href ? <Link to={href} className="text-text font-semibold">{name}</Link> : <b>{name}</b>}{by && <span className="text-muted"> {by}</span>}{suffix && <span className="text-muted text-xs"> {suffix}</span>}</div>
-        <div className={`bar${hot ? " hot" : ""}`} style={{ width: `${Math.max(2, (value / (max || 1)) * 100)}%` }} />
-      </div>
-      <span className="font-mono text-text-2 whitespace-nowrap text-xs text-right">{label}</span>
-    </div>
-  );
-}
-
 /** Play row: track, artist, your stars or a Rate button, mono relative time. Skipped text in --faint (never opacity). */
 export function PlayRow({ p, onRate, onSave, wide }: { p: Play; onRate?: (p: Play) => void; onSave?: (p: Play) => void; wide?: boolean }) {
   if (wide) return <PlayRowWide p={p} onRate={onRate} onSave={onSave} />;

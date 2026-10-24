@@ -405,10 +405,14 @@ const H: Record<string, Handler> = {
   get_freshness: () => freshness(),
   get_listening_insights: ({ range }) => {
     const ch = L.charts[range];
-    const row = (r: any) => ({ name: r.name, by: r.by, plays: r.plays, hours: r.hours, item_id: r.item_id ?? null, rating: r.rating ?? null, status: r.status ?? null });
+    const k = dev.view === "heavy" ? 37 : 1; // a long-time listener: same shape, ~37x the volume
+    const row = (r: any, i: number) => ({ name: k > 1 && i === 1 ? `${r.name} and the Orchestra of the Long Name Society` : r.name, by: r.by, plays: r.plays * k, hours: Math.round(r.hours * k * 10) / 10, item_id: r.item_id ?? null, rating: r.rating ?? null, status: r.status ?? null });
+    const st = L.stats[range];
     return sourced({
-      top_artists: ch.artists.map(row), top_albums: ch.albums.map(row), top_tracks: ch.tracks.map(row), monthly: L.monthly, heatmap: L.heatmap,
-      skip_rate: L.skip_rate, phone_share: L.phone_share, totals: { ...L.stats[range], private_excluded: L.private_excluded, artists_total: L.artists_total },
+      top_artists: ch.artists.map(row), top_albums: ch.albums.map(row), top_tracks: ch.tracks.map(row), heatmap: L.heatmap,
+      monthly: L.monthly.map((m: { month: string; hours: number }) => ({ ...m, hours: Math.round(m.hours * (k > 1 ? 4.2 : 1) * 10) / 10 })),
+      skip_rate: L.skip_rate, phone_share: L.phone_share,
+      totals: { ...st, plays: st.plays * k, plays_prev: st.plays_prev * k, ms: st.ms * k, ms_prev: st.ms_prev * k, unrated_plays: st.unrated_plays * k, private_excluded: L.private_excluded, artists_total: L.artists_total * (k > 1 ? 9 : 1) },
     }, ["U", "S", "E"]);
   },
   get_collection_insights: () => {
