@@ -38,7 +38,10 @@ Tailwind v4 `@theme` in `src/styles/tokens.css` (M2): colors are `--color-<token
 | `--surface` | `#17191C` | Cards, inputs, list containers |
 | `--surface-2` | `#1F2226` | Nested items, selected nav, hover |
 | `--line` | `#23262B` | Dividers, rail border |
-| `--line-strong` | `#3A3F46` | Secondary button and chip borders |
+| `--line-2` | `#2E3238` | Input, switch-track and dashed add-chip borders (M9: quiet at rest) |
+| `--line-strong` | `#3A3F46` | Input hover border, selection-checkbox border |
+| `--line-hover` | `#4A5059` | Hover ring on icon buttons, chips and switches |
+| `--danger-line` | `#452C2C` | Danger frames (danger card, error banner): 20% `--danger` over `--surface` |
 | `--text` | `#ECEDEF` | Primary text |
 | `--text-2` | `#C3C7CE` | Secondary text |
 | `--muted` | `#B6BBC3` | Labels, metadata (≥ 7:1 on every surface incl. hover fills; was `#A9AEB7` until M8) |
@@ -62,11 +65,11 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | `--accent-fill` | `linear-gradient(180deg, #F8C566, #F0A92E)`, `inset 0 1px 0 rgba(255,255,255,0.35)`, shadow `0 2px 8px rgba(245,181,68,0.18)` | Primary button |
 | `--indicator` | `inset 3px 0 0 var(--accent)` | Selected nav item |
 
-**Shape:** radius 10 for controls and list rows, 16 for cards, 6 for thumbnails, 3 for bars. Pills are not used.
+**Shape:** radius 10 for controls and list rows, 16 for cards, 6 for thumbnails and small or nested controls (small buttons, segment buttons and indicator, badges, menu items, switch, checkbox), 3 for bars. Pills are not used. Exceptions: the Spotify embed keeps Spotify's 12; the live dot is a circle. `check.py` “control consistency” enforces the scale.
 **Spacing:** 4 · 8 · 12 · 16 · 20 · 24 · 32. Page padding 32 desktop.
 **Focus:** 2px `--accent` outline, 2px offset, on every interactive element.
 **Icons:** Phosphor (`@phosphor-icons/react`), regular weight, 20px; icon-only buttons have `aria-label`.
-**Motion:** curve `cubic-bezier(0.16, 1, 0.3, 1)`. Hover 150 ms; press `scale(0.98)` 100 ms; segmented-control indicator slides 220 ms; list insert/remove 200 ms (fade + 4px rise); dialog 180 ms (fade + scale from 0.98); toast slides up 220 ms. The Now-playing live dot pulses (2 s, opacity only) and is the only loop. Skeletons shimmer once per 1.6 s. M9 additions: `--ease-spring` `cubic-bezier(0.34, 1.56, 0.64, 1)` for things that land (switch thumb 280 ms, tab underline 320 ms, caret, check-mark pop 260 ms); switch thumb stretches 4 px on press; disclosure height 300 ms; metric numbers count up 900 ms once on first view; card hairline spotlight follows the pointer (white 32%, 240 px). Page-level tabs (Settings) are `Seg line`: an accent underline on the hairline that springs to the picked tab, and the panel slides in 320 ms (fade + 18px from the picked side). Segment indicators everywhere use the spring (280 ms). Borders are quiet at rest and strengthen on hover (24 Oct 2026, user: "reduce the border of elements"): hairline 4.5% white, secondary buttons 8% white over a 2.5% fill (14% on hover), inputs `--line-2` (`--line-strong` on hover), dialogs 8%, danger frame 20% and danger button 45% of `--danger` (full on hover). **Controls:** every on/off setting is a switch (`input.toggle`, role `switch`; rounded-rect radius 6, not a pill; thumb springs across, stretches on press); selection checkboxes (rows, tracks) are an 18px rounded-rect box whose check mark springs in. A hover never repaints a selected/checked state (`check.py` “hover keeps selected”). Everything collapses to instant under `prefers-reduced-motion`.
+**Motion:** curve `cubic-bezier(0.16, 1, 0.3, 1)`. Hover 150 ms; press `scale(0.98)` 100 ms; list insert/remove 200 ms (fade + 4px rise); dialog 180 ms (fade + scale from 0.98); toast slides up 220 ms. The Now-playing live dot pulses (2 s, opacity only) and is the only loop. Skeletons shimmer once per 1.6 s. M9 additions: `--ease-spring` `cubic-bezier(0.34, 1.56, 0.64, 1)` for things that land (switch thumb 280 ms, tab underline 320 ms, caret, check-mark pop 260 ms); switch thumb stretches 4 px on press; disclosure height 300 ms; metric numbers count up 900 ms once on first view; card hairline spotlight follows the pointer (white 32%, 240 px). Page-level tabs (Settings) are `Seg line`: an accent underline on the hairline that springs to the picked tab, and the panel slides in 320 ms (fade + 18px from the picked side). Segment indicators everywhere use the spring (280 ms). Borders are quiet at rest and strengthen on hover (24 Oct 2026, user: "reduce the border of elements"): hairline 4.5% white, secondary buttons 8% white over a 2.5% fill (14% on hover), inputs `--line-2` (`--line-strong` on hover), dialogs 8%, danger frame 20% and danger button 45% of `--danger` (full on hover). **Controls:** every on/off setting is a switch (`input.toggle`, role `switch`; rounded-rect radius 6, not a pill; thumb springs across, stretches on press); selection checkboxes (rows, tracks) are an 18px rounded-rect box whose check mark springs in. A hover never repaints a selected/checked state (`check.py` “hover keeps selected”). Everything collapses to instant under `prefers-reduced-motion`.
 
 **Interaction states** (every interactive component draws all that apply):
 | State | Treatment |
@@ -75,7 +78,7 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | Hover | Surface one step lighter (`--surface` → `--surface-2`) or `--elev-1-hover`; text unchanged |
 | Pressed | `scale(0.98)`; primary button gradient flips darker (`#F0A92E` → `#E39A1F`) |
 | Focus (keyboard) | 2px `--accent` outline, 2px offset; never removed |
-| Selected | Light fill (`#ECEDEF` on dark text) for segments; `--indicator` for nav |
+| Selected | Light fill (`#ECEDEF` on dark text) for segments; `--indicator` for nav; accent underline for page-level tabs (`Seg line`); accent fill + ink check for checkboxes; accent track + ink thumb for switches |
 | Disabled | 40% opacity, no hover, `cursor: not-allowed`, still announced |
 | Loading | Label replaced by a 3-dot progress (no spinner); width kept |
 | Error | `--danger` border + message below the control |
@@ -95,7 +98,7 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | Record card (default) | text-first: type, title, artist, your status in mono (accent if actionable), Revisit badge. No artwork |
 | Artwork tile (artwork mode) | a compact **Spotify embed slot** in place of art (the embed is the only artwork source in the MVP, BRD 5.3, FR-017); at most 20 per set; each set ends with the Spotify logo and “Open Spotify”. Off by default, toggled per list with “Show artwork” |
 | Play row | thumb, track, artist, your stars or a Rate button, mono relative time |
-| Status control | Planned · In progress · Explored · Not for me · Abandoned (segmented); Revisit is a separate toggle |
+| Status control | Planned · In progress · Explored · Not for me · Abandoned (segmented); Revisit is a separate switch |
 | Rating | 5 stars with halves; keyboard: arrows ±0.5 |
 | Tag chip / add tag | radius 10 |
 | Embed slot | Spotify iframe when online; neutral placeholder when offline (TSD §4.3); never cropped or overlaid |
@@ -110,8 +113,16 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | Source tag | “From: Your records + Desktop log + Spotify export” on every card built from listening data (FR-032) |
 | Rating control | `role="slider"`, 0.5 steps, arrow keys; visible focus |
 | Skipped play | text in `--faint`, never dimmed with opacity (contrast) |
+| Switch (M9) | `Switch` (`input.toggle`, role `switch`): every on/off setting (Settings, Item, Artwork, Revisit only, Private playlist). Label left, switch right in a `.switch-row` with a hover fill; flips at once, rolls back if the save fails |
+| Selection checkbox (M9) | 18px rounded-rect box, accent fill + ink check that springs in; for choosing rows or tracks, never for a setting |
+| Page tabs (M9) | `Seg line` + a keyed `.tab-panel` that slides in from the picked side (`useSlide`): Settings, Insights groups, Playlists mode. List filters stay filled segments |
+| Disclosure (M9) | `.st-details`: caret rotates, content height animates (`::details-content`) |
+| Copy button (M9) | `CopyButton`: icon button beside a value the user types elsewhere (pairing code, capture URL, address, paths); check-mark pop + status message |
+| Count-up number (M9) | `CountUp`: stat and metric numbers count up once on first view (keeps “6,519” grouping); screen readers get the final value |
 
-The **design system page** (`#/system` in the prototype) shows every token and component above in all its states; it is the visual reference for M2.
+The **design system page** (`#/system`; in the prototype for M1–M2, in the app since) shows every token and component above in all its states. From M8 the app's `src/styles` is the reference; the prototype stays as the M1 record and is not updated.
+
+**Non-text contrast (decision, 24 Oct 2026):** at the user's request borders are quiet at rest (`--line-2` inputs ≈ 1.5:1, checkbox ring ≈ 1.8:1 on `--bg`), below WCAG 1.4.11's 3:1. Each control is still identified by its label, placeholder or fill, and hover/focus raise the edge (focus ring 2px accent). Revisit if accessibility needs change.
 
 ## 6. Screen inventory (M1 designs all of these)
 Source of truth: the clickable prototype in [design/prototype/](design/README.md), driven by one mock dataset (`scripts/gen_mock_data.py`). Screenshots in `design/screens/`.

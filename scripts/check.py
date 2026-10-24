@@ -745,11 +745,11 @@ def check_exit_flush():
 
 def check_hover_keeps_selected():
     # M8 (segments) and M9 (switch thumb) review: a :hover rule outranked the selected/checked rule of the same control
-    # and made the selected state unreadable on hover. A hover that paints (color/background) a control that also has a
+    # and made the selected state unreadable on hover. A hover that paints (color/background/box-shadow/border-color) a control that also has a
     # :checked / aria-selected / aria-checked rule must exclude that state with :not(...).
     css = re.sub(r"/\*.*?\*/", "", (ROOT / "src/styles/app.css").read_text(encoding="utf-8"), flags=re.S)
     rules = [(sel.strip(), body) for sel, body in re.findall(r"([^{}@]+)\{([^{}]*)\}", css)]
-    paints = lambda body: re.search(r"(?<![-\w])(background|color)\s*:", body)
+    paints = lambda body: re.search(r"(?<![-\w])(background|color|box-shadow|border-color)\s*:", body)
     state = re.compile(r':checked|aria-(selected|checked)="true"')
     bad = []
     for sel, body in rules:
@@ -766,6 +766,31 @@ def check_hover_keeps_selected():
         print("\n".join("  " + b for b in bad))
     else:
         print("--- hover keeps selected: ok")
+
+
+def check_control_consistency():
+    # M9 consistency sweep: radii stay on DESIGN §3's scale (3 bars, 6 thumbnails + small/nested controls, 10 controls,
+    # 16 cards); `.embed` is Spotify's own 12px, `.proto` is dev-only. An aria-pressed toggle keeps one label (WAI-ARIA);
+    # an on/off setting is a Switch instead.
+    css = re.sub(r"/\*.*?\*/", "", (ROOT / "src/styles/app.css").read_text(encoding="utf-8"), flags=re.S)
+    ok = {"0", "3px", "6px", "10px", "16px", "50%", "inherit"}
+    bad = []
+    for sel, body in re.findall(r"([^{}@]+)\{([^{}]*)\}", css):
+        if re.search(r"\.(embed|proto)\b", sel):
+            continue
+        for v in re.findall(r"border-radius:\s*([^;]+)", body):
+            if any(t not in ok and not t.startswith("var(--radius-") for t in v.split()):
+                bad.append(f"app.css {sel.strip()[:50]}: border-radius {v.strip()} off the 3/6/10/16 scale")
+    for f in (ROOT / "src").rglob("*.tsx"):
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"aria-pressed=\{[^}]+\}[^>]*>\{[^}]*\?", line):
+                bad.append(f"{f.relative_to(ROOT)}:{i}: aria-pressed button with a changing label (use Switch or a fixed label)")
+    if bad:
+        failures.append("control consistency")
+        print("--- control consistency: FAIL")
+        print("\n".join("  " + b for b in bad))
+    else:
+        print("--- control consistency: ok")
 
 
 def check_doc_line_endings():
@@ -833,6 +858,7 @@ check_source_map()
 check_design()
 check_exit_flush()
 check_hover_keeps_selected()
+check_control_consistency()
 check_doc_line_endings()
 check_doc_drift()
 

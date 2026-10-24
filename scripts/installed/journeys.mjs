@@ -387,13 +387,15 @@ await step("E1 filter by tag (only records with the tag remain)", async () => {
 await step("E2 filter by rating and Revisit flag", async () => {
   await tabTo(`el.id === "rd-min"`, { what: "Rating filter" });
   await key("ArrowDown"); await waitFor(`document.activeElement.value === "4"`);
-  await activate(`el.getAttribute("aria-pressed") !== null && nm(el).startsWith("Revisit only")`, { what: "Revisit only" });
-  await waitFor(`document.activeElement.getAttribute("aria-pressed") === "true"`);
+  await tabTo(`el.getAttribute("role") === "switch" && ${byName("Revisit only")}`, { what: "Revisit only" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === true`);
   await waitFor(`$$("main section[aria-label]").map((s) => s.getAttribute("aria-label")).includes("Flagged to revisit") && txt().includes(${JSON.stringify(NAME)})`);
   await shot("E2-filter-rating-revisit");
 });
 await step("E3 artwork set ends with Open Spotify; record opens with Open Spotify", async () => {
-  await activate(byName("Show artwork"), { what: "Show artwork" });
+  await tabTo(`el.getAttribute("role") === "switch" && ${byName("Artwork")}`, { what: "Artwork switch" });
+  await key(" ");
   await waitFor(`$$("main a").some((a) => a.textContent === "Open Spotify") && $$("main img[alt=Spotify]").length > 0`);
   await waitFor(`!!document.querySelector('main iframe[src^="https://open.spotify.com/embed/"]')`, 8000);
   await shot("E3-artwork-open-spotify");
@@ -669,6 +671,7 @@ await step("O5 R3 screens show the offline or connect state", async () => {
 if (J.has("H")) {
 await step("H1 backup now: location and size confirmed", async () => {
   await go("Settings", "#/settings");
+  await pickTab("Your data");
   await activate(byName("Back up now"), { what: "Back up now" });
   await toast(/Backup saved to .+ \(\d+\.\d MB\)/);
   await waitFor(`txt().includes("(latest)")`);

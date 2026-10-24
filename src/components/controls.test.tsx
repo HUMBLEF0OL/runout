@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { CountUp, Switch } from "./Settings";
+import { CountUp, Switch } from "./ui";
 
 afterEach(cleanup);
 
-// M9: switches flip before the write lands; a failed write (useRun resolves undefined) flips them back.
+// M9: switches (Settings, Item, Rediscover) flip before the write lands; a failed write (useRun resolves undefined) flips them back.
 describe("Settings switch", () => {
   it("flips at once and stays on when the write succeeds", async () => {
     render(<Switch label="Back up weekly" on={false} onChange={() => Promise.resolve({})} />);

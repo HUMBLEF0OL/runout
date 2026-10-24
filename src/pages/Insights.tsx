@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import * as api from "../api";
 import type { Freshness, Range, RankRow as Rank, Sourced } from "../api";
-import { Empty, ErrorBanner, FreshnessNote, InsightCard as Card, Seg, SkelBlock, SkelRows, SourcedTag, Stat } from "../components/ui";
+import { Empty, ErrorBanner, FreshnessNote, InsightCard as Card, Seg, SkelBlock, SkelRows, SourcedTag, Stat, useSlide } from "../components/ui";
 import { Topbar } from "../components/Shell";
 import { useApi, type ApiState } from "../hooks/useApi";
 import { day, daysSince, hm, monthName, nameOf, num, pl, STATUS, today } from "../lib/format";
@@ -202,8 +202,9 @@ export default function Insights() {
   const fresh = useApi(api.getFreshness);
   const logger = useApi(api.getLoggerStatus);
   const empty = probe.data && probe.data.data.totals.plays === 0;
-  const tabs = <Seg label="Insight group" value={tab} onChange={(t) => nav(`/insights/${t}`)}
-    options={[["listening", "Listening"], ["collection", "Collection"], ["take", "Your take"], ["year", "Year in review"]]} />;
+  const groups: [Tab, string][] = [["listening", "Listening"], ["collection", "Collection"], ["take", "Your take"], ["year", "Year in review"]];
+  const [dir, slide] = useSlide(groups.map((g) => g[0]), tab);
+  const tabs = <Seg label="Insight group" value={tab} onChange={(t) => { slide(t); nav(`/insights/${t}`); }} options={groups} />;
   return (
     <>
       <Topbar />
@@ -221,10 +222,12 @@ export default function Insights() {
           {probe.data ? ` ${pl(probe.data.data.totals.private_excluded, "private-session play")} excluded. Nothing here comes from the Spotify API.` : ""}
         </p>
         <StaleBanner f={fresh.data} />
-        {tab === "listening" && <Listening range={range} />}
-        {tab === "collection" && <Collection />}
-        {tab === "take" && <Take />}
-        {tab === "year" && <Year />}
+        <div key={tab} role="tabpanel" aria-label={groups.find((g) => g[0] === tab)?.[1]} className={`tab-panel ${dir} flex flex-col gap-6`}>
+          {tab === "listening" && <Listening range={range} />}
+          {tab === "collection" && <Collection />}
+          {tab === "take" && <Take />}
+          {tab === "year" && <Year />}
+        </div>
       </>}
     </>
   );

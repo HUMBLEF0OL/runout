@@ -1,7 +1,7 @@
 // Shared UI components, DESIGN.md §5. Markup and class names follow the M1 prototype (styles in src/styles/app.css).
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { XIcon as X } from "@phosphor-icons/react";
+import { CheckIcon, CopyIcon, XIcon as X } from "@phosphor-icons/react";
 import type { AppError, Freshness, ItemSummary, Play, Priority, Source, Sourced, Status } from "../api";
 import { ago, mmss, time, nameOf, openUrl, PRIO, STATUS, STATUS_ORDER, stars, statusMeta, sub, TYPE } from "../lib/format";
 import { freshnessText, ratingClick, ratingKey, sourcedText, sourceText } from "./logic";
@@ -22,9 +22,15 @@ export function PageHead({ title, children, sub: subline }: { title: ReactNode; 
   );
 }
 
-/** Segmented control. `role` tablist for views, radiogroup for values (status). `line`: page-level tabs, an underline instead of a fill. */
-export function Seg<T extends string>({ label, options, value, onChange, radio, accent, line }: {
-  label: string; options: [T, ReactNode][]; value: T; onChange: (v: T) => void; radio?: boolean; accent?: boolean; line?: boolean;
+/** Page tabs (Seg `line`): the keyed `.tab-panel` slides in from the side of the tab picked. Call `slide(next)` when switching. */
+export function useSlide(order: string[], cur: string) {
+  const [dir, setDir] = useState<"from-right" | "from-left">("from-right");
+  return [dir, (next: string) => setDir(order.indexOf(next) >= order.indexOf(cur) ? "from-right" : "from-left")] as const;
+}
+
+/** Segmented control. `role` tablist for views, radiogroup for values (status). Every tablist (views) is drawn as tabs, an accent underline (`.seg.line`, M9); radio groups (values: status, keep/cut) stay a filled segment. */
+export function Seg<T extends string>({ label, options, value, onChange, radio, accent }: {
+  label: string; options: [T, ReactNode][]; value: T; onChange: (v: T) => void; radio?: boolean; accent?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const move = (e: React.KeyboardEvent, i: number) => {
@@ -52,7 +58,7 @@ export function Seg<T extends string>({ label, options, value, onChange, radio, 
     return () => ro.disconnect();
   }, [sel, options.length]);
   return (
-    <div ref={ref} className={`seg${accent ? " accent" : ""}${line ? " line" : ""}${ind ? " slid" : ""}`} role={radio ? "radiogroup" : "tablist"} aria-label={label}>
+    <div ref={ref} className={`seg${accent ? " accent" : ""}${radio ? "" : " line"}${ind ? " slid" : ""}`} role={radio ? "radiogroup" : "tablist"} aria-label={label}>
       {options.map(([v, t], i) => (
         <button key={v} type="button" role={radio ? "radio" : "tab"} {...(radio ? { "aria-checked": v === value } : { "aria-selected": v === value })}
           tabIndex={v === value || (!options.some((o) => o[0] === value) && i === 0) ? 0 : -1} onClick={() => onChange(v)} onKeyDown={(e) => move(e, i)}>{t}</button>
@@ -62,9 +68,77 @@ export function Seg<T extends string>({ label, options, value, onChange, radio, 
   );
 }
 
+/* ------------------------------------------------------------------ M9 controls */
+const reduced = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+/** On/off setting (DESIGN §3 Controls). Flips at once (the write takes a moment); `onChange` resolves falsy when the write
+ *  failed (useRun → undefined, Item's run → false), and the switch goes back to the saved value, unless a later click
+ *  has superseded that write. */
+export function Switch({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => Promise<unknown>; disabled?: boolean }) {
+  const [v, setV] = useState(on);
+  const seq = useRef(0);
+  const saved = useRef(on);
+  saved.current = on;
+  useEffect(() => setV(on), [on]);
+  return (
+    <label className="switch-row">
+      <span>{label}</span>
+      <input type="checkbox" role="switch" className="toggle" checked={v} disabled={disabled}
+        onChange={(e) => { const n = e.target.checked, k = ++seq.current; setV(n); onChange(n).then((r) => { if (!r && k === seq.current) setV(saved.current); }); }} />
+    </label>
+  );
+}
+
+/** Counts a leading number up from 0 the first time it scrolls into view (DESIGN §3); "6,519" keeps its grouping, the rest
+ *  of the text ("%", " s", "h 40m") stays. Screen readers get the final text only. */
+export function CountUp({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.textContent = text;
+    const m = /^(\d[\d,]*)(\.\d+)?/.exec(text);
+    if (!m || reduced() || typeof IntersectionObserver === "undefined") return;
+    const to = Number(m[1].replace(/,/g, "") + (m[2] ?? "")), dp = m[2] ? m[2].length - 1 : 0, rest = text.slice(m[0].length);
+    const fmt = (x: number) => (m[1].includes(",") ? Math.round(x).toLocaleString("en-US") : x.toFixed(dp)) + rest;
+    el.textContent = fmt(0);
+    let raf = 0;
+    const io = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return;
+      io.disconnect();
+      const t0 = performance.now();
+      const tick = (t: number) => {
+        const p = Math.min(1, (t - t0) / 900);
+        el.textContent = fmt(to * (1 - (1 - p) ** 3));
+        if (p < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    });
+    io.observe(el);
+    return () => { io.disconnect(); cancelAnimationFrame(raf); el.textContent = text; };
+  }, [text]);
+  return <><span className="sr-only">{text}</span><span ref={ref} aria-hidden /></>;
+}
+/** Copy a value the user types elsewhere (pairing code, capture URL); a check mark and a status message confirm it. */
+export function CopyButton({ text, label }: { text: string; label: string }) {
+  const toast = useToast();
+  const [done, setDone] = useState(false);
+  useEffect(() => { if (!done) return; const t = setTimeout(() => setDone(false), 1600); return () => clearTimeout(t); }, [done]);
+  return (
+    <>
+      <button type="button" className={`icon-btn copy${done ? " done" : ""}`} aria-label={label}
+        onClick={() => (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => setDone(true), () => toast("Couldn’t copy. Select the code and copy it instead."))}>
+        {done ? <CheckIcon size={16} weight="bold" /> : <CopyIcon size={16} />}
+      </button>
+      <span className="sr-only" role="status">{done ? "Copied" : ""}</span>
+    </>
+  );
+}
+
 /** `txt`: the value is a name, not a number, so it is set in sans (DESIGN §2.5 keeps mono for numbers). Lifts on hover only inside a link. */
 export function Stat({ k, v, d, act, txt }: { k: ReactNode; v: ReactNode; d?: ReactNode; act?: boolean; txt?: boolean }) {
-  return <div className="card stat"><span className="k">{k}</span><span className={`v${txt ? " txt" : ""}`}>{v}</span>{d != null && <span className={`d${act ? " act" : ""}`}>{d}</span>}</div>;
+  const n = !txt && (typeof v === "number" || typeof v === "string") ? <CountUp text={String(v)} /> : v;
+  return <div className="card stat"><span className="k">{k}</span><span className={`v${txt ? " txt" : ""}`}>{n}</span>{d != null && <span className={`d${act ? " act" : ""}`}>{d}</span>}</div>;
 }
 
 export function Empty({ h, line, children }: { h: ReactNode; line: ReactNode; children?: ReactNode }) {

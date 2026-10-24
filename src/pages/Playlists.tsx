@@ -27,6 +27,8 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
   useEffect(() => { // only right after the switch itself: Back/Forward or a reload replays the history state
     if (how !== "POP" && (loc.state as { modeFocus?: boolean } | null)?.modeFocus) head.current?.querySelector<HTMLElement>('[aria-label="Mode"] [aria-selected="true"]')?.focus();
   }, [loc.key, loc.state]);
+  // the two modes are separate pages, so the slide direction travels in the history state (Check-up is left of Studio)
+  const dir = (loc.state as { slide?: string } | null)?.slide ?? "from-right";
   return (
     <>
       <Topbar />
@@ -38,10 +40,10 @@ function Layout({ tab, list, title, subline, children }: { tab: Tab; list: React
         <div className="flex-[1_1_620px] min-w-0 flex flex-col gap-3.5">
           <div className="page-head" ref={head}>
             <div className="flex flex-col gap-1"><h1 className="page-title">{title}</h1>{subline && <span className="text-muted">{subline}</span>}</div>
-            {r3 && <Seg label="Mode" value={tab} onChange={(t) => nav(`/playlists/${t}?${sp}`, { state: { modeFocus: true } })}
+            {r3 && <Seg label="Mode" value={tab} onChange={(t) => nav(`/playlists/${t}?${sp}`, { state: { modeFocus: true, slide: t === "studio" ? "from-right" : "from-left" } })}
               options={[["checkup", exp ? `Check-up (export of ${day(exp)})` : "Check-up"], ["studio", "Studio (live from Spotify)"]]} />}
           </div>
-          {children}
+          <div key={tab} role="tabpanel" aria-label={tab === "studio" ? "Studio" : "Check-up"} className={`tab-panel ${dir} flex flex-col gap-3.5`}>{children}</div>
         </div>
       </div>
     </>

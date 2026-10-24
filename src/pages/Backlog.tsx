@@ -9,7 +9,7 @@ import {
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
-import { ArtTiles, Empty, ErrorBanner, NameNeeded, PageHead, Seg, SkelRows, StatusBadge, useToast } from "../components/ui";
+import { ArtTiles, Empty, ErrorBanner, NameNeeded, PageHead, Seg, SkelRows, StatusBadge, Switch, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { age, ago, nameOf, pl, statusMeta, sub, TYPE } from "../lib/format";
 import { moveTo } from "../lib/backlog";
@@ -86,7 +86,7 @@ export default function Backlog() {
         <select id="bl-sort" className="input surface" value={sort} onChange={(e) => setSort(e.target.value as "order" | "added")}>
           <option value="order">Priority</option><option value="added">Date added</option>
         </select>
-        <button className="btn btn-secondary" aria-pressed={art} onClick={() => setArt(!art)}>{art ? "Hide artwork" : "Show artwork"}</button>
+        <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />
       </>}
     </PageHead>
   );

@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { getCounts, listItems, saveFilter, toAppError, type AppError, type ItemFilter, type ItemType, type Status } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
-import { ArtTiles, Dialog, Empty, ErrorBanner, RecordCard, Seg, SkelTiles, useToast } from "../components/ui";
+import { ArtTiles, Dialog, Empty, ErrorBanner, RecordCard, Seg, SkelTiles, Switch, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { pl, STATUS, STATUS_ORDER, statusMeta, TYPE } from "../lib/format";
 
@@ -43,7 +43,7 @@ export default function Library() {
         <option value="any">Any</option>{[3, 4, 4.5, 5].map((r) => <option key={r} value={r}>{r} and up</option>)}
       </select>
       <button className="btn btn-secondary" onClick={() => setSaving(true)}>Save as filter</button>
-      <button className="btn btn-secondary" aria-pressed={art} onClick={() => setArt(!art)}>{art ? "Hide artwork" : "Show artwork"}</button>
+      <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />
       <Link className="btn btn-secondary" to="/settings/tags">Manage tags</Link>
       </div>
     </div>

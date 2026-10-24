@@ -322,13 +322,15 @@ await step("E1 filter by tag", async () => {
 await step("E2 filter by rating and Revisit flag", async () => {
   await tabTo(`el.id === "rd-min"`, { what: "Rating filter" });
   await key("ArrowDown"); await waitFor(`document.activeElement.value === "4"`);
-  await activate(`el.getAttribute("aria-pressed") !== null && nm(el).startsWith("Revisit only")`, { what: "Revisit only" });
-  await waitFor(`document.activeElement.getAttribute("aria-pressed") === "true"`);
+  await tabTo(`el.getAttribute("role") === "switch" && ${byName("Revisit only")}`, { what: "Revisit only" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === true`);
   await waitFor(`$$("main section[aria-label]").map((s) => s.getAttribute("aria-label")).includes("Flagged to revisit") && txt().includes("Con Todo El Mundo")`);
   await shot("E2-filter-rating-revisit");
 });
 await step("E3 artwork set ends with Open Spotify; record opens with Open Spotify", async () => {
-  await activate(byName("Show artwork"), { what: "Show artwork" });
+  await tabTo(`el.getAttribute("role") === "switch" && ${byName("Artwork")}`, { what: "Artwork switch" });
+  await key(" ");
   await waitFor(`$$("main a").some((a) => a.textContent === "Open Spotify") && $$("main img[alt=Spotify]").length > 0`);
   await shot("E3-artwork-open-spotify");
   await activate(`el.tagName === "A" && el.textContent === "Con Todo El Mundo"`, { what: "record in shelf" });
@@ -394,6 +396,7 @@ await step("G3 undo banner restores the playlist", async () => {
 /* H — back up and restore */
 await step("H1 backup now: location and size confirmed", async () => {
   await go("Settings", "#/settings");
+  await pickTab("Your data");
   await activate(byName("Back up now"), { what: "Back up now" });
   await toast(/Backup saved to .+ \(\d+\.\d MB\)/);
   await waitFor(`txt().includes("(latest)")`);

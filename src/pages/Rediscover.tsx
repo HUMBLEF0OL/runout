@@ -7,7 +7,7 @@ import {
   saveFilter, toAppError, type AppError, type ItemFilter, type ItemSummary, type SavedFilter, type Status,
 } from "../api";
 import { Topbar } from "../components/Shell";
-import { Dialog, Dots, Empty, ErrorBanner, ItemSet, SkelTiles, Attribution, useToast } from "../components/ui";
+import { Dialog, Dots, Empty, ErrorBanner, ItemSet, SkelTiles, Attribution, Switch, useToast } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { age, nameOf, pl, stars, STATUS, STATUS_ORDER, TYPE } from "../lib/format";
@@ -70,8 +70,8 @@ export default function Rediscover() {
           <select id="rd-min" className="input surface" value={f.min} onChange={(e) => setF({ ...f, min: Number(e.target.value) })}>
             <option value={0}>Any rating</option>{[4, 4.5, 5].map((n) => <option key={n} value={n}>{n} and up</option>)}
           </select>
-          <button className="btn btn-secondary" aria-pressed={f.revisit} onClick={() => setF({ ...f, revisit: !f.revisit })}>{f.revisit ? "Revisit only: on" : "Revisit only"}</button>
-          <button className="btn btn-secondary" aria-pressed={art} onClick={() => setArt(!art)}>{art ? "Hide artwork" : "Show artwork"}</button>
+          <Switch label="Revisit only" on={f.revisit} onChange={async (v) => { setF({ ...f, revisit: v }); return true; }} />
+          <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />
           <button className="btn btn-primary" onClick={() => setNewShelf(true)}>New shelf</button>
         </div>
       </div>
@@ -157,7 +157,7 @@ function MakePlaylistDialog({ make, onClose }: { make: Make; onClose: () => void
           <span>{nameOf(i)}{i.artist_names.length > 0 && <span className="text-muted">, {i.artist_names.join(", ")}</span>}</span><span className="text-muted text-xs">{TYPE[i.type]}</span>
         </div>))}
       </div></div>
-      <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" role="switch" className="toggle" checked={priv} onChange={(e) => setPriv(e.target.checked)} />Private playlist</label>
+      <Switch label="Private playlist" on={priv} onChange={async (v) => { setPriv(v); return true; }} />
       <Attribution><span className="help">Created on your Spotify account.</span></Attribution>
       {made ? <><ErrorBanner error={err} title="The playlist was created on Spotify, but not every track was added." /><Attribution uri={made} name={name.trim()} /></>
         : err && <ErrorBanner error={err} title="Couldn’t create the playlist." />}

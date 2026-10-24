@@ -12,7 +12,7 @@ import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import {
   Attribution, Dialog, Dots, EmbedSlot, Empty, ErrorBanner, FreshnessNote, PrioritySelect, Rating, SkelBlock, SkelRows, SourceTag,
-  StatusBadge, StatusControl, TagChips, useToast,
+  StatusBadge, StatusControl, Switch, TagChips, useToast,
 } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
@@ -91,22 +91,28 @@ function Detail({ it }: { it: ItemDetail }) {
   const spotifySave = !savable ? null
     : !online ? <span className="text-faint text-xs">Saved in Spotify can’t change while you’re offline</span>
     : saved.error ? <span className="text-faint text-xs">Saved in Spotify isn’t available. {saved.error.message}</span>
-    : <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" role="switch" className="toggle" checked={!!saved.data?.[0]} disabled={saved.loading} onChange={async (e) => {
-        const on = e.target.checked, u = [it.spotify_uri!];
-        if (await run("Couldn’t change your Spotify library.", () => (on ? saveToSpotifyLibrary(u) : removeFromSpotifyLibrary(u)))) toast(on ? `${name} saved in your Spotify library` : `${name} removed from your Spotify library`);
-      }} />Saved in your Spotify library</label>;
+    : <Switch label="Saved in your Spotify library" on={!!saved.data?.[0]} disabled={saved.loading} onChange={async (on) => {
+        const u = [it.spotify_uri!];
+        const ok = await run("Couldn’t change your Spotify library.", () => (on ? saveToSpotifyLibrary(u) : removeFromSpotifyLibrary(u)));
+        if (ok) toast(on ? `${name} saved in your Spotify library` : `${name} removed from your Spotify library`);
+        return ok;
+      }} />;
 
   const controls = (
     <div className="field">
       <span className="label">Status</span>
       <StatusControl value={it.status} onChange={changeStatus} />
       <div className="flex flex-wrap gap-4 items-center text-text-2 text-sm">
-        <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" role="switch" className="toggle" checked={it.revisit} onChange={async (e) => {
-          const v = e.target.checked; if (await patch("Couldn’t save that change.", { revisit: v })) toast(`${name}: ${v ? "flagged to revisit" : "revisit flag removed"}`, () => updateItem(it.id, { revisit: !v }));
-        }} />Revisit later</label>
-        <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" role="switch" className="toggle" checked={it.favourite} onChange={async (e) => {
-          const v = e.target.checked; if (await patch("Couldn’t save that change.", { favourite: v })) toast(`${name}: ${v ? "favourite" : "no longer a favourite"}`, () => updateItem(it.id, { favourite: !v }));
-        }} />Favourite</label>
+        <Switch label="Revisit later" on={it.revisit} onChange={async (v) => {
+          const ok = await patch("Couldn’t save that change.", { revisit: v });
+          if (ok) toast(`${name}: ${v ? "flagged to revisit" : "revisit flag removed"}`, () => updateItem(it.id, { revisit: !v }));
+          return ok;
+        }} />
+        <Switch label="Favourite" on={it.favourite} onChange={async (v) => {
+          const ok = await patch("Couldn’t save that change.", { favourite: v });
+          if (ok) toast(`${name}: ${v ? "favourite" : "no longer a favourite"}`, () => updateItem(it.id, { favourite: !v }));
+          return ok;
+        }} />
         {it.in_backlog && <>
           <label htmlFor="dt-prio">Priority</label>
           <PrioritySelect id="dt-prio" className="input h-[34px]" value={it.priority ?? ""} onChange={(p) => patch("Couldn’t save that change.", { priority: p || null })} /></>}

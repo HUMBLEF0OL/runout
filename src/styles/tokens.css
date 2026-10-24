@@ -7,7 +7,7 @@
   --color-line: #23262B; --color-line-2: #2E3238; --color-line-strong: #3A3F46; --color-line-hover: #4A5059;
   --color-text: #ECEDEF; --color-text-2: #C3C7CE; --color-muted: #B6BBC3; --color-faint: #9A9FA8;
   --color-accent: #F5B544; --color-accent-ink: #101113; --color-link: #F5C46B; --color-link-hover: #FFDCA0;
-  --color-bar: #4A5059; --color-star-off: #686E78; --color-danger: #FF7A6B; --color-danger-line: #5A3530;
+  --color-bar: #4A5059; --color-star-off: #686E78; --color-danger: #FF7A6B; --color-danger-line: #452C2C; /* 20% --danger over --surface */
   --color-transparent: transparent;
 
   /* Spacing 4 · 8 · 12 · 16 · 20 · 24 · 32 in px: html is 14px, so Tailwind's rem default would shrink it 12.5%. */

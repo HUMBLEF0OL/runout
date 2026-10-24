@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { connectSpotify, getCapture, getInbox, onEvent, toAppError, type AppError } from "../api";
 import { useApi } from "../hooks/useApi";
-import { Attribution, Dialog, Dots } from "./ui";
+import { Attribution, CopyButton, Dialog, Dots } from "./ui";
 
 /* ------------------------------------------------------------------ SC-13e Shortcut steps */
 export function ShortcutDialog({ onClose }: { onClose: () => void }) {
@@ -14,7 +14,7 @@ export function ShortcutDialog({ onClose }: { onClose: () => void }) {
     <Dialog title="Set up the iPhone Shortcut" wide onClose={onClose} footer={<button className="btn btn-secondary" onClick={onClose}>Done</button>}>
       <ol className="m-0 pl-[18px] list-decimal flex flex-col gap-2.5 leading-[1.5]">
         <li>On your iPhone, open <b>Shortcuts</b> and create a new shortcut named <b>Save to Runout</b>. Turn on <b>Show in Share Sheet</b> and accept <b>URLs</b>.</li>
-        <li>Add <b>Get Contents of URL</b>: URL <span className="font-mono">http://{addr}/capture</span>, method <b>POST</b>, body <b>JSON</b> with <span className="font-mono">code</span> = <span className="font-mono">{cap?.code ?? "…"}</span> and <span className="font-mono">link</span> = Shortcut Input.</li>
+        <li>Add <b>Get Contents of URL</b>: URL <span className="inline-flex items-center gap-1 align-middle"><span className="font-mono">http://{addr}/capture</span>{cap && <CopyButton text={`http://${addr}/capture`} label="Copy capture URL" />}</span>, method <b>POST</b>, body <b>JSON</b> with <span className="font-mono">code</span> = <span className="inline-flex items-center gap-1 align-middle"><span className="font-mono">{cap?.code ?? "…"}</span>{cap && <CopyButton text={cap.code} label="Copy pairing code" />}</span> and <span className="font-mono">link</span> = Shortcut Input.</li>
         <li>Add <b>Show Result</b>.</li>
         <li>Test it: in Spotify, tap Share, then Save to Runout, on the same Wi-Fi as this PC. Allow <b>Local Network</b> when iOS asks.</li>
       </ol>

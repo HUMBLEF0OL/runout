@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { getDashboard, listItems, setStatus, updateItem, type Dashboard, type ItemSummary } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
-import { ArtTiles, ErrorBanner, ItemSet, OpenSpotify, SkelRows, Stat, useToast } from "../components/ui";
+import { ArtTiles, ErrorBanner, ItemSet, OpenSpotify, SkelRows, Stat, Switch, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { age, ago, daysSince, nameOf, PRIO, stars, TYPE, uriLink } from "../lib/format";
 import { byPriority } from "../lib/backlog";
@@ -58,7 +58,7 @@ export function MvpBody({ dash }: { dash: Dashboard }) {
         <section className="flex-[1.5_1_520px] min-w-0 flex flex-col gap-3.5" aria-labelledby="mvp-prog">
           <div className="flex justify-between items-baseline gap-3">
             <h2 id="mvp-prog" className="section-title">In progress</h2>
-            <button className="btn btn-secondary" aria-pressed={art} onClick={() => setArt(!art)}>{art ? "Hide artwork" : "Show artwork"}</button>
+            <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />
           </div>
           {!dash.in_progress.length && <span className="text-muted">Nothing in progress. Start something from your backlog.</span>}
           {art && dash.in_progress.length > 0 && <ArtTiles items={dash.in_progress} meta={(it) => <span className="flex flex-wrap gap-2 items-center justify-between">

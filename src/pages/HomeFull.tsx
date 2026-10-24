@@ -10,7 +10,7 @@ import { Topbar } from "../components/Shell";
 import { playSources } from "../components/logic";
 import { useQuickAdd } from "../components/QuickAddContext";
 import {
-  ArtTiles, EmbedSlot, Empty, ErrorBanner, FreshnessNote, LiveDot, OpenSpotify, PlayRow, RankRow, Seg, SkelRows, SkelTiles, SourceTag, Stat, useToast,
+  ArtTiles, EmbedSlot, Empty, ErrorBanner, FreshnessNote, LiveDot, OpenSpotify, PlayRow, RankRow, Seg, SkelRows, SkelTiles, SourceTag, Stat, Switch, useToast,
 } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { hm, mmss, nameOf, num, PRIO, stars, STATUS, statusMeta, TYPE } from "../lib/format";
@@ -155,7 +155,7 @@ function Charts({ loading, artists, albums, sources }: { loading: boolean; artis
       </div>
       <div className="flex-[1.3_1_460px] flex min-w-0 flex-col gap-3.5">
         <div className="flex justify-between items-baseline gap-3"><h2 className="section-title">Top albums</h2>
-          <span className="flex flex-wrap gap-2 items-center"><SourceTag sources={sources} /><button className="btn btn-secondary" aria-pressed={art} onClick={() => setArt(!art)}>{art ? "Hide artwork" : "Show artwork"}</button></span></div>
+          <span className="flex flex-wrap gap-2 items-center"><SourceTag sources={sources} /><Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} /></span></div>
         {loading || (art && albums_.loading) ? <SkelTiles n={5} /> : art ? <ArtTiles items={saved} meta={(it) => statusMeta(it)} />
           : <div className="tiles five">{top5.map((a) => {
               const meta = `${a.status ? STATUS[a.status] : ""}${a.rating ? ` ${stars(a.rating)}` : ""}, ${hrs(a)}`;
