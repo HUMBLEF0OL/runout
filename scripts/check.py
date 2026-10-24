@@ -781,6 +781,12 @@ def check_reduced_motion_js():
             bad.append(f"{rel}: useSpring without a reduced-motion jump()")
         if "<AnimatePresence" in t and not re.search(r"transition=\{[^}]*reduce", t):
             bad.append(f"{rel}: AnimatePresence swap without a reduced-motion transition (e.g. swap(reduce, ...))")
+        # M9 WI 5 review: an entrance `initial={{ ... }}` still fades late under reduced motion (MotionConfig drops only
+        # the transform); its element must read `reduce` (initial={reduce ? false : ...} or transition={swap(reduce, ...)}).
+        for mt in re.finditer(r"initial=\{\{", t):
+            tag = t[t.rfind("<m.", 0, mt.start()):mt.end() + 400]
+            if "reduce" not in tag:
+                bad.append(f"{rel}:{t.count(chr(10), 0, mt.start()) + 1}: Motion entrance ignores reduced motion (read `reduce`)")
     if bad:
         failures.append("reduced motion (JS)")
         print("--- reduced motion (JS): FAIL")
@@ -798,13 +804,16 @@ def check_plays_page():
     bad = []
     if not (rs and mock and page):
         bad.append("MAX_PAGE (plays.rs), PLAYS_MAX_PAGE (mocks) or PAGE (Plays.tsx) not found")
-    # Same for list_items (M9 WI 6): Backlog loads the whole backlog in one call, so it must not ask past Rust's MAX_LIMIT
+    # Same for list_items (M9 WI 7): Backlog loads the whole backlog in one call, so it must not ask past Rust's MAX_LIMIT
     lim = re.search(r"pub const MAX_LIMIT: i64 = ([\d_]+);", (ROOT / "src-tauri/src/library/filters.rs").read_text(encoding="utf-8"))
     bl = re.search(r"const ALL = ([\d_]+);", (ROOT / "src/pages/Backlog.tsx").read_text(encoding="utf-8"))
     if not (lim and bl):
         bad.append("MAX_LIMIT (library/filters.rs) or ALL (Backlog.tsx) not found")
     elif int(bl.group(1).replace("_", "")) > int(lim.group(1).replace("_", "")):
         bad.append(f"Backlog.tsx ALL {bl.group(1)} > Rust list_items MAX_LIMIT {lim.group(1)}")
+    ml = re.search(r"const LIST_MAX_LIMIT = ([\d_]+);", (ROOT / "src/mocks/index.ts").read_text(encoding="utf-8"))
+    if lim and (not ml or ml.group(1).replace("_", "") != lim.group(1).replace("_", "")):
+        bad.append("mock LIST_MAX_LIMIT must equal Rust list_items MAX_LIMIT (the mock clamps like Rust)")
     if rs and mock and page:
         if rs.group(1) != mock.group(1):
             bad.append(f"mock PLAYS_MAX_PAGE {mock.group(1)} != Rust MAX_PAGE {rs.group(1)}")
@@ -834,6 +843,13 @@ def check_control_consistency():
         for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
             if re.search(r"aria-pressed=\{[^}]+\}[^>]*>\{[^}]*\?", line):
                 bad.append(f"{f.relative_to(ROOT)}:{i}: aria-pressed button with a changing label (use Switch or a fixed label)")
+    # Spotify's compact player cuts off its play button below 280 px (measured on a real album, 24 Oct 2026) (M9 Home, then Rediscover artwork
+    # mode on the 150 px tile grid): the artwork set's columns must never go below that.
+    art = re.search(r"\.tiles\.art\s*\{[^}]*minmax\((\d+)px", css)
+    if not art or int(art.group(1)) < 280:
+        bad.append("app.css .tiles.art: artwork columns must be minmax(>= 280px) (Spotify compact player, measured 24 Oct 2026)")
+    if 'className="tiles art"' not in (ROOT / "src/components/ui.tsx").read_text(encoding="utf-8"):
+        bad.append("ui.tsx ArtTiles: the artwork set must use the .tiles.art grid")
     if bad:
         failures.append("control consistency")
         print("--- control consistency: FAIL")
@@ -843,13 +859,6 @@ def check_control_consistency():
 
 
 def check_doc_line_endings():
-    # Spotify's compact player cuts off its play button below 280 px (measured on a real album, 24 Oct 2026) (M9 Home, then Rediscover artwork
-    # mode on the 150 px tile grid): the artwork set's columns must never go below that.
-    art = re.search(r"\.tiles\.art\s*\{[^}]*minmax\((\d+)px", css)
-    if not art or int(art.group(1)) < 280:
-        bad.append("app.css .tiles.art: artwork columns must be minmax(>= 280px) (Spotify compact player, measured 24 Oct 2026)")
-    if 'className="tiles art"' not in (ROOT / "src/components/ui.tsx").read_text(encoding="utf-8"):
-        bad.append("ui.tsx ArtTiles: the artwork set must use the .tiles.art grid")
     # M7 r8: a scripted edit stored docs/MILESTONES.md with CRLF and a lone CR (462-line diff for a
     # 2-line change, blame lost). Staged/committed .md must be LF only.
     out = subprocess.run(["git", "ls-files", "--eol", "--", "*.md"], cwd=ROOT, capture_output=True, text=True).stdout

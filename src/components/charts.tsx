@@ -10,10 +10,12 @@ export const monthLong = (ym: string) => new Date(`${ym}-01T00:00`).toLocaleStri
 
 /** One bar per month. Point at a month or use the keys (`role="slider"`): it turns accent (DESIGN §3 "active bar") and a
  *  value tip springs above it; at rest the latest month is active, or `hot` if given. `avg` draws the dashed average. */
-export function MonthBars({ months, fmt, label, avg, hot, caption }: {
+export function MonthBars({ months, fmt, label, avg, hot, caption, valuetext }: {
   months: { month: string; value: number }[]; fmt: (v: number) => string; label: string; avg?: boolean; hot?: number;
   /** Line under the bars: `i` is the picked month, null at rest. */
   caption?: (i: number | null) => ReactNode;
+  /** What a screen reader hears for month `i` (the caption is visual only); default "<Month year>: <value>". */
+  valuetext?: (i: number) => string;
 }) {
   const reduce = useReducedMotion();
   const [at, setAt] = useState<number | null>(null);
@@ -44,7 +46,7 @@ export function MonthBars({ months, fmt, label, avg, hot, caption }: {
   return (
     <>
       <div className="hm-plot" role="slider" tabIndex={0} aria-label={label} aria-valuemin={0} aria-valuemax={n - 1} aria-valuenow={cur}
-        aria-valuetext={`${monthLong(mo.month)}: ${fmt(mo.value)}`}
+        aria-valuetext={valuetext ? valuetext(cur) : `${monthLong(mo.month)}: ${fmt(mo.value)}`}
         onPointerMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left) / r.width) * n))); if (i !== at) pick(i); }}
         onPointerLeave={() => pick(null)} onKeyDown={keys} onBlur={() => pick(null)}>
         <m.div className="hm-tip-track" style={{ x }} aria-hidden><span className={`hm-tip${at === null ? "" : " on"}`}>{fmt(mo.value)}</span></m.div>

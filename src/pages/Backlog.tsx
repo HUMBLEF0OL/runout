@@ -27,7 +27,7 @@ const ALL = 10_000;
 const PER_GROUP = 40; // rows a group shows before "Show N more"; keeps the DOM bounded for large backlogs
 const MORE = 200;
 /** Layout animation (rows gliding on reorder) is only needed here, so its code loads with this page. */
-const layoutFeatures = () => import("motion/react").then((mod) => mod.domMax);
+const layoutFeatures = () => import("../lib/motionFeatures").then((mod) => mod.domMax);
 
 /** Priority mix as one bar of four parts; each part jumps to its group. A pointer shortcut, out of the Tab order: the groups
  *  follow right below, and a long backlog already has many stops per row. Screen readers can still activate them by name. */
@@ -142,10 +142,12 @@ export default function Backlog() {
   if (isEmpty) return <><Topbar />{head}<Empty h="Nothing waiting" line="Paste a Spotify link above, or share one from your phone, and it lands here."><button className="btn btn-primary" onClick={() => quickAdd()}>Add a link</button></Empty></>;
 
   const oldestDays = Math.max(1, ...list.map((i) => daysSince(i.added_at)));
-  const row = (it: ItemSummary, group: ItemSummary[], n: number) => {
+  const row = (it: ItemSummary, group: ItemSummary[], n: number, g: string, cap: number, order: string) => {
     const d = daysSince(it.added_at);
+    // Moving the last shown row down shows one more first, so the moved row stays mounted and keeps focus
+    const down = () => { if (n + 1 >= cap) setShown((s) => ({ ...s, [g]: cap + 1 })); reorder(it.id, group[n + 1].id); };
     return (
-      <m.div key={it.id} layout={reduce ? false : "position"} transition={{ layout: LAND }}
+      <m.div key={it.id} layout={reduce ? false : "position"} layoutDependency={order} transition={{ layout: LAND }}
         initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -24, transition: swap(reduce, { duration: 0.2, ease: EASE }) }}
         className={`row bl-row${drag === it.id ? " dragging" : ""}${moved === it.id ? " moved" : ""}${sel.has(it.id) ? " sel" : ""}`}
         draggable={sort === "order"} onDragStart={() => setDrag(it.id)} onDragEnd={() => setDrag(null)}
@@ -167,7 +169,7 @@ export default function Backlog() {
         <span className="flex gap-1 items-center justify-self-end bl-above">{sort === "order" && <>
           {/* aria-disabled, not disabled: moving a record to the end of its group must not drop keyboard focus; out of the Tab order there */}
           <button className="icon-btn w-8 h-8" aria-disabled={n === 0} tabIndex={n === 0 ? -1 : undefined} onClick={() => n > 0 && reorder(it.id, group[n - 1].id)} aria-label={`Move ${nameOf(it)} up`}><ArrowUpIcon size={14} aria-hidden /></button>
-          <button className="icon-btn w-8 h-8" aria-disabled={n === group.length - 1} tabIndex={n === group.length - 1 ? -1 : undefined} onClick={() => n < group.length - 1 && reorder(it.id, group[n + 1].id)} aria-label={`Move ${nameOf(it)} down`}><ArrowDownIcon size={14} aria-hidden /></button>
+          <button className="icon-btn w-8 h-8" aria-disabled={n === group.length - 1} tabIndex={n === group.length - 1 ? -1 : undefined} onClick={() => n < group.length - 1 && down()} aria-label={`Move ${nameOf(it)} down`}><ArrowDownIcon size={14} aria-hidden /></button>
         </>}</span>
       </m.div>
     );
@@ -184,7 +186,7 @@ export default function Backlog() {
           <span className="text-text-2 text-sm">{num(planned)} planned, {num(inProg)} in progress{oldest ? `, oldest added ${age(oldest)} ago` : ""}</span>
           {stale > 0 && <span className="text-accent text-xs">{pl(stale, "record")} planned more than six months ago</span>}
         </div>
-        {sort === "order" && <Mix total={named.length} counts={GROUPS.map(([g, p]) => [g, named.filter((i) => i.priority === p).length])} />}
+        {sort === "order" && !art && <Mix total={list.length} counts={GROUPS.map(([g, p]) => [g, list.filter((i) => i.priority === p).length])} />}
       </div>
       </div>
       {tabs}
@@ -221,16 +223,17 @@ export default function Backlog() {
         : art ? <ArtTiles items={list} meta={statusMeta} />
         : groups.map(([g, rows, gi]) => {
           const cap = shown[g] ?? PER_GROUP;
+          const order = rows.map((r) => r.id).join(","); // layout measures only when this changes (a reorder), not on every render
           return (
             <section key={g} id={`bl-${gi}`} className="bl-group" aria-label={g}>
               <h2 className={`bl-group-head ${g === "High priority" ? "text-accent" : "text-text-2"}`}><i className={`p${gi}`} aria-hidden />{g}<span className="font-mono text-faint font-normal">{num(rows.length)}</span></h2>
               <div className="card pad-s"><div className="list">
-                <AnimatePresence initial={false}>{rows.slice(0, cap).map((it, n) => row(it, rows, n))}</AnimatePresence>
+                <AnimatePresence initial={false}>{rows.slice(0, cap).map((it, n) => row(it, rows, n, g, cap, order))}</AnimatePresence>
               </div></div>
               {rows.length > cap && (
                 <div className="flex flex-wrap gap-2 items-center justify-between">
                   <span className="font-mono text-faint text-xs">{num(cap)} of {num(rows.length)} shown</span>
-                  <button className="btn btn-secondary s" onClick={() => setShown((s) => ({ ...s, [g]: cap + MORE }))}>Show {num(Math.min(MORE, rows.length - cap))} more</button>
+                  <button className="btn btn-secondary s" onClick={() => { setShown((s) => ({ ...s, [g]: cap + MORE })); requestAnimationFrame(() => document.querySelector<HTMLElement>(`#bl-${gi} .list > :nth-child(${cap + 1}) .bl-stretch`)?.focus()); }}>Show {num(Math.min(MORE, rows.length - cap))} more</button>
                 </div>)}
             </section>);
         })}

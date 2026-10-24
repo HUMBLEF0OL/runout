@@ -172,7 +172,7 @@ function heavyBacklog(f: ItemFilter): Page<ItemSummary> {
     const d = new Date(TODAY); d.setDate(d.getDate() - ((k * 7 + n * 3) % 900));
     return { ...it, id: it.id + (k + 1) * 100_000, priority: k ? prio[(k + n) % prio.length] : it.priority, added_at: k ? d.toISOString().slice(0, 10) : it.added_at };
   })).flat();
-  const offset = f.offset ?? 0, limit = f.limit ?? 50;
+  const offset = f.offset ?? 0, limit = Math.min(Math.max(f.limit ?? 50, 1), LIST_MAX_LIMIT); // as Rust clamps it (library/filters.rs MAX_LIMIT)
   return { rows: rows.slice(offset, offset + limit), total: rows.length, offset };
 }
 
@@ -190,13 +190,14 @@ function filterItems(f: ItemFilter): Page<ItemSummary> {
   const k = key[sort];
   rows = [...rows].sort((a, b) => (k(a) < k(b) ? -1 : k(a) > k(b) ? 1 : a.id - b.id));
   if (f.desc ?? (sort === "added_at" || sort === "modified_at" || sort === "rating")) rows.reverse();
-  const offset = f.offset ?? 0, limit = f.limit ?? 50;
+  const offset = f.offset ?? 0, limit = Math.min(Math.max(f.limit ?? 50, 1), LIST_MAX_LIMIT); // as Rust clamps it (library/filters.rs MAX_LIMIT)
   return { rows: rows.slice(offset, offset + limit).map(summary), total: rows.length, offset };
 }
 
 const freshness = (): Freshness => ({ logger_last_event: L.freshness.logger_last, export_latest_event: L.freshness.export_until });
 const sourced = <T,>(data: T, sources: Source[]) => ({ data, sources, freshness: freshness() });
 const PLAYS_MAX_PAGE = 200;
+const LIST_MAX_LIMIT = 10_000;
 const RANGE_DAYS: Record<Range, number> = { "7d": 7, "30d": 30, "12m": 365, all: 1e6 };
 const sumByName = (type: MItem["type"], name: string, by?: string) => items.find((i) => i.type === type && i.display_name === name && (!by || type === "artist" || i.artist === by));
 function play(e: any, n: number): Play {

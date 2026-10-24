@@ -65,7 +65,7 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | `--accent-fill` | `linear-gradient(180deg, #F8C566, #F0A92E)`, `inset 0 1px 0 rgba(255,255,255,0.35)`, shadow `0 2px 8px rgba(245,181,68,0.18)` | Primary button |
 | `--indicator` | `inset 3px 0 0 var(--accent)` | Selected nav item |
 
-**Shape:** radius 10 for controls and list rows, 16 for cards, 6 for thumbnails and small or nested controls (small buttons, segment buttons and indicator, badges, menu items, switch, checkbox), 3 for bars. Pills are not used. Exceptions: the Spotify embed keeps Spotify's 12; the live dot and the Home share ring are circles. `check.py` “control consistency” enforces the scale.
+**Shape:** radius 10 for controls and list rows, 16 for cards, 6 for thumbnails and small or nested controls (small buttons, segment buttons and indicator, badges, menu items, switch, checkbox), 3 for bars. Pills are not used. Exceptions: the Spotify embed keeps Spotify's 12; the live dot and the share rings (Home #1, Insights skip rate, phone share, explored) are circles. `check.py` “control consistency” enforces the scale.
 **Spacing:** 4 · 8 · 12 · 16 · 20 · 24 · 32. Page padding 32 desktop.
 **Focus:** 2px `--accent` outline, 2px offset, on every interactive element.
 **Icons:** Phosphor (`@phosphor-icons/react`), regular weight, 20px; icon-only buttons have `aria-label`.
@@ -103,7 +103,7 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | Status control | Planned · In progress · Explored · Not for me · Abandoned (segmented); Revisit is a separate switch |
 | Rating | 5 stars with halves; keyboard: arrows ±0.5 |
 | Tag chip / add tag | radius 10 |
-| Embed slot | Spotify iframe when online; neutral placeholder when offline (TSD §4.3); never cropped or overlaid |
+| Embed slot | Spotify iframe when online; neutral placeholder when offline (TSD §4.3); never cropped or overlaid. The compact (152 px) player needs **≥ 280 px** of width or its controls clip (measured, kb/spotify.md): artwork sets use the `.tiles.art` grid, Quick add stacks it full width, Home gives it its own column |
 | Attribution | Spotify logo + “Open Spotify” wherever Spotify-sourced content appears outside the embed |
 | Freshness note | sources + dates, on every listening-data screen |
 | Name-needed badge | for phone captures (Runout Inbox or Wi-Fi Shortcut) without a confirmed name |

@@ -103,6 +103,7 @@ function Listening({ range }: { range: Range }) {
       <Card title="Listening time by month" res={src} className="flex-[1.4_1_480px] min-w-0">
         <span className="flex flex-wrap items-baseline gap-x-2.5"><span className="hm-big">{hrs(sum)}</span><span className="text-muted text-sm">in the last 12 months, busiest in {monthLong(months[peak].month)}</span></span>
         <MonthBars months={months} fmt={hrs} label="Listening hours per month for the last 12 months" avg
+          valuetext={(i) => `${monthLong(months[i].month)}${i === months.length - 1 ? " so far" : ""}: ${hrs(months[i].value)}${i === peak ? ", your busiest month" : ""}`}
           caption={(i) => i === null ? `Average ${hrs(sum / months.length)} a month, the faint line.` : `${monthLong(months[i].month)}${i === months.length - 1 ? " so far" : ""}${i === peak ? ", your busiest month" : ""}.`} />
       </Card>
       <section className="flex-[1_1_320px] min-w-0 grid grid-cols-[repeat(2,minmax(0,1fr))] auto-rows-fr gap-3" aria-label="This range in numbers">
@@ -111,6 +112,7 @@ function Listening({ range }: { range: Range }) {
           : t.ms >= 172_800_000 ? `About ${pl(Math.round(t.ms / 86_400_000), "day")} of music` : "In this range"} />
         <RingStat k="Skip rate" v={`${d.skip_rate}%`} share={d.skip_rate / 100} d="Of all plays" />
         <RingStat k="From your phone" v={`${d.phone_share}%`} share={d.phone_share / 100} d="Of plays, from your export" />
+        <span className="col-span-full"><SourcedTag res={src} /></span>
       </section>
     </div>
     <div className="flex flex-wrap gap-7 items-start">
@@ -134,6 +136,7 @@ function Listening({ range }: { range: Range }) {
 }
 
 function Collection() {
+  const reduce = useReducedMotion();
   const ci = useApi(() => api.getCollectionInsights("12m"));
   const counts = useApi(api.getCounts);
   if (ci.loading) return <Loading />;
@@ -157,13 +160,14 @@ function Collection() {
     <div className="flex flex-wrap gap-7 items-stretch">
       <Card title="Library size over 12 months" res={src} className="flex-[1.5_1_520px] min-w-0">
         <MonthBars months={months} fmt={(v) => pl(v, "record")} label={`Library size per month, from ${growth[0] ?? 0} to ${pl(growth[growth.length - 1] ?? 0, "record")}`}
+          valuetext={(i) => `${monthLong(months[i].month)}: ${pl(months[i].value, "record")}, ${num(d.backlog_growth[i].added)} added, ${num(d.backlog_growth[i].finished)} finished`}
           caption={(i) => { const k = i ?? months.length - 1; const add = d.backlog_growth[k]; return `${monthLong(add.month)}: ${pl(add.added, "added", "added")}, ${num(add.finished)} finished.`; }} />
       </Card>
       <Card title="How you rate" res={src} side>
         {d.rating_spread.filter((r) => r.rating >= 1).map((r, i) => (
           <div key={r.rating} className="in-spread">
             <span className="font-mono text-text-2 text-xs">{r.rating}</span>
-            <Grow pct={(r.count / dmax) * 100} i={i} hot={r.count === dmax} />
+            <Grow pct={(r.count / dmax) * 100} i={i} />
             <span className="font-mono text-faint text-xs text-right">{r.count}</span>
           </div>
         ))}
@@ -171,13 +175,14 @@ function Collection() {
     </div>
     <Card title="Your most used tags" res={src}>
       {d.tag_trends.length ? <div className="flex flex-wrap gap-2 items-center">{d.tag_trends.slice(0, 10).map((t, i) => (
-        <m.span key={t.tag} className="chip" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: i * 0.03 }}>{t.tag} <span className="font-mono text-faint">{t.count}</span></m.span>))}</div>
+        <m.span key={t.tag} className="chip" initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: i * 0.03 }}>{t.tag} <span className="font-mono text-faint">{t.count}</span></m.span>))}</div>
         : <span className="text-muted">No tags yet.</span>}
     </Card>
   </>;
 }
 
 function Take() {
+  const reduce = useReducedMotion();
   const ti = useApi(api.getTakeInsights);
   if (ti.loading) return <Loading />;
   if (ti.error) return <ErrorBanner error={ti.error} title="Couldn't load insights." onRetry={ti.reload} />;
@@ -189,7 +194,7 @@ function Take() {
       {groups.map(([title, rows], g) => (
         <Card key={title} title={title} res={src} className="flex-[1_1_300px] min-w-0">
           {rows.length ? rows.map((x, i) => (
-            <m.div key={x.item.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE, delay: g * 0.06 + i * 0.04 }}>
+            <m.div key={x.item.id} initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE, delay: g * 0.06 + i * 0.04 }}>
               <Link to={`/item/${x.item.id}`} className="flex flex-col gap-0.5 px-2.5 py-2 rounded-control bg-surface-2 text-text transition hover:bg-surface-hover active:scale-[0.98]">
                 <span className="font-semibold">{nameOf(x.item)}</span><span className="text-text-2 text-sm">{x.line}</span>
               </Link>

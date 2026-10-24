@@ -209,8 +209,9 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
     case "form":
       state = <span className="help">{parsed?.state === "short" ? `Short link opened: ${an(kind)}.` : `Detected ${an(kind)}.`}{naming == null ? " Not in your library yet." : ""}</span>;
       body = <>
-        <div className="flex gap-4 items-start">
-          <div className="flex-[0_0_152px]"><EmbedSlot uri={uri ?? null} height={152} /></div>
+        {/* Spotify's compact player needs >= 280 px wide (docs/kb/spotify.md); a 152 px column clipped it, so it spans the dialog */}
+        <div className="flex flex-col gap-4">
+          <EmbedSlot uri={uri ?? null} height={152} />
           <div className="flex flex-col gap-3 flex-auto min-w-0">
             <div className="field"><label className="label" htmlFor="qa-name">Name</label>
               <input id="qa-name" className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={prefilling ? "Getting the title from Spotify…" : "Name it"} />

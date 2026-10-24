@@ -171,8 +171,8 @@ function NowCard({ logger, loading, error, retry }: { logger: LoggerStatus | und
           <OpenSpotify uri={np.spotify_uri} name={np.track_name} />
         </div>
       </div>
-      {/* Spotify's compact player lays out from ~250 px wide; narrower it scrolls (DESIGN §5: never clip the embed) */}
-      <div className="flex-[1_1_260px] min-w-[250px] max-w-[360px]"><EmbedSlot uri={np.spotify_uri} compact /></div>
+      {/* Spotify's compact player needs >= 280 px wide (measured, docs/kb/spotify.md); narrower it clips (DESIGN §5: never clip the embed) */}
+      <div className="flex-[1_1_280px] min-w-[280px] max-w-[380px]"><EmbedSlot uri={np.spotify_uri} compact /></div>
     </div>
   );
 }
@@ -192,6 +192,7 @@ function Pulse({ months, sources }: { months: { month: string; hours: number }[]
         <span className="text-muted text-sm">listened, busiest in {monthLong(months[peak].month)}</span>
       </div>
       <MonthBars months={months.map((m_) => ({ month: m_.month, value: m_.hours }))} fmt={hrs} label="Listening by month" avg
+        valuetext={(i) => `${monthLong(months[i].month)}${i === last ? " so far" : ""}: ${hrs(months[i].hours)}${i === peak ? ", your busiest month" : ""}`}
         caption={(i) => i === null ? `Average ${hrs(sum / months.length)} a month, the faint line.`
           : `${monthLong(months[i].month)}${i === last ? " so far" : ""}${i === peak ? ", your busiest month" : ""}.`} />
       <SourceTag sources={sources} />
