@@ -145,6 +145,8 @@ button.chip.on:hover:not([disabled]) { background: #F8C566; }
 .stat .d.act { color: var(--color-accent); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
 .tiles.five { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); } /* 5 fixed columns broke long titles mid-word */
+/* Artwork sets: Spotify's compact player needs 280 px (measured: narrower cuts off its play button or controls) (DESIGN §5 embed slot) */
+.tiles.art { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .tile { display: flex; flex-direction: column; gap: 6px; color: var(--color-text); }
 .tile .art { aspect-ratio: 1 / 1; border-radius: 10px; transition: transform 150ms var(--ease-out), box-shadow 150ms; }
 .tile:hover .art { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(0,0,0,0.4); }

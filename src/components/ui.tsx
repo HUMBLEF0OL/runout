@@ -143,13 +143,14 @@ export function CountUp({ text }: { text: string }) {
 /** Copy a value the user types elsewhere (pairing code, capture URL); a check mark and a status message confirm it. */
 export function CopyButton({ text, label }: { text: string; label: string }) {
   const toast = useToast();
+  const reduce = useReducedMotion();
   const [done, setDone] = useState(false);
   useEffect(() => { if (!done) return; const t = setTimeout(() => setDone(false), 1600); return () => clearTimeout(t); }, [done]);
   return (
     <>
       <button type="button" className={`icon-btn copy${done ? " done" : ""}`} aria-label={label}
         onClick={() => (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => setDone(true), () => toast("Couldn’t copy. Select the code and copy it instead."))}>
-        <m.span key={done ? "done" : "copy"} className="inline-flex" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={LAND}>
+        <m.span key={done ? "done" : "copy"} className="inline-flex" initial={reduce ? false : { scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={LAND}>
           {done ? <CheckIcon size={16} weight="bold" /> : <CopyIcon size={16} />}
         </m.span>
       </button>
@@ -418,7 +419,7 @@ export function ArtTiles({ items, total, meta }: { items: ItemSummary[]; total?:
   const shown = items.slice(0, 20);
   return (
     <>
-      <div className="tiles">{shown.map((it) => (
+      <div className="tiles art">{shown.map((it) => (
         <div key={it.id} className="tile">
           <EmbedSlot uri={it.spotify_uri} compact />
           <Link to={`/item/${it.id}`} className="t text-text">{nameOf(it)}</Link>

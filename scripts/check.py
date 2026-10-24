@@ -843,6 +843,13 @@ def check_control_consistency():
 
 
 def check_doc_line_endings():
+    # Spotify's compact player cuts off its play button below 280 px (measured on a real album, 24 Oct 2026) (M9 Home, then Rediscover artwork
+    # mode on the 150 px tile grid): the artwork set's columns must never go below that.
+    art = re.search(r"\.tiles\.art\s*\{[^}]*minmax\((\d+)px", css)
+    if not art or int(art.group(1)) < 280:
+        bad.append("app.css .tiles.art: artwork columns must be minmax(>= 280px) (Spotify compact player, measured 24 Oct 2026)")
+    if 'className="tiles art"' not in (ROOT / "src/components/ui.tsx").read_text(encoding="utf-8"):
+        bad.append("ui.tsx ArtTiles: the artwork set must use the .tiles.art grid")
     # M7 r8: a scripted edit stored docs/MILESTONES.md with CRLF and a lone CR (462-line diff for a
     # 2-line change, blame lost). Staged/committed .md must be LF only.
     out = subprocess.run(["git", "ls-files", "--eol", "--", "*.md"], cwd=ROOT, capture_output=True, text=True).stdout
