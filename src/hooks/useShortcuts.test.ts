@@ -6,6 +6,7 @@ const el = (tag: string) => document.createElement(tag);
 
 describe("shortcutFor", () => {
   it("Ctrl+N opens quick add, even while typing", () => expect(shortcutFor(k("n", { ctrlKey: true }), el("input"))).toBe("quick-add"));
+  it("Ctrl+B collapses or expands the sidebar", () => expect(shortcutFor(k("b", { ctrlKey: true }), el("div"))).toBe("toggle-rail"));
   it("Ctrl+K focuses search", () => expect(shortcutFor(k("K", { ctrlKey: true }), document.body)).toBe("search"));
   it("1–5 set status when not typing", () => {
     expect(shortcutFor(k("1"), document.body)).toEqual({ status: 1 });

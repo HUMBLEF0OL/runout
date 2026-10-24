@@ -15,27 +15,33 @@ mark { background: rgba(245,181,68,0.3); color: var(--color-text); border-radius
 @layer components {
 /* ---------- shell */
 .app { display: flex; min-height: 100vh; }
-.app.has-rail { background: linear-gradient(90deg, var(--color-rail) 0 216px, var(--color-line) 216px 217px, var(--color-bg) 217px); }
 h1, h2 { text-wrap: balance; }
 .tile .t, .card a, .card span { overflow-wrap: break-word; hyphens: auto; }
 
-.rail { align-self: flex-start; flex: 0 0 216px; background: var(--color-rail); border-right: 1px solid var(--color-line); padding: 18px 14px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; }
-.logo { padding: 0 10px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em; color: var(--color-text); }
+.rail { align-self: flex-start; flex: 0 0 216px; overflow-x: clip; transition: flex-basis 240ms var(--ease-out); background: var(--color-rail); border-right: 1px solid var(--color-line); padding: 18px 14px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; }
+.logo { display: inline-flex; align-items: center; gap: 9px; padding: 0 4px; font-weight: 800; font-size: 19px; letter-spacing: -0.02em; color: var(--color-text); white-space: nowrap; }
+.logo:hover { color: var(--color-text); }
+.logo-icon { width: 26px; height: 26px; flex: none; transition: transform 280ms var(--ease-spring); }
+.logo:hover .logo-icon { transform: rotate(-24deg); } /* the record turns a little */
 /* M9 rail: head (wordmark + Quick add), grouped nav with one springing indicator, Settings at the foot, now playing + freshness */
 .rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.rail-add { width: 30px; height: 30px; background: var(--color-surface); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06); }
+.rail-toggle { width: 30px; height: 30px; background: transparent; color: var(--color-muted); }
+.rail-toggle:hover:not([disabled]) { color: var(--color-text); }
+.rail-add { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border: var(--hair); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font-weight: 600; white-space: nowrap; cursor: pointer; transition: background 150ms, border-color 150ms, transform 100ms var(--ease-out); }
+.rail-add:hover { background: var(--color-surface-2); border-color: rgba(255,255,255,0.10); }
+.rail-add:active { transform: scale(0.98); }
 .nav { position: relative; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
 .nav-group-name { padding: 0 10px 4px; font-size: 12px; font-weight: 600; color: var(--color-faint); }
 .nav-foot { margin-top: auto; padding-top: 10px; display: flex; flex-direction: column; }
 /* Selected page: no fill. A short accent marker rides the rail edge (on its divider) and springs to the page; the label goes bright + bold and the icon takes the accent. */
-.nav-ind { position: absolute; right: -15px; top: 0; width: 2px; height: 20px; z-index: 2; border-radius: var(--radius-bar); background: var(--color-accent); transition: transform 360ms var(--ease-spring); pointer-events: none; }
+.nav-ind { position: absolute; right: -14px; top: 0; width: 2px; height: 20px; z-index: 2; border-radius: var(--radius-bar); background: var(--color-accent); transition: transform 360ms var(--ease-spring); pointer-events: none; }
 
 /* Now playing tops the status card; a hairline separates it from freshness */
 .rail-now { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: -6px -6px 6px; padding: 6px 6px 10px; border-radius: var(--radius-thumb) var(--radius-thumb) 0 0; border-bottom: 1px solid var(--color-line-2); color: var(--color-text); font-size: 13px; transition: background 150ms; }
 .rail-now:hover { background: var(--color-surface-2); color: var(--color-text); }
 .rail-now:active { background: var(--color-surface-3); }
-.nav-item { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; color: var(--color-text-2); transition: background 150ms, color 150ms, transform 100ms var(--ease-out); }
+.nav-item { position: relative; z-index: 1; white-space: nowrap; display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 10px; border-radius: 10px; color: var(--color-text-2); transition: background 150ms, color 150ms, transform 100ms var(--ease-out); }
 .nav-item:hover:not([aria-current="page"]) { background: var(--color-surface); color: var(--color-text); }
 .nav-item:active:not([aria-current="page"]) { transform: scale(0.98); }
 .nav-item[aria-current="page"] { color: var(--color-text); font-weight: 700; }
@@ -136,7 +142,7 @@ button.chip.on:hover:not([disabled]) { background: #F8C566; }
 /* ---------- data components */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
 .stat { display: flex; flex-direction: column; gap: 6px; padding: 16px; }
-.stat .v { font-family: var(--font-mono); font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+.stat .v { font-family: var(--font-mono); font-size: 26px; font-weight: 600; letter-spacing: -0.02em; word-spacing: -0.35em; } /* "497 h", "13h 26m": a mono space is a full cell */
 .stat .k, .stat .d { font-size: 12px; color: var(--color-muted); }
 .stat .v.txt { font-family: var(--font-sans); font-size: 20px; font-weight: 800; letter-spacing: -0.015em; }
 .stat .d.act { color: var(--color-accent); }
@@ -280,7 +286,6 @@ input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 .proto a { color: #7A4A00; }
 .proto .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
 
-@media (max-width: 1100px) { .rail { flex-basis: 72px; } .rail .count, .rail-box, .rail-now, .nav-group-name { display: none; } .rail-head { flex-direction: column; } .nav-group { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--color-line); } }
 
 /* ---------- React port additions */
 dialog.dialog { color: var(--color-text); margin: 72px auto auto; }
@@ -290,11 +295,11 @@ dialog.dialog::backdrop { background: rgba(5,6,7,0.62); }
 .nav-item:hover .nav-icon { color: var(--color-text); }
 .nav-item[aria-current="page"] .nav-icon { color: var(--color-accent); }
 a.card { display: flex; }
-@media (max-width: 1100px) {
-  .app.has-rail { background: linear-gradient(90deg, var(--color-rail) 0 72px, var(--color-line) 72px 73px, var(--color-bg) 73px); }
-  .rail .nav-icon { display: inline-flex; }
-  .rail .nav-text { display: none; }
-  .rail .nav-item { justify-content: center; }
-  .rail .logo { font-size: 0; } .rail .logo::first-letter { font-size: 19px; }
-}
+/* Collapsed rail (.rail.mini): the user's toggle (Ctrl+B) or a window under 1100 px (Shell useRailMini) */
+.rail.mini { flex-basis: 72px; }
+.rail.mini .nav-text, .rail.mini .count, .rail.mini .nav-group-name { display: none; }
+.rail.mini .rail-head { flex-direction: column; }
+.rail.mini .logo { padding: 0; }
+.rail.mini .nav-item, .rail.mini .rail-add { justify-content: center; padding: 0; }
+.rail.mini .nav-group { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--color-line); }
 }

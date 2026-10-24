@@ -23,7 +23,7 @@ const HOVER: Record<string, string> = {
 const TYPE: [string, string, string][] = [["32 / 800", "text-3xl font-extrabold tracking-[-0.025em]", "Promises"], ["26 / 800", "text-2xl font-extrabold", "Backlog"],
   ["20 / 800", "text-xl font-extrabold", "Top artists"], ["15 / 600", "text-md font-semibold", "Journey in Satchidananda"], ["14 / 400", "text-text-2", "Recommended by Meera."],
   ["12 / 400", "text-xs text-muted", "Desktop plays: live"], ["Mono 26 / 600", "font-mono text-2xl font-semibold", "6,519 plays"]];
-const KEYS: [string, string][] = [["Quick add from anywhere", "Ctrl+N"], ["Search", "Ctrl+K"], ["Set status on an item page", "1 to 5"], ["Rating, by half a star", "Arrow keys"], ["Close a dialog", "Esc"]];
+const KEYS: [string, string][] = [["Quick add from anywhere", "Ctrl+N"], ["Search", "Ctrl+K"], ["Collapse or expand the sidebar", "Ctrl+B"], ["Set status on an item page", "1 to 5"], ["Rating, by half a star", "Arrow keys"], ["Close a dialog", "Esc"]];
 
 const col = "flex flex-col gap-3";
 const rowFlex = "flex flex-wrap gap-2 items-center";
