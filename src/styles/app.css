@@ -39,12 +39,12 @@ h1, h2 { text-wrap: balance; }
 /* ---------- surfaces */
 .card { border-radius: 16px; background: var(--elev-1-bg); border: var(--hair); box-shadow: var(--shadow-elev-1); padding: 18px; transition: transform 150ms var(--ease-out), border-color 150ms, box-shadow 150ms; }
 .card.pad-s { padding: 6px; }
-.card.hover:hover, a:hover > .card.stat { transform: translateY(-1px); border-color: rgba(255,255,255,0.12); box-shadow: var(--shadow-elev-1-hover); }
+.card.hover:hover, a:hover > .card.stat { transform: translateY(-1px); border-color: rgba(255,255,255,0.10); box-shadow: var(--shadow-elev-1-hover); }
 a.card.hover:active, a:active > .card.stat { transform: scale(0.99); box-shadow: var(--shadow-elev-1); }
 .card.warn { border-color: rgba(245,181,68,0.35); }
 .card.year { background: radial-gradient(120% 160% at 0% 0%, rgba(245,181,68,0.16) 0%, rgba(23,25,28,0) 55%), var(--elev-1-bg); }
-.card.danger { background: transparent; border: 1px solid var(--color-danger-line); box-shadow: none; }
-.overlay { background: #1C1F23; border: 1px solid rgba(255,255,255,0.10); box-shadow: var(--shadow-elev-2); border-radius: 16px; }
+.card.danger { background: transparent; border: 1px solid rgba(255,122,107,0.2); box-shadow: none; }
+.overlay { background: #1C1F23; border: 1px solid rgba(255,255,255,0.08); box-shadow: var(--shadow-elev-2); border-radius: 16px; }
 /* DESIGN §2.2 asks for the album's dominant color at 8%; no artwork is stored or sampled (BRD §5.3), so it is the accent at 8%. */
 .now { background: radial-gradient(120% 160% at 0% 0%, rgba(245,181,68,0.08) 0%, rgba(23,25,28,0) 58%), var(--elev-1-bg); border-color: rgba(255,255,255,0.08); }
 
@@ -57,12 +57,12 @@ a.card.hover:active, a:active > .card.stat { transform: scale(0.99); box-shadow:
 .btn-primary { color: var(--color-accent-ink); background: linear-gradient(180deg, #F8C566, #F0A92E); box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 2px 8px rgba(245,181,68,0.18); border: 0; }
 .btn-primary:hover:not([disabled]) { background: linear-gradient(180deg, #FACF7E, #F3B23F); }
 .btn-primary:active { background: linear-gradient(180deg, #F0A92E, #E39A1F); }
-.btn-secondary { background: transparent; border-color: var(--color-line-strong); color: var(--color-text); font-weight: 600; }
-.btn-secondary:hover:not([disabled]) { background: var(--color-surface-2); border-color: var(--color-line-hover); }
+.btn-secondary { background: rgba(255,255,255,0.025); border-color: rgba(255,255,255,0.08); color: var(--color-text); font-weight: 600; }
+.btn-secondary:hover:not([disabled]) { background: var(--color-surface-2); border-color: rgba(255,255,255,0.14); }
 .btn-light { background: var(--color-text); color: var(--color-accent-ink); border: 0; }
 .btn-light:hover:not([disabled]) { background: #F7F8F9; }
-.btn-danger { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
-.btn-danger:hover:not([disabled]) { background: rgba(255,122,107,0.1); }
+.btn-danger { background: transparent; border-color: rgba(255,122,107,0.45); color: var(--color-danger); }
+.btn-danger:hover:not([disabled]) { background: rgba(255,122,107,0.1); border-color: var(--color-danger); }
 .btn-ghost { background: transparent; color: var(--color-link); padding: 0 6px; font-weight: 600; }
 .btn-ghost:hover:not([disabled]) { color: var(--color-link-hover); }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; border: 0; background: var(--color-surface-2); color: var(--color-text); cursor: pointer; font-size: 18px; transition: transform 100ms var(--ease-out), background 150ms, box-shadow 150ms; }
@@ -71,11 +71,11 @@ a.card.hover:active, a:active > .card.stat { transform: scale(0.99); box-shadow:
 .icon-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
 
 /* ---------- inputs */
-.input, select.input, textarea.input { height: 42px; padding: 0 14px; border: 1px solid var(--color-line-strong); border-radius: 10px; background: var(--color-bg); color: var(--color-text); transition: border-color 150ms, box-shadow 150ms; min-width: 0; }
+.input, select.input, textarea.input { height: 42px; padding: 0 14px; border: 1px solid var(--color-line-2); border-radius: 10px; background: var(--color-bg); color: var(--color-text); transition: border-color 150ms, box-shadow 150ms; min-width: 0; }
 .input.surface { background: var(--color-surface); border-color: var(--color-line-2); }
 .input::placeholder, textarea::placeholder { color: var(--color-faint); opacity: 1; }
 textarea.input { height: auto; padding: 12px; line-height: 1.55; resize: vertical; width: 100%; }
-.input:hover { border-color: var(--color-line-hover); }
+.input:hover { border-color: var(--color-line-strong); }
 .input:focus { border-color: var(--color-accent); box-shadow: 0 0 0 3px rgba(245,181,68,0.18); }
 .input.error { border-color: var(--color-danger); }
 .input:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--color-line-2); }
@@ -85,7 +85,7 @@ textarea.input { height: auto; padding: 12px; line-height: 1.55; resize: vertica
 .help { font-size: 12px; color: var(--color-muted); }
 .help.err { color: var(--color-danger); }
 /* Selection checkbox (M9): rounded-rect box, the check mark lands with a spring; on/off settings use `input.toggle` instead. */
-input[type="checkbox"]:not(.toggle) { appearance: none; display: inline-grid; place-content: center; flex: none; width: 18px; height: 18px; margin: 2px; border-radius: var(--radius-thumb); background: var(--color-bg); box-shadow: inset 0 0 0 1.5px var(--color-line-hover); cursor: pointer; transition: background 160ms var(--ease-out), box-shadow 150ms, transform 100ms var(--ease-out); }
+input[type="checkbox"]:not(.toggle) { appearance: none; display: inline-grid; place-content: center; flex: none; width: 18px; height: 18px; margin: 2px; border-radius: var(--radius-thumb); background: var(--color-bg); box-shadow: inset 0 0 0 1.5px var(--color-line-strong); cursor: pointer; transition: background 160ms var(--ease-out), box-shadow 150ms, transform 100ms var(--ease-out); }
 input[type="checkbox"]:not(.toggle)::before { content: ""; width: 5px; height: 9px; margin-top: -2px; border: solid var(--color-accent-ink); border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform 260ms var(--ease-spring); }
 input[type="checkbox"]:not(.toggle):not(:checked):hover:not(:disabled) { box-shadow: inset 0 0 0 1.5px var(--color-text-2); }
 input[type="checkbox"]:not(.toggle):active:not(:disabled) { transform: scale(0.9); }
@@ -113,7 +113,7 @@ button.chip:active:not([disabled]) { transform: scale(0.96); }
 button.chip[disabled] { opacity: 0.4; cursor: not-allowed; }
 button.chip.on:hover:not([disabled]) { background: #F8C566; }
 .chip.on { background: var(--color-accent); color: var(--color-accent-ink); font-weight: 700; }
-.chip.add { background: transparent; border: 1px dashed var(--color-line-strong); color: var(--color-text-2); }
+.chip.add { background: transparent; border: 1px dashed var(--color-line-2); color: var(--color-text-2); }
 .badge { display: inline-flex; padding: 3px 8px; border-radius: 8px; font-size: 12px; font-weight: 700; }
 .badge.need { background: rgba(245,181,68,0.14); color: var(--color-link); }
 .badge.status { background: var(--color-surface-2); color: var(--color-text-2); font-weight: 600; }
@@ -207,7 +207,7 @@ a.lrow:active { background: var(--color-surface-3); }
 .kbd { font-family: var(--font-mono); font-size: 11px; color: var(--color-faint); }
 
 /* ---------- toggle switch (M9): rounded-rect, not a pill (DESIGN §3 shape); the thumb overshoots a little and stretches on press */
-input.toggle { appearance: none; position: relative; flex: none; width: 38px; height: 22px; margin: 0; border-radius: var(--radius-thumb); background: var(--color-surface-3); box-shadow: inset 0 0 0 1px var(--color-line-strong); cursor: pointer; transition: background 220ms var(--ease-out), box-shadow 150ms; }
+input.toggle { appearance: none; position: relative; flex: none; width: 38px; height: 22px; margin: 0; border-radius: var(--radius-thumb); background: var(--color-surface-3); box-shadow: inset 0 0 0 1px var(--color-line-2); cursor: pointer; transition: background 220ms var(--ease-out), box-shadow 150ms; }
 input.toggle::before { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: var(--radius-thumb); background: var(--color-text-2); box-shadow: 0 1px 3px rgba(0,0,0,0.45); transform-origin: left; transition: transform 280ms var(--ease-spring), background 220ms; }
 input.toggle:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--color-line-hover); }
 input.toggle:not(:checked):hover:not(:disabled)::before { background: var(--color-text); }
@@ -235,7 +235,7 @@ input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 @keyframes panel-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
 @keyframes panel-in-l { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
 .st-panel .card { position: relative; }
-.st-panel .card:hover { border-color: rgba(255,255,255,0.09); }
+.st-panel .card:hover { border-color: rgba(255,255,255,0.07); }
 /* Spotlight: a light that follows the pointer along the card's hairline (--mx/--my set by Settings `spot`). */
 .st-panel .card::before { content: ""; position: absolute; inset: -1px; padding: 1px; border-radius: inherit; background: radial-gradient(240px circle at var(--mx, 50%) var(--my, -240px), rgba(255,255,255,0.32), transparent 70%); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity: 0; transition: opacity 250ms; pointer-events: none; }
 .st-panel .card:hover::before { opacity: 1; }

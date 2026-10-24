@@ -35,6 +35,6 @@
 /* Non-utility recipes used by the component layer. */
 :root {
   --elev-1-bg: linear-gradient(180deg, #1A1C20, #16181B);
-  --hair: 1px solid rgba(255,255,255,0.06);
+  --hair: 1px solid rgba(255,255,255,0.045);
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

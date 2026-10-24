@@ -19,7 +19,7 @@ function Choose() {
   const [busy, setBusy] = useState(false);
   const choose = () => { setBusy(true); setErr(undefined); api.pickImportSource().then(setPath, (e) => setErr(api.toAppError(e))).finally(() => setBusy(false)); };
   return <>
-    <div className="card flex flex-col gap-3 items-center text-center p-10 border border-dashed border-line-strong">
+    <div className="card flex flex-col gap-3 items-center text-center p-10 border border-dashed border-line-2">
       <b className="text-lg">Choose the folder or .zip from Spotify's email</b>
       <span className="text-text-2">Runout reads it on this PC; nothing is uploaded.</span>
       <button className="btn btn-secondary" onClick={choose} disabled={busy}>{busy ? <Dots /> : "Choose folder or .zip"}</button>
