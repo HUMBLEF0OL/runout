@@ -1,6 +1,6 @@
 # M10 design: Insights v3, deep listening analytics
 
-Status: **final design**, 24 Oct 2026 (user goal: "finalize the design and put it in M10"). Brainstormed with the user the same day. Decision **D35**. Plan: [plans/M10-deep-insights.md](../plans/M10-deep-insights.md). Milestone: [MILESTONES M10](../MILESTONES.md#m10--deep-listening-insights-insights-v3).
+Status: **final design, milestone ready**, 24 Oct 2026 (user goal: "finalize the design and put it in M10"). Brainstormed with the user the same day. Decision **D35**. Plan: [plans/M10-deep-insights.md](../plans/M10-deep-insights.md). Milestone: [MILESTONES M10](../MILESTONES.md#m10--deep-listening-insights-insights-v3).
 
 Mockup: [m10-insights-mockup.html](m10-insights-mockup.html). Open it with Vite on :1420; it loads the app's own stylesheet from there. Screens: [screens/m10-insights/](screens/m10-insights/) (one PNG per tab, with feasibility notes shown). All mock numbers are invented; only the structure is the design.
 

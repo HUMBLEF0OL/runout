@@ -3,7 +3,9 @@
 Specs: [MILESTONES M10](../MILESTONES.md#m10--deep-listening-insights-insights-v3) · design and every definition: [design/M10-insights-v3.md](../design/M10-insights-v3.md) (mockup + screens in `docs/design/`) · TSD §4.9, §4.14, §4.13 · API.md §4 · BRD FR-031, 032, 047, 048, NFR-04, D35, O8.
 Agents: `rust-core` (WI 2–5), `react-ui` (WI 6–8), `spec-reviewer` (each step), `spotify-researcher` (WI 9's T6, only after U-11).
 
-**Entry:** M9 screens Insights and Home settled, so M10 builds on their recipes (charts.tsx, `.hm-plot`, `Stat`, `useSlide`). Unlike M2–M7, M10 is one feature end to end: contract, mock, UI, Rust, integration, in that order per tab.
+**Status: ready (24 Oct 2026).** Next: WI 1 (contract).
+
+**Entry:** M9 Home (WI 3) and Insights (WI 5) done, met 24 Oct 2026. M10 builds on their recipes (charts.tsx, `.hm-plot`, `Stat`, `useSlide`). It runs alongside M9's Item screen and review. M10 recipes go in their own `app.css` section (`/* ---------- Insights v3 (M10) */`), so the two never edit the same lines. Unlike M2–M7, M10 is one feature end to end: contract, mock, UI, Rust, integration, in that order per tab.
 
 **Known gaps owned here:** G-45 (skip-rate denominator), G-46 (comparisons mix coverage). Remove each row when fixed.
 
