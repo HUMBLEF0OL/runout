@@ -55,7 +55,7 @@ Agents: `react-ui` (UI streamline & states), `rust-core` (gap resolution & backe
 
      | Candidate | Value | Cost / risk | Recommendation |
      |---|---|---|---|
-     | Deep listening analytics (trends, streaks, charts by period, clock, discovery rate) | High: 180k imported plays + live log already in SQLite; extends Insights | Medium: new `insights` queries + 1–2 screens; compliance-clean (sources U/S/E only, BRD §4.3) | **Do first** (M9 candidate) |
+     | Deep listening analytics (trends, streaks, charts by period, clock, discovery rate) | High: 180k imported plays + live log already in SQLite; extends Insights | Medium: new `insights` queries + 1–2 screens; compliance-clean (sources U/S/E only, BRD §4.3) | **Do first** (M9 candidate) → became **M10** (D35, 24 Oct 2026) |
      | Markdown / CSV export | Medium: data portability, Obsidian notes | Low: one Rust command + file dialog; export only source U/S/E fields (promoted fields marked, BRD §5.2) | **Do second** |
      | Custom fields; per-track tracking in albums | Medium | Medium–high: schema + contract + FTS changes | Wait for U-5 daily-use feedback |
      | PWA companion over local Wi-Fi | Low since the Runout Inbox covers phone capture (D33) | High: new network surface, auth on LAN | Drop unless U-5 shows a need |

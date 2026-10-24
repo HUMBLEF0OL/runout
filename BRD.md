@@ -30,6 +30,7 @@
 | P5 | U-5 no longer gates M7 (D32, user decision 20 Oct 2026): M7 starts once M6 code, installer and U-3/U-4 pass. Two weeks of daily use and the section 15 metrics run in parallel; their review is the MVP’s final sign-off. |
 | P6 | Phone capture moves to the Runout Inbox playlist (D33, FR-046, user decision 20 Oct 2026): works on any network; the iOS Shortcut over home Wi-Fi (FR-018) becomes an optional fallback and leaves the MVP release criteria. |
 | P7 | Last.fm relay dropped from future candidates (D34, user decision 21 Oct 2026); replaced by deep listening analytics built into Runout on its own logged and imported plays. |
+| P8 | Deep listening analytics moved from future candidates into scope as milestone M10 (D35, user decision 24 Oct 2026): period reports with coverage-aware comparisons, trends, discovery, listening behaviour, records, an explorer and a data-coverage view, all computed locally from sources U, S and E (FR-047, FR-048; design in docs/design/M10-insights-v3.md). Genres, release decades and artist countries need an open music database and wait for the user's approval (U-11, O8). |
 
 ### 0.2 Changes in Version 0.6 (design-first delivery)
 
@@ -180,6 +181,7 @@ A listener who regularly discovers music on desktop and phone, wants to explore 
 - Desktop listening logger via the Windows media session (SMTC).
 - Import of Spotify Extended Streaming History and Account Data exports (music only).
 - Listening and collection insights derived only from sources U, S and E (section 5).
+- Deep listening analytics (period reports with coverage-aware comparisons, trends, discovery, listening behaviour, records, an explorer and a data-coverage view), computed locally from sources U, S and E (M10, D35).
 - Read-only playlist analysis (R2) and Playlist Studio write-back for owned/collaborative playlists (R3).
 - Spotify Web API features listed in Release 3, in Development Mode.
 - Local storage, export, backup (max 3 copies), restore, delete.
@@ -199,7 +201,7 @@ A listener who regularly discovers music on desktop and phone, wants to explore 
 - Paid APIs, paid databases, paid subscriptions to the app.
 ### 4.4 Future candidates (not committed)
 
-- Deep listening analytics built into Runout, of the kind Last.fm offers (for example trends over time, streaks, charts by period, listening clock, discovery rate), computed locally from logged and imported plays (sources U, S, E; never Web API data, section 4.3). No Last.fm account or relay (D34).
+- Open music database enrichment for the deep listening analytics (MusicBrainz, Wikidata): genres, release decades and artist countries. It sends artist and album names off the PC, so it needs the user's approval first (U-11, O8). The analytics themselves moved into scope as M10 (D35).
 - Progressive web app (PWA) companion served over local Wi-Fi.
 - Cross-device sync via user-owned storage (iCloud Drive / OneDrive file).
 - Custom fields; per-track tracking inside albums.
@@ -341,6 +343,7 @@ A play is any listening event with ≥ 30 seconds played, applied identically to
 | Collection | Backlog growth, completion rate, time from Planned to Explored, rating distribution, tag trends, reviews per month | U |
 | Cross | Ratings vs plays, backlog items never played, loved but not played recently | U + S/E |
 | Year in review | Personal annual summary on demand | U, S, E |
+| Deep analytics (M10) | Period reports with coverage-aware comparisons, lifetime trends and eras, artist arcs, discovery and stick rate, music ratio, listening fingerprint (own baseline only), how plays end, skips, shuffle, devices, sessions, records, explorer, data coverage | U, S, E |
 
 - Each insight states which data sources it uses.
 - The Insights page shows data freshness: “Desktop: live · All devices: up to <latest export date>”.
@@ -415,6 +418,8 @@ Priority: P0 must have for the release; P1 should have; P2 could have.
 | FR-044 | Follow Spotify design guidelines wherever Spotify metadata or artwork is shown. | MVP/R3 | P0 |
 | FR-045 | Record local usage counters (app opens, page visits, capture duration) for the success metrics; never transmitted. | MVP | P1 |
 | FR-046 | Runout Inbox: create a private “Runout Inbox” playlist on connect (re-create only on request); import its tracks into the backlog as “name needed” per 5.2; save a batch from one album as the album; remove imported tracks from the Inbox; optional import of newly saved albums and followed artists. | R3 | P1 |
+| FR-047 | Deep listening analytics: period reports, trends, discovery, listening behaviour, records, an explorer and a data-coverage view, computed locally from sources U, S and E only; heuristics are labelled as estimates; scores are never shared or exported. | R2 | P1 |
+| FR-048 | Coverage-aware comparisons: a comparison between two periods uses only sources that cover both periods; gaps in the data are shown as no data, never as silence. | R2 | P0 |
 
 ## 8. Key User Journeys
 
@@ -654,6 +659,7 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 | M6 Integration: MVP release | MVP screens on real data, installer | MVP criteria pass on the installed build; 2 weeks of daily use measured against section 15, reviewed as the MVP’s final sign-off (runs in parallel with M7, D32) | 4–6 h agentic, plus U-3/U-4; 2 weeks of daily use (U-5) in parallel, not blocking M7 |
 | M7 Integration: R2 and R3 | Listening, insights and Spotify screens on real data; Runout Inbox (phone capture) | R2 and R3 criteria pass | 3–4 h agentic |
 | M8 Future candidates | Selected items from 4.4 | Per item | As needed |
+| M10 Deep listening insights | Insights v3 (FR-047, FR-048): logger stores track length, shuffle and running intervals; rollups; Report, Trends, Discovery, How you listen, Records, Explore and Your data tabs; Genres & decades only after U-11 | docs/MILESTONES.md M10 acceptance passes on the installed build with the user's real history | 6 to 10 h agentic; WI 9 only after U-11 |
 
 ## 15. Business Success Metrics
 
@@ -719,6 +725,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | D32 | Does daily use gate R2/R3 integration? | No (user decision 20 Oct 2026). M7 starts once M6 code, installer and U-3/U-4 pass. U-5 (2 weeks of daily use, section 15 metrics) runs in parallel and is the MVP’s final sign-off; findings feed fixes, not a gate |
 | D33 | How is music captured from the phone? | Through a private “Runout Inbox” Spotify playlist that Runout creates on connect and empties as it imports (R3), because a Wi-Fi listener needs the phone and PC on the same network. The iOS Shortcut stays as an optional fallback (user decision 20 Oct 2026) |
 | D34 | Is phone listening history relayed through Last.fm? | No (user decision 21 Oct 2026). Last.fm-style deep analytics are a future candidate built into Runout on its own data (desktop logger and data export, sources U, S, E); no Last.fm account or scrobbling |
+| D35 | Are deep listening analytics built? | Yes (user decision 24 Oct 2026, M10): Last.fm-depth insights computed locally from sources U, S and E, with coverage-aware comparisons. Not built: BPM, energy and mood (no permitted source), mainstream scores and comparisons with other people (no other listeners), discovery source (not in the export), a free-text question box (needs an AI model; NFR-03, NFR-07). Genres, decades and artist countries only if the user approves an open music database (U-11, O8). |
 
 ## 18. Remaining Open Items
 
@@ -731,6 +738,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | O5 | Spotify cache expiry. Resolved: 7 days (TSD §5.2; built in M5, swept at startup and daily). | Resolved by technical design | Done |
 | O6 | iOS capture transport: local-network listener or shared file | Resolved: local-network listener (docs/TSD.md §5.1) | Done |
 | O7 | Optional: ask Spotify developer support about export-data analysis in a registered app (11.1) | User | Before M5 |
+| O8 | May Runout send artist and album names to an open music database (MusicBrainz, Wikidata) to add genres, release decades and artist countries to the deep analytics? Breaks "nothing leaves the PC except to Spotify" and adds a data source to section 5.1. | User (U-11), then agent (TSD T6: licence, rate limit, match rate) | Before M10 WI 9 |
 
 ## 19. Final Product Definition
 

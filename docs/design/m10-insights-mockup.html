@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Runout · Insights v3 (mockup)</title>
+<link rel="stylesheet" href="http://localhost:1420/src/styles/index.css?direct">
+<style>
+/* Mockup-only layout glue. Every colour, radius and type size is a Runout token; components are the app's own classes. */
+.g{display:grid;gap:16px}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g21{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}.g12{grid-template-columns:minmax(0,1fr) minmax(0,2fr)}
+.col{display:flex;flex-direction:column;gap:12px}.rowf{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.between{justify-content:space-between}
+.mono{font-family:var(--font-mono)}.muted{color:var(--color-muted)}.faint{color:var(--color-faint)}.t2{color:var(--color-text-2)}.acc{color:var(--color-accent)}
+.sm{font-size:13px}.xs{font-size:12px}.b{font-weight:700}
+.nav-item[aria-current="page"]::after{content:"";position:absolute;right:-14px;top:8px;width:2px;height:20px;border-radius:3px;background:var(--color-accent)}
+.seg.line button[aria-selected="true"]{box-shadow:inset 0 -2px 0 var(--color-accent);border-radius:0}
+.seg.line{overflow-x:auto;flex-wrap:nowrap}.seg.line button{white-space:nowrap}
+.panel{display:none;flex-direction:column;gap:20px}.panel.on{display:flex}
+.sec-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:8px 16px}
+/* feasibility notes (mockup annotation, not product UI) */
+.fz{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:6px;border:1px dashed var(--color-line-strong);font-family:var(--font-mono);font-size:11px;color:var(--color-text-2);white-space:nowrap}
+.fz i{width:7px;height:7px;border-radius:2px;display:inline-block}
+.fz.now i{background:var(--color-text)} .fz.exp i{background:var(--color-accent)} .fz.heu i{background:var(--color-line-hover)} .fz.chg i{background:var(--color-danger)} .fz.opt{border-color:rgba(245,196,107,.6);color:var(--color-link)} .fz.opt i{background:transparent;box-shadow:inset 0 0 0 1.5px var(--color-link)}
+.radarwrap svg{width:100%;max-width:300px;height:auto}
+.tagheat{display:grid;grid-template-columns:130px repeat(12,minmax(0,1fr));gap:3px;align-items:center;font-size:12px}.tagheat i{display:block;height:18px;border-radius:3px;background:var(--color-accent)}
+.stack{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:3px;height:170px;align-items:end}.stack div{display:flex;flex-direction:column-reverse;height:100%;gap:1px}.stack span{display:block}
+.dec{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:12px;align-items:end}.dec .c{display:flex;flex-direction:column;gap:6px;justify-content:flex-end;height:220px}.dec .c i{display:block;border-radius:3px 3px 0 0;background:var(--color-bar)}.dec .c.on i{background:var(--color-accent)}
+.fzline{font-size:12px;color:var(--color-faint);border-left:2px dashed var(--color-line-strong);padding-left:8px}
+body.nofz .fz, body.nofz .fzline, body.nofz .fzonly{display:none}
+.anno{border:1px dashed var(--color-line-strong);border-radius:16px;padding:14px 18px;background:transparent}
+/* charts, built from the app's recipes */
+.daybars{display:grid;gap:3px;align-items:end;height:120px}.daybars i{display:block;border-radius:3px 3px 0 0;background:var(--color-bar);position:relative}
+.daybars i.on{background:var(--color-accent)}.daybars i.gap{background:repeating-linear-gradient(45deg,var(--color-line-2) 0 3px,transparent 3px 6px)}
+.ghostline{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.clock{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:3px;align-items:end;height:130px}
+.clock .h{position:relative;height:100%;display:flex;align-items:flex-end}.clock .h i{display:block;width:100%;border-radius:3px 3px 0 0;background:var(--color-bar)}
+.clock .h.on i{background:var(--color-accent)}.clock .h b{position:absolute;left:-1px;right:-1px;border-top:2px solid var(--color-text-2);opacity:.55}
+.ticks{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;color:var(--color-faint)}
+.cal{display:grid;grid-template-rows:repeat(7,12px);grid-auto-flow:column;grid-auto-columns:12px;gap:3px}.cal i{border-radius:3px;background:var(--color-accent)}
+.life{position:relative;height:150px;display:grid;gap:2px;align-items:end}
+.life i{display:block;border-radius:2px 2px 0 0;background:var(--color-bar)}.life i.sel{background:var(--color-accent)}.life i.gap{background:transparent;border-bottom:2px dotted var(--color-danger)}
+.eras{position:relative;height:42px;margin-top:6px}
+.era{position:absolute;top:0;height:30px;border-radius:6px;background:var(--color-surface-2);border:var(--hair);padding:4px 8px;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--color-text-2)}
+.era b{color:var(--color-text);font-weight:700}
+.brush{position:absolute;top:-4px;bottom:-4px;border:1px solid var(--color-accent);border-radius:6px;background:rgba(245,181,68,.08)}
+.mv{font-family:var(--font-mono);font-size:12px;width:44px;text-align:right}.mv.up{color:var(--color-text)}.mv.dn{color:var(--color-faint)}.mv.new{color:var(--color-accent);font-weight:600}
+.rk{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr) 64px auto 44px;gap:12px;align-items:center;margin-inline:-8px;padding:7px 8px;border-radius:10px;transition:background 150ms}
+.rk:hover{background:var(--color-surface-2)}
+.spark{width:64px;height:20px}.spark polyline{fill:none;stroke:var(--color-text-2);stroke-width:1.5}
+.arc{display:grid;grid-template-columns:180px minmax(0,1fr) 220px;gap:16px;align-items:center;padding:10px 0;border-bottom:1px solid var(--color-line)}.arc:last-child{border:0}
+.arc svg{width:100%;height:36px}
+.fp{display:grid;grid-template-columns:120px minmax(0,1fr) 36px;gap:12px;align-items:center;font-size:13px;margin:7px 0}
+.fp .tr{position:relative;height:4px;border-radius:3px;background:var(--color-line-2)}.fp .tr i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--color-text-2)}
+.fp .tr b{position:absolute;top:-5px;width:2px;height:14px;border-radius:2px;background:var(--color-accent)}
+.mult{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.mult .card{padding:14px}.mult svg{width:100%;height:56px}
+.ends{display:flex;height:12px;gap:3px;border-radius:3px;overflow:hidden}.ends i{display:block;height:100%;border-radius:3px}
+.key{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--color-text-2)}.key span{display:inline-flex;align-items:center;gap:6px}.key i{width:8px;height:8px;border-radius:3px;display:inline-block}
+.cov{position:relative;height:40px;border-radius:10px;background:var(--color-surface-2);overflow:hidden}
+.cov i{position:absolute;top:0;bottom:0}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}.tbl th{text-align:left;font-weight:600;color:var(--color-muted);font-size:12px;padding:6px 8px;border-bottom:1px solid var(--color-line)}
+.tbl td{padding:8px;border-bottom:1px solid var(--color-line)}.tbl tr:last-child td{border:0}.tbl td.n{font-family:var(--font-mono);text-align:right}
+.qb{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px;border-radius:10px;background:var(--color-bg);border:1px solid var(--color-line-2)}
+.qb .lbl{font-size:12px;color:var(--color-faint);margin-right:2px}
+.lines svg{width:100%;height:200px}
+.sentence{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:var(--color-surface-2)}
+.sentence .k{flex:none;width:6px;height:6px;margin-top:7px;border-radius:2px;background:var(--color-accent)}
+.recs .card{display:flex;flex-direction:column;gap:6px;min-height:118px}
+.recs .v{font-family:var(--font-mono);font-size:22px;font-weight:600;letter-spacing:-.02em}
+.sessdist{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px;align-items:end;height:70px}.sessdist i{display:block;border-radius:3px 3px 0 0;background:var(--color-bar)}.sessdist i.on{background:var(--color-accent)}
+.pill-note{display:inline-flex;gap:6px;align-items:center;font-size:12px;color:var(--color-text-2)}
+@media (max-width:1180px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3,.g21,.g12{grid-template-columns:1fr}.mult{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style></head>
+<body>
+<div class="app">
+<aside class="rail"><div class="rail-head"><a aria-label="Runout, home" class="logo" href="#/home"><img alt="" class="logo-icon" src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20width='1024'%20height='1024'%20viewBox='0%200%2064%2064'%3e%3c!--%20Runout%20app%20icon%20master%20('Dog-ear'):%20the%20record%20folded%20at%20one%20edge%20like%20a%20marked%20page.%20Regenerate%20every%20size%20with:%20npx%20tauri%20icon%20src-tauri/icons/icon.svg%20--%3e%3cdefs%3e%3clinearGradient%20id='amber'%20x1='0'%20y1='0'%20x2='0'%20y2='1'%3e%3cstop%20offset='0'%20stop-color='%23F8C566'/%3e%3cstop%20offset='1'%20stop-color='%23EEA52B'/%3e%3c/linearGradient%3e%3cclipPath%20id='body'%3e%3cpath%20d='M36.86%204.43A28%2028%200%201%200%2059.57%2036.86Z'/%3e%3c/clipPath%3e%3c/defs%3e%3cpath%20d='M36.86%204.43A28%2028%200%201%200%2059.57%2036.86Z'%20fill='url(%23amber)'/%3e%3cg%20clip-path='url(%23body)'%20fill='none'%20stroke='%23C9861C'%20stroke-opacity='.55'%20stroke-width='1'%3e%3ccircle%20cx='32'%20cy='32'%20r='22'/%3e%3ccircle%20cx='32'%20cy='32'%20r='16'/%3e%3cpath%20d='M35.36%206.43A28%2028%200%200%200%2058.07%2038.86Z'%20stroke='%23101113'%20stroke-opacity='.28'%20stroke-width='3'/%3e%3c/g%3e%3cpath%20d='M36.86%204.43A28%2028%200%200%200%2059.57%2036.86Z'%20fill='%23ECEDEF'/%3e%3ccircle%20cx='32'%20cy='32'%20r='4'%20fill='%23101113'/%3e%3c/svg%3e"><span class="nav-text">Runout</span></a><button type="button" class="icon-btn rail-toggle" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar (Ctrl+B)" tabindex="0"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 256 256"><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z"></path></svg></button></div><button type="button" class="rail-add" aria-label="Quick add" title="Quick add (Ctrl+N)" tabindex="0"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true"><path d="M228,128a12,12,0,0,1-12,12H140v76a12,12,0,0,1-24,0V140H40a12,12,0,0,1,0-24h76V40a12,12,0,0,1,24,0v76h76A12,12,0,0,1,228,128Z"></path></svg><span class="nav-text">Quick add</span><span class="kbd nav-text ml-auto">Ctrl N</span></button><nav class="nav" aria-label="Main"><a aria-label="Home" title="Home" tabindex="0" class="nav-item" href="#/home"><span class="nav-label"><span class="nav-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M219.31,108.68l-80-80a16,16,0,0,0-22.62,0l-80,80A15.87,15.87,0,0,0,32,120v96a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V160h32v56a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V120A15.87,15.87,0,0,0,219.31,108.68ZM208,208H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48V120l80-80,80,80Z"></path></svg></span><span class="nav-text">Home</span></span><span class="count"></span></a><div role="group" aria-label="Listening" class="nav-group"><span class="nav-group-name" aria-hidden="true">Listening</span><a aria-label="Recent plays" title="Recent plays" tabindex="0" class="nav-item" href="#/plays"><span class="nav-label"><span class="nav-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.72l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm-8-48A95.44,95.44,0,0,0,60.08,60.15C52.81,67.51,46.35,74.59,40,82V64a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H72a8,8,0,0,0,0-16H49c7.15-8.42,14.27-16.35,22.39-24.57a80,80,0,1,1,1.66,114.75,8,8,0,1,0-11,11.64A96,96,0,1,0,128,32Z"></path></svg></span><span class="nav-text">Recent plays</span></span><span class="count"></span></a><a aria-label="Insights" title="Insights" tabindex="0" class="nav-item active" href="#/insights" aria-current="page"><span class="nav-label"><span class="nav-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M224,200h-8V40a8,8,0,0,0-8-8H152a8,8,0,0,0-8,8V80H96a8,8,0,0,0-8,8v40H48a8,8,0,0,0-8,8v64H32a8,8,0,0,0,0,16H224a8,8,0,0,0,0-16ZM160,48h40V200H160ZM104,96h40V200H104ZM56,144H88v56H56Z"></path></svg></span><span class="nav-text">Insights</span></span><span class="count"></span></a></div><div role="group" aria-label="Collection" class="nav-group"><span class="nav-group-name" aria-hidden="true">Collection</span><a aria-label="Backlog" title="Backlog" tabindex="0" class="nav-item" href="#/backlog"><span class="nav-label"><span class="nav-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M32,64a8,8,0,0,1,8-8H216a8,8,0,0,1,0,16H40A8,8,0,0,1,32,64Zm104,56H40a8,8,0,0,0,0,16h96a8,8,0,0,0,0-16Zm0,64H40a8,8,0,0,0,0,16h96a8,8,0,0,0,0-16Zm112-24a8,8,0,0,1-3.76,6.78l-64,40A8,8,0,0,1,168,200V120a8,8,0,0,1,12.24-6.78l64,40A8,8,0,0,1,248,160Zm-23.09,0L184,134.43v51.14Z"></path></svg></span><span class="nav-text">Backlog</span></span><span class="count">27</span></a><a aria-label="Library" title="Library" tabindex="0" class="nav-item" href="#/library"><span class="nav-label"><span class="nav-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M231.65,194.55,198.46,36.75a16,16,0,0,0-19-12.39L132.65,34.42a16.08,16.08,0,0,0-12.3,19l33.19,157.8A16,16,0,0,0,169.16,224a16.25,16.25,0,0,0,3.38-.36l46.81-10.06A16.09,16.09,0,0,0,231.65,194.55ZM136,50.15c0-.06,0-.09,0-.09l46.8-10,3.33,15.87L139.33,66Zm6.62,31.47,46.82-10.05,3.34,15.9L146,97.53Zm6.64,31.57,46.82-10.06,13.3,63.24-46.82,10.06ZM216,197.94l-46.8,10-3.33-15.87L212.67,182,216,197.85C216,197.91,216,197.94,216,197.94ZM104,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V48A16,16,0,0,0,104,32ZM56,48h48V64H56Zm0,32h48v96H56Zm48,128H56V192h48v16Z"></path></svg></span><span class="nav-text">Library</span></span><span class="count">66</span></a><a aria-label="Rediscover" title="Rediscover" tabindex="0" class="nav-item" href="#/rediscover"><span class="nav-label"><span class="nav-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M224,48V96a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h28.69L182.06,73.37a79.56,79.56,0,0,0-56.13-23.43h-.45A79.52,79.52,0,0,0,69.59,72.71,8,8,0,0,1,58.41,61.27a96,96,0,0,1,135,.79L208,76.69V48a8,8,0,0,1,16,0ZM186.41,183.29a80,80,0,0,1-112.47-.66L59.31,168H88a8,8,0,0,0,0-16H40a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V179.31l14.63,14.63A95.43,95.43,0,0,0,130,222.06h.53a95.36,95.36,0,0,0,67.07-27.33,8,8,0,0,0-11.18-11.44Z"></path></svg></span><span class="nav-text">Rediscover</span></span><span class="count">4</span></a></div><div role="group" aria-label="Spotify" class="nav-group"><span class="nav-group-name" aria-hidden="true">Spotify</span><a aria-label="Playlists" title="Playlists" tabindex="0" class="nav-item" href="#/playlists"><span class="nav-label"><span class="nav-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M32,64a8,8,0,0,1,8-8H216a8,8,0,0,1,0,16H40A8,8,0,0,1,32,64Zm8,72H160a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16Zm72,48H40a8,8,0,0,0,0,16h72a8,8,0,0,0,0-16Zm135.66-57.7a8,8,0,0,1-10,5.36L208,122.75V192a32.05,32.05,0,1,1-16-27.69V112a8,8,0,0,1,10.3-7.66l40,12A8,8,0,0,1,247.66,126.3ZM192,192a16,16,0,1,0-16,16A16,16,0,0,0,192,192Z"></path></svg></span><span class="nav-text">Playlists</span></span><span class="count"></span></a><a aria-label="From Spotify" title="From Spotify" tabindex="0" class="nav-item" href="#/spotify"><span class="nav-label"><span class="nav-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216ZM172.42,72.84l-64,32a8.05,8.05,0,0,0-3.58,3.58l-32,64A8,8,0,0,0,80,184a8.1,8.1,0,0,0,3.58-.84l64-32a8.05,8.05,0,0,0,3.58-3.58l32-64a8,8,0,0,0-10.74-10.74ZM138,138,97.89,158.11,118,118l40.15-20.07Z"></path></svg></span><span class="nav-text">From Spotify</span></span><span class="count"></span></a></div><div class="nav-foot"><a aria-label="Settings" title="Settings" tabindex="0" class="nav-item" href="#/settings"><span class="nav-label"><span class="nav-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm109.94-52.79a8,8,0,0,0-3.89-5.4l-29.83-17-.12-33.62a8,8,0,0,0-2.83-6.08,111.91,111.91,0,0,0-36.72-20.67,8,8,0,0,0-6.46.59L128,41.85,97.88,25a8,8,0,0,0-6.47-.6A112.1,112.1,0,0,0,54.73,45.15a8,8,0,0,0-2.83,6.07l-.15,33.65-29.83,17a8,8,0,0,0-3.89,5.4,106.47,106.47,0,0,0,0,41.56,8,8,0,0,0,3.89,5.4l29.83,17,.12,33.62a8,8,0,0,0,2.83,6.08,111.91,111.91,0,0,0,36.72,20.67,8,8,0,0,0,6.46-.59L128,214.15,158.12,231a7.91,7.91,0,0,0,3.9,1,8.09,8.09,0,0,0,2.57-.42,112.1,112.1,0,0,0,36.68-20.73,8,8,0,0,0,2.83-6.07l.15-33.65,29.83-17a8,8,0,0,0,3.89-5.4A106.47,106.47,0,0,0,237.94,107.21Zm-15,34.91-28.57,16.25a8,8,0,0,0-3,3c-.58,1-1.19,2.06-1.81,3.06a7.94,7.94,0,0,0-1.22,4.21l-.15,32.25a95.89,95.89,0,0,1-25.37,14.3L134,199.13a8,8,0,0,0-3.91-1h-.19c-1.21,0-2.43,0-3.64,0a8.08,8.08,0,0,0-4.1,1l-28.84,16.1A96,96,0,0,1,67.88,201l-.11-32.2a8,8,0,0,0-1.22-4.22c-.62-1-1.23-2-1.8-3.06a8.09,8.09,0,0,0-3-3.06l-28.6-16.29a90.49,90.49,0,0,1,0-28.26L61.67,97.63a8,8,0,0,0,3-3c.58-1,1.19-2.06,1.81-3.06a7.94,7.94,0,0,0,1.22-4.21l.15-32.25a95.89,95.89,0,0,1,25.37-14.3L122,56.87a8,8,0,0,0,4.1,1c1.21,0,2.43,0,3.64,0a8.08,8.08,0,0,0,4.1-1l28.84-16.1A96,96,0,0,1,188.12,55l.11,32.2a8,8,0,0,0,1.22,4.22c.62,1,1.23,2,1.8,3.06a8.09,8.09,0,0,0,3,3.06l28.6,16.29A90.49,90.49,0,0,1,222.9,142.12Z"></path></svg></span><span class="nav-text">Settings</span></span><span class="count"></span></a></div><span class="nav-ind" aria-hidden="true"></span></nav><div class="rail-box"><a aria-label="Now playing: Love Is Everywhere by Pharoah Sanders" class="rail-now" href="#/home"><span class="flex items-center gap-1.5 text-xs text-muted"><span class="live" aria-hidden="true"></span>Now playing</span><span class="font-semibold truncate">Love Is Everywhere</span><span class="text-muted text-xs truncate">Pharoah Sanders</span></a><span class="font-semibold">Data freshness</span><span class="text-muted leading-[1.45]">Desktop plays: live. All devices: up to your export of 2 Oct.</span><a class="font-semibold" href="#/import/1">Import a newer export</a></div></aside>
+<main class="main" style="max-width:1320px">
+
+  <div class="topbar">
+    <form onsubmit="return false"><input class="input surface" style="flex:1" placeholder="Search your library, or paste a Spotify link to add it"><button class="btn btn-primary">Add</button></form>
+  </div>
+
+  <div class="anno fzonly">
+    <div class="rowf between">
+      <div class="col" style="gap:4px"><b>Insights v3 · extended mockup</b>
+        <span class="xs muted">Built with Runout's own stylesheet and components. Mock numbers in the shape of your history (180k plays, 2015 → now). Dashed tags show what each part needs, from the data audit of 24 Oct 2026.</span></div>
+      <label class="switch-row" style="margin:0"><span class="sm">Show feasibility notes</span><span class="toggle-wrap"><input type="checkbox" class="toggle" checked onchange="document.body.classList.toggle('nofz',!this.checked)"><span class="toggle-thumb" style="left:19px"></span></span></label>
+    </div>
+    <div class="rowf" style="margin-top:10px">
+      <span class="fz now"><i></i>Build now: data is stored</span>
+      <span class="fz exp"><i></i>Export plays only: desktop plays lack the field</span>
+      <span class="fz heu"><i></i>Heuristic: a best guess, labelled as one</span>
+      <span class="fz chg"><i></i>Needs a logger or schema change</span>
+      <span class="fz opt"><i></i>Needs your OK: open music database (MusicBrainz / Wikidata)</span>
+    </div>
+  </div>
+
+  <div class="page-head">
+    <h1 class="page-title">Insights</h1>
+    <div class="rowf">
+      <div class="seg" role="tablist" id="grain"><button aria-selected="false">Week</button><button aria-selected="true">Month</button><button aria-selected="false">Year</button><button aria-selected="false">All time</button><button aria-selected="false">Custom…</button></div>
+      <div class="seg"><button aria-label="Previous month">‹</button><button class="mono" aria-selected="false" style="pointer-events:none;color:var(--color-text)">Sep 2026</button><button aria-label="Next month">›</button></div>
+      <select class="input surface" style="height:40px" aria-label="Compare with"><option>vs the month before</option><option>vs Sep 2025</option><option>vs your usual month</option></select>
+    </div>
+  </div>
+
+  <div class="seg line" role="tablist" id="tabs">
+    <button data-p="report" aria-selected="true">Report</button>
+    <button data-p="trends" aria-selected="false">Trends</button>
+    <button data-p="discovery" aria-selected="false">Discovery</button>
+    <button data-p="habits" aria-selected="false">How you listen</button>
+    <button data-p="records" aria-selected="false">Records</button>
+    <button data-p="genres" aria-selected="false">Genres &amp; decades <span class="fz opt" style="margin-left:6px;padding:0 5px"><i></i></span></button>
+    <button data-p="explore" aria-selected="false">Explore</button>
+    <button data-p="data" aria-selected="false">Your data</button>
+    <button data-p="old" aria-selected="false" class="faint">Collection · Your take · Year in review</button>
+  </div>
+
+  <!-- ============ REPORT ============ -->
+  <section class="panel on" id="p-report">
+    <p class="freshness" style="margin:0">Desktop plays: live. All devices: up to your export of 2 Oct. 112 private-session plays excluded. Nothing here comes from the Spotify API.</p>
+
+    <div class="banner warn">
+      <div class="col" style="gap:2px"><b class="sm">From 3 Oct, only plays on this PC are counted</b>
+        <span class="xs t2">Phone and other devices arrive with your next Spotify export. Until then, comparisons use desktop plays on both sides so the change is like for like.</span></div>
+      <button class="btn btn-secondary s">How to get a new export</button>
+    </div>
+    <div class="fzline">Coverage-aware comparisons fix a real flaw: today "vs the month before" mixes all-device months with desktop-only weeks. Built from per-source date ranges, which are stored.</div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="g g21">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Every day of September</h2><span class="fz now"><i></i>now</span></div>
+        <div class="rowf"><span class="hm-big">41 h</span><span class="sm t2">listened, busiest on <b>Sat 13 Sep</b> (6 h 12 m). The faint line is August, day by day.</span></div>
+        <div style="position:relative"><div class="daybars" id="days" style="grid-template-columns:repeat(30,minmax(0,1fr))"></div><svg class="ghostline" id="ghost" viewBox="0 0 300 120" preserveAspectRatio="none"></svg></div>
+        <div class="ticks"><span>1</span><span>8</span><span>15</span><span>22</span><span>30</span></div>
+        <p class="freshness" style="margin:0">From: Desktop log + Spotify export.</p>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">The month in a few lines</h2><span class="fz now"><i></i>rule-based</span></div>
+        <div class="sentence"><span class="k"></span><span class="sm">You listened <b>12% more</b> than August, most of it late: <b class="mono">22:00–01:00</b> was 38% of your time.</span></div>
+        <div class="sentence"><span class="k"></span><span class="sm"><b>Floating Points</b> is new this month and already your #3 artist. You first played them on <b class="mono">4 Sep</b>.</span></div>
+        <div class="sentence"><span class="k"></span><span class="sm"><b>Massive Attack</b> left your top 10 for the first time since March 2023.</span></div>
+        <div class="sentence"><span class="k"></span><span class="sm">You listened on <b>28 of 30 days</b>. Your current streak is <b class="mono">19 days</b>.</span></div>
+        <div class="fzline">Templates over the numbers above (a fixed set of "if X changed by more than Y" rules). No AI model: no network, no remote processing (NFR-07).</div>
+      </div>
+    </div>
+
+    <div class="g g2">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">When you listened</h2><span class="fz now"><i></i>now</span></div>
+        <div class="sm t2"><b>23:00</b> was your busiest hour. The light tick on each bar is your 6-month average for that hour.</div>
+        <div class="clock" id="clock"></div>
+        <div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+        <div class="g" style="grid-template-columns:repeat(7,1fr);gap:6px;margin-top:6px" id="wk"></div>
+        <p class="freshness" style="margin:0">From: Desktop log + Spotify export.</p>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Top new this month</h2><span class="fz now"><i></i>now</span></div>
+        <div class="hm-lead" style="flex:none">
+          <div class="rowf between"><div class="col" style="gap:4px"><span class="xs muted">First played 4 Sep, 21:14, with "Silhouettes (I, II & III)"</span><a class="hm-lead-name" href="#">Floating Points</a></div>
+            <div class="hm-ring"><svg viewBox="0 0 72 72"><circle class="track" cx="36" cy="36" r="31"/><circle class="fill" cx="36" cy="36" r="31" stroke-dasharray="194.8" stroke-dashoffset="171"/></svg><span>12%</span></div></div>
+          <div class="rowf" style="gap:28px"><div class="col" style="gap:0"><span class="hm-big">4.9 h</span><span class="xs muted">since then</span></div><div class="col" style="gap:0"><span class="hm-big">71</span><span class="xs muted">plays</span></div><div class="col" style="gap:0"><span class="hm-big">#3</span><span class="xs muted">this month</span></div></div>
+          <div class="rowf"><span class="badge" style="background:var(--color-surface-2);color:var(--color-text-2);font-weight:600">Not in your library</span><button class="btn btn-light s">Save to backlog</button></div>
+        </div>
+        <div class="xs muted">Also new: <span class="chip">Kelly Lee Owens</span> <span class="chip">Pharoah Sanders</span> <span class="chip">Sons of Kemet</span> <span class="chip">+20</span></div>
+      </div>
+    </div>
+
+
+    <div class="g g3">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Music ratio</h2><span class="fz now"><i></i>now</span></div>
+        <div class="sm t2">How many different things you played, vs August.</div>
+        <div class="col" style="gap:10px" id="ratio"></div>
+        <div class="rowf sm t2" style="gap:20px;padding-top:8px;border-top:1px solid var(--color-line)"><span><b class="mono">3.4</b> tracks per artist <span class="faint">(Aug 3.1)</span></span><span><b class="mono">1.6</b> albums per artist</span></div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Listening fingerprint</h2><span class="fz now"><i></i>now</span></div>
+        <div class="radarwrap" style="display:flex;justify-content:center"><svg viewBox="0 0 300 260" id="radar"></svg></div>
+        <div class="key"><span><i style="background:var(--color-accent)"></i>September</span><span><i style="background:var(--color-text-2)"></i>Your 12-month average</span></div>
+        <div class="fzline">Compared with your own past only: Runout has no other listeners to average over. Variety uses artists rather than tags.</div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Top tags</h2><span class="fz now"><i></i>now · your tags</span></div>
+        <div class="sm t2">From the tags on your records, weighted by listening time.</div>
+        <div class="col" style="gap:4px" id="tags"></div>
+        <div class="xs muted">Covers 62% of this month's listening: plays of things in your library. <a href="#">Tag the rest</a></div>
+        <div class="fzline">Uses Runout's existing tags (yours, so allowed). The more you tag, the more it covers; an open database would fill the gaps with genres (see Genres &amp; decades).</div>
+      </div>
+    </div>
+    <div class="card col">
+      <div class="sec-h"><h2 class="card-title">Most played this month</h2>
+        <div class="rowf"><div class="seg line" style="border:0"><button aria-selected="true">Artists</button><button aria-selected="false">Albums</button><button aria-selected="false">Tracks</button></div><span class="fz now"><i></i>now</span></div></div>
+      <div class="g g2" style="gap:4px 32px" id="ranks"></div>
+      <div class="rowf xs muted"><span>▲▼ places vs August</span><span class="acc">New</span><span>= not in last month's top 50</span><span>Line: hours per month, last 12 months</span></div>
+      <p class="freshness" style="margin:0">From: Your records + Desktop log (to 18 Oct 2026) + Spotify export (to 2 Oct 2026).</p>
+    </div>
+  </section>
+
+  <!-- ============ TRENDS ============ -->
+  <section class="panel" id="p-trends">
+    <div class="card col">
+      <div class="sec-h"><div class="col" style="gap:2px"><h2 class="card-title">Your listening since 2015</h2><span class="sm t2">Hours per month. Drag across any stretch to report on it, and the Report tab follows.</span></div>
+        <div class="rowf"><div class="seg"><button aria-selected="true">Hours</button><button aria-selected="false">Plays</button><button aria-selected="false">Artists</button></div><span class="fz now"><i></i>now · needs a monthly rollup</span></div></div>
+      <div style="position:relative"><div class="life" id="life"></div><div class="brush" style="left:83.8%;width:4.4%"></div></div>
+      <div class="eras" id="eras"></div>
+      <div class="ticks"><span>2015</span><span>2017</span><span>2019</span><span>2021</span><span>2023</span><span>2025</span><span>2026</span></div>
+      <div class="fzline">Eras: stretches where one or two artists held an unusually large share (heuristic, named after them). The dotted months are gaps with no data from any source, shown as gaps rather than as silence.</div>
+    </div>
+
+    <div class="card col">
+      <div class="sec-h"><div class="col" style="gap:2px"><h2 class="card-title">Artist arcs</h2><span class="sm t2">Each line is an artist's share of your time, month by month, over three years.</span></div>
+        <div class="rowf"><div class="seg"><button aria-selected="true">Rising</button><button aria-selected="false">Fading</button><button aria-selected="false">Back again</button><button aria-selected="false">Constants</button></div><span class="fz now"><i></i>now</span></div></div>
+      <div id="arcs"></div>
+      <div class="fzline">"Took time from" compares the share each artist lost and gained in the same months. It is a heuristic and says so in the UI. Artists are matched by name; a featured artist counts only when listed first.</div>
+    </div>
+
+    <div class="col">
+      <div class="sec-h"><div class="col" style="gap:2px"><h2 class="section-title">Your listening, year by year</h2><span class="sm t2">Five measures, each 0–100. The point is this year; the line is every year since 2015.</span></div><span class="fz now"><i></i>now</span></div>
+      <div class="mult" id="mult"></div>
+      <div class="fzline">Kept local and never shareable: the audit flags a "listener profile" as close to what Spotify's terms call profiling (BRD §11.1). These describe how you listen; they aren't compared with anyone else.</div>
+    </div>
+
+
+    <div class="card col">
+      <div class="sec-h"><div class="col" style="gap:2px"><h2 class="card-title">Your tags, month by month</h2><span class="sm t2">Share of tagged listening per tag, last 12 months.</span></div><span class="fz now"><i></i>now · your tags</span></div>
+      <div class="col" style="gap:4px" id="tagheat"></div>
+    </div>
+    <div class="card col">
+      <div class="sec-h"><div class="col" style="gap:2px"><h2 class="card-title">Every day of 2026</h2><span class="sm t2">Minutes per day. Choose a day to see everything you played on it.</span></div>
+        <div class="rowf"><div class="seg"><button>2024</button><button>2025</button><button aria-selected="true">2026</button></div><span class="fz now"><i></i>now</span></div></div>
+      <div class="cal" id="cal"></div>
+      <div class="rowf sm t2" style="gap:24px"><span>Biggest day <b class="mono">Sat 14 Mar · 9 h 40 m</b></span><span>Longest streak <b class="mono">63 days</b> (Jun–Aug)</span><span>Days without music <b class="mono">11</b></span></div>
+    </div>
+  </section>
+
+  <!-- ============ DISCOVERY ============ -->
+  <section class="panel" id="p-discovery">
+    <div class="stats">
+      <div class="card stat"><span class="k">New artists this year</span><span class="v">214</span><span class="d">one every 1.4 days</span></div>
+      <div class="card stat"><span class="k">Still playing them 3 months on</span><span class="v">34%</span><span class="d">your best: 46% in 2019</span></div>
+      <div class="card stat"><span class="k">Time on new artists</span><span class="v">11%</span><span class="d">of this year's listening</span></div>
+      <div class="card stat"><span class="k">Artists you know</span><span class="v">4,211</span><span class="d">since 2015</span></div>
+    </div>
+    <div class="g g21">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">New artists per month</h2><span class="fz now"><i></i>now</span></div>
+        <div class="daybars" id="disc" style="grid-template-columns:repeat(24,minmax(0,1fr));height:150px"></div>
+        <div class="key"><span><i style="background:var(--color-accent)"></i>Still playing 3 months later</span><span><i style="background:var(--color-bar)"></i>Tried, then dropped</span></div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">How you started tracks</h2><span class="fz exp"><i></i>export only · proxy</span></div>
+        <div class="ends" id="starts"></div>
+        <div class="key" id="startskey"></div>
+        <div class="sm t2">You start 41% of tracks yourself. The rest follow on from the one before.</div>
+        <div class="fzline">The export says <em>how</em> a track started (you clicked it, or it followed on), not from <em>where</em> (a playlist, radio or search), so "where discoveries come from" isn't possible. This is the honest version.</div>
+      </div>
+    </div>
+    <div class="card col">
+      <div class="sec-h"><h2 class="card-title">Your discovery log</h2><span class="fz now"><i></i>now</span></div>
+      <table class="tbl"><thead><tr><th>Artist</th><th>First played</th><th>With</th><th style="text-align:right">Plays since</th><th>Now</th></tr></thead><tbody id="dlog"></tbody></table>
+    </div>
+  </section>
+
+  <!-- ============ HOW YOU LISTEN ============ -->
+  <section class="panel" id="p-habits">
+    <div class="banner"><span class="sm t2">Skips, why plays ended, shuffle and device come from your Spotify export. Plays on this PC don't record them yet, so this tab covers your export plays (to 2 Oct): <b>179,880 plays</b>.</span><span class="fz exp"><i></i>export only</span></div>
+    <div class="g g3">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">How plays ended</h2></div>
+        <div class="ends" id="ends"></div><div class="key" id="endskey" style="flex-direction:column;align-items:flex-start"></div>
+        <div class="sm t2">Most skipped artist you still play a lot: <b>Radiohead</b>, with 38% of tracks skipped.</div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Skips by hour</h2></div>
+        <div class="pl-hours" id="skiph" style="height:90px"></div><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+        <div class="sm t2">You skip most at <b class="mono">08:00</b> and least after <b class="mono">22:00</b>.</div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Tracks you bail on</h2></div>
+        <div class="sm t2">Skipped within 10 seconds, again and again:</div>
+        <ol class="in-ranks" id="bail"></ol>
+      </div>
+    </div>
+    <div class="g g3">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Shuffle</h2></div>
+        <div class="rowf"><span class="hm-big">46%</span><span class="sm t2">of plays on shuffle, down from 61% in 2021</span></div>
+        <svg viewBox="0 0 300 70" style="width:100%;height:70px"><polyline fill="none" stroke="var(--color-text-2)" stroke-width="2" points="0,20 30,18 60,22 90,15 120,12 150,16 180,25 210,30 240,34 270,38 300,36"/></svg>
+        <div class="fzline">Desktop plays could join with a small logger change: Windows reports the shuffle state, but the logger doesn't read it today.</div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Where you listen</h2></div>
+        <div class="col" id="dev" style="gap:10px"></div>
+        <div class="sm t2">Offline: <b class="mono">6%</b> of plays, mostly in June.</div>
+        <div class="fzline">The export's platform is free text (for example "android OS 14"), grouped into Phone, Windows, Web player and Other. Desktop-log plays count as "This PC".</div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Finished tracks</h2><span class="fz chg"><i></i>logger change</span></div>
+        <div class="rowf"><span class="hm-big">71%</span><span class="sm t2">ended with the track finishing on its own</span></div>
+        <div class="sm t2">How far into each track you got, on average: <b class="mono">83%</b></div>
+        <div class="fzline">The first line works today from the export. The second needs each track's length, which only the desktop logger can see. It reads the length from Windows and throws it away; storing it is a one-column change (from the audit).</div>
+      </div>
+    </div>
+    <div class="g g2">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Sessions</h2><span class="fz now"><i></i>now · estimated</span></div>
+        <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+          <div class="stat" style="padding:0"><span class="k">This month</span><span class="v">86</span></div>
+          <div class="stat" style="padding:0"><span class="k">Typical length</span><span class="v">38m</span></div>
+          <div class="stat" style="padding:0"><span class="k">Longest</span><span class="v">6h 12m</span><span class="d">Sat 13 Sep from 14:02</span></div></div>
+        <div class="sessdist" id="sess"></div><div class="ticks"><span>&lt;5m</span><span>30m</span><span>1h</span><span>2h</span><span>4h+</span></div>
+        <div class="fzline">A session ends after 30 minutes of silence. Start times are estimated as end time minus time played, so pauses stretch them a little.</div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Deep dives</h2><span class="fz now"><i></i>now</span></div>
+        <div class="sm t2">Long stretches with one artist or album:</div>
+        <ol class="in-ranks" id="dives"></ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RECORDS ============ -->
+  <section class="panel" id="p-records">
+    <div class="sec-h"><div class="col" style="gap:2px"><h2 class="section-title">All-time records</h2><span class="sm t2">Across everything Runout has: Feb 2015 to today.</span></div><span class="fz now"><i></i>now</span></div>
+    <div class="g g4 recs" id="recs"></div>
+    <div class="card col">
+      <div class="sec-h"><h2 class="card-title">On this day</h2><span class="fz now"><i></i>now</span></div>
+      <div class="g g4" id="otd"></div>
+    </div>
+    <div class="card col">
+      <div class="sec-h"><div class="col" style="gap:2px"><h2 class="card-title">Forgotten favourites</h2><span class="sm t2">Once in your top 10 for a year; not played for 2 years or more.</span></div><span class="fz now"><i></i>now</span></div>
+      <ol class="in-ranks g g2" style="gap:0 32px;display:grid" id="forgot"></ol>
+    </div>
+  </section>
+
+
+  <!-- ============ GENRES & DECADES (needs the open-database decision) ============ -->
+  <section class="panel" id="p-genres">
+    <div class="banner warn fzonly"><div class="col" style="gap:2px"><b class="sm">Only if you allow an open music database</b><span class="xs t2">Runout would look up each artist and album once in MusicBrainz / Wikidata (names only, no account, nothing about you), keep the answers on this PC, and never ask again. Today nothing leaves your PC except to Spotify, so this is a spec change you decide.</span></div><span class="fz opt"><i></i>your decision</span></div>
+    <div class="stats">
+      <div class="card stat"><span class="k">Genres this month</span><span class="v">38</span><span class="d">7 more than August</span></div>
+      <div class="card stat"><span class="k">Top genre</span><span class="v txt">Spiritual jazz</span><span class="d">22% of your time</span></div>
+      <div class="card stat"><span class="k">Average age of your music</span><span class="v">31 yrs</span><span class="d">released around 1995</span></div>
+      <div class="card stat"><span class="k">Released this year</span><span class="v">9%</span><span class="d">of your listening</span></div>
+    </div>
+    <div class="g g12">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Top genres</h2><span class="fz opt"><i></i>open database</span></div>
+        <ol class="in-ranks" id="genres"></ol>
+        <p class="freshness" style="margin:0">From: Desktop log + Spotify export, with genres from MusicBrainz (community tags).</p>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><div class="col" style="gap:2px"><h2 class="card-title">Genres over two years</h2><span class="sm t2">Share of each month's listening.</span></div><span class="fz opt"><i></i>open database</span></div>
+        <div class="stack" id="stack"></div>
+        <div class="key" id="stackkey"></div>
+      </div>
+    </div>
+    <div class="card col">
+      <div class="sec-h"><div class="col" style="gap:2px"><h2 class="card-title">Music by decade</h2><span class="sm t2">When the music you played this year was released, with your most played album from each decade.</span></div>
+        <div class="rowf"><div class="seg"><button aria-selected="false">This month</button><button aria-selected="true">This year</button><button aria-selected="false">All time</button></div><span class="fz opt"><i></i>open database</span></div></div>
+      <div class="dec" id="dec"></div>
+      <div class="fzline">The release year is the earliest release of that album in MusicBrainz, so remasters count by their original year. Matching is by album and artist name; anything unmatched is shown as "unknown year" rather than guessed.</div>
+    </div>
+    <div class="g g2">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Where your artists are from</h2><span class="fz opt"><i></i>open database</span></div>
+        <div class="col" style="gap:8px" id="ctry"></div>
+        <div class="fzline">The artist's country from MusicBrainz or Wikidata. It says nothing about where <em>you</em> were; your own location stays dropped on import.</div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Coverage</h2><span class="fz opt"><i></i>open database</span></div>
+        <div class="col" style="gap:10px">
+          <div class="in-spread" style="grid-template-columns:150px minmax(0,1fr) 44px"><span class="sm">Artists with a genre</span><span class="grow" style="width:91%"></span><span class="mono xs">91%</span></div>
+          <div class="in-spread" style="grid-template-columns:150px minmax(0,1fr) 44px"><span class="sm">Albums with a year</span><span class="grow" style="width:87%"></span><span class="mono xs">87%</span></div>
+          <div class="in-spread" style="grid-template-columns:150px minmax(0,1fr) 44px"><span class="sm">Artists with a country</span><span class="grow" style="width:78%"></span><span class="mono xs">78%</span></div>
+        </div>
+        <div class="sm t2">Last looked up 19 Oct 2026. New artists are looked up once, the first time you play them.</div>
+        <div class="rowf"><button class="btn btn-secondary s">Fix a genre</button><button class="btn btn-secondary s">Turn off lookups and delete them</button></div>
+        <div class="fzline">The percentages are a guess until measured on your data. Licensing to verify: core data is CC0; genre tags are believed to be CC BY-NC-SA, so non-commercial use with attribution.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ EXPLORE ============ -->
+  <section class="panel" id="p-explore">
+    <div class="card col">
+      <div class="sec-h"><div class="col" style="gap:2px"><h2 class="card-title">Explore</h2><span class="sm t2">Choose what to look at, over which stretch, and narrow it down.</span></div><span class="fz now"><i></i>now · 200 ms filter budget</span></div>
+      <div class="qb">
+        <span class="lbl">Show</span><span class="chip on">Massive Attack</span><span class="chip on" style="background:var(--color-text)">Floating Points</span><button class="chip add">+ Compare</button>
+        <span class="lbl" style="margin-left:8px">from</span><span class="chip">Jan 2019</span><span class="lbl">to</span><span class="chip">Sep 2026</span>
+        <span class="lbl" style="margin-left:8px">by</span><div class="seg"><button>Week</button><button aria-selected="true">Month</button><button>Year</button></div>
+        <span class="lbl" style="margin-left:8px">as</span><div class="seg"><button aria-selected="true">Hours</button><button>Share</button><button>Plays</button></div>
+      </div>
+      <div class="qb">
+        <span class="lbl">Only</span><button class="chip">Hour: 22–02</button><button class="chip">Weekends</button><button class="chip add">+ Day or hour</button>
+        <button class="chip add">+ Device <span class="fz exp" style="margin-left:4px"><i></i>export</span></button><button class="chip add">+ Shuffle on/off <span class="fz exp" style="margin-left:4px"><i></i>export</span></button>
+      </div>
+      <div class="lines"><svg viewBox="0 0 1000 200" preserveAspectRatio="none" id="exsvg"></svg></div>
+      <div class="ticks"><span>2019</span><span>2020</span><span>2021</span><span>2022</span><span>2023</span><span>2024</span><span>2025</span><span>2026</span></div>
+      <div class="key"><span><i style="background:var(--color-accent)"></i>Massive Attack · peak Mar 2023 · 31 h</span><span><i style="background:var(--color-text)"></i>Floating Points · since Sep 2026</span></div>
+    </div>
+    <div class="g g2">
+      <div class="card col"><div class="sec-h"><h2 class="card-title">Ready-made questions</h2><span class="fz now"><i></i>now</span></div>
+        <div class="col" style="gap:6px" id="qs"></div>
+        <div class="fzline">Preset queries that fill the builder above. A free-text "ask anything" box would need an AI model: not possible locally without a network or a large download, so it's out.</div></div>
+      <div class="card col"><div class="sec-h"><h2 class="card-title">Result as a table</h2></div>
+        <table class="tbl"><thead><tr><th>Year</th><th style="text-align:right">Massive Attack</th><th style="text-align:right">Floating Points</th></tr></thead>
+        <tbody><tr><td>2023</td><td class="n">212 h</td><td class="n">—</td></tr><tr><td>2024</td><td class="n">96 h</td><td class="n">—</td></tr><tr><td>2025</td><td class="n">41 h</td><td class="n">—</td></tr><tr><td>2026</td><td class="n">18 h</td><td class="n">4.9 h</td></tr></tbody></table>
+        <div class="rowf"><button class="btn btn-secondary s">Save this view</button><button class="btn btn-secondary s">Copy as CSV</button></div></div>
+    </div>
+  </section>
+
+  <!-- ============ YOUR DATA ============ -->
+  <section class="panel" id="p-data">
+    <div class="card col">
+      <div class="sec-h"><div class="col" style="gap:2px"><h2 class="card-title">What Runout knows</h2><span class="sm t2">Where every insight comes from, and the holes.</span></div><button class="btn btn-light">Import a newer export</button></div>
+      <div class="cov">
+        <i style="left:0;width:94%;background:var(--color-bar)"></i>
+        <i style="left:92.6%;width:7.4%;background:rgba(245,181,68,.55)"></i>
+        <i style="left:70.2%;width:.6%;background:repeating-linear-gradient(45deg,var(--color-danger) 0 3px,transparent 3px 6px)"></i>
+      </div>
+      <div class="ticks"><span>Feb 2015</span><span>2017</span><span>2019</span><span>2021</span><span>2023</span><span>2025</span><span>today</span></div>
+      <div class="key"><span><i style="background:var(--color-bar)"></i>Spotify export: 14 Feb 2015 → 2 Oct 2026 · 179,880 plays · all devices</span><span><i style="background:rgba(245,181,68,.55)"></i>Desktop log: since 12 Jul 2026 · 5,040 plays · 3,612 matched to export plays and counted once</span><span><i style="background:var(--color-danger)"></i>Gap: 4–12 Mar 2024, no data from any source</span></div>
+      <div class="fzline">The dates come from what's stored. Telling a real gap from "the logger was off" needs the logger to record when it runs (a small change). Without that, a gap is shown as "no data" and never as "silence".</div>
+    </div>
+    <div class="g g2">
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Imports</h2><span class="fz now"><i></i>now</span></div>
+        <table class="tbl"><thead><tr><th>Imported</th><th>Covers</th><th style="text-align:right">New plays</th><th style="text-align:right">Already had</th></tr></thead>
+          <tbody><tr><td>19 Oct 2026</td><td>2015 → 2 Oct 2026</td><td class="n">179,880</td><td class="n">0</td></tr><tr><td class="faint">next</td><td class="faint">2015 → about 25 Oct</td><td class="n faint">≈ 2,100</td><td class="n faint">≈ 179,880</td></tr></tbody></table>
+        <div class="sm t2">Import the whole new export each time. Plays you already have are recognised and skipped, and desktop plays are matched so nothing counts twice.</div>
+        <div class="fzline">This works today: plays are de-duplicated by time, track and time played, and an identical file set is detected. The table's "Already had" column needs the counts the importer already computes.</div>
+      </div>
+      <div class="card col">
+        <div class="sec-h"><h2 class="card-title">Keep it fresh</h2><span class="fz now"><i></i>now</span></div>
+        <label class="switch-row"><span class="col" style="gap:2px"><span class="sm">Remind me to request a new export</span><span class="xs muted">Every month, from the day the last one ends</span></span><span class="toggle-wrap"><input type="checkbox" class="toggle" checked><span class="toggle-thumb" style="left:19px"></span></span></label>
+        <label class="switch-row"><span class="col" style="gap:2px"><span class="sm">Leave out private-session plays</span><span class="xs muted">112 plays · on by default</span></span><span class="toggle-wrap"><input type="checkbox" class="toggle" checked><span class="toggle-thumb" style="left:19px"></span></span></label>
+        <div class="sm t2">Spotify takes from a few days up to 30 to prepare an Extended streaming history. Requesting one is done on spotify.com; Runout can't do it for you.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ EXISTING ============ -->
+  <section class="panel" id="p-old">
+    <div class="card empty"><span class="h">Collection, Your take and Year in review stay as they are</span><span class="sm t2">Year in review gains the Report tab's year view (vs last year, top new, records set that year).</span></div>
+  </section>
+
+  <div class="anno fzonly col">
+    <b>Left out, and why</b>
+    <table class="tbl"><tbody>
+      <tr><td>BPM, energy, mood, danceability</td><td class="t2">Spotify removed audio features in 2024. Runout can't analyse the audio itself (protected playback, client files off limits). AcousticBrainz stopped in 2022 and covers little recent music.</td></tr>
+      <tr><td>"How mainstream" you are</td><td class="t2">Needs other listeners' counts; Spotify's popularity field is removed and the API is barred from insights anyway.</td></tr>
+      <tr><td>Genres, decades, artist countries without the open database</td><td class="t2">No source in Spotify's export. With your OK, the Genres &amp; decades tab covers them.</td></tr>
+      <tr><td>Where discoveries came from (playlist, radio, search)</td><td class="t2">The export doesn't say. Replaced by "How you started tracks".</td></tr>
+      <tr><td>Free-text "ask anything" box</td><td class="t2">Needs an AI model: no network allowed, no remote processing. Replaced by Explore and ready-made questions.</td></tr>
+      <tr><td>Travel / countries you listened from</td><td class="t2">Dropped on import by design (location data, data minimisation).</td></tr>
+      <tr><td>Podcasts and audiobooks</td><td class="t2">Out of scope (music only); dropped on import.</td></tr>
+      <tr><td>Album played start to finish, for every album</td><td class="t2">Needs track order. Only albums whose track list you've added in Runout can be checked.</td></tr>
+      <tr><td>Comparisons with other people</td><td class="t2">Runout has only your data. That's the point.</td></tr>
+    </tbody></table>
+  </div>
+</main>
+</div>
+
+<script>
+let s=11;const r=()=>(s=(s*9301+49297)%233280)/233280;
+const $=id=>document.getElementById(id);
+// tabs
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('on',p.id==='p-'+b.dataset.p));});
+document.querySelectorAll('.seg:not(.line)').forEach(g=>g.querySelectorAll('button').forEach(b=>{if(!b.hasAttribute('aria-selected'))b.setAttribute('aria-selected','false');b.addEventListener('click',()=>{if(b.getAttribute('aria-label'))return;g.querySelectorAll('button').forEach(x=>{if(!x.getAttribute('aria-label')&&x.style.pointerEvents!=='none')x.setAttribute('aria-selected',x===b)})})}));
+// stats
+const st=[['Listening time','41h 12m',1,.89,'4h 25m more than August'],['Plays','1,284',1,.92,'108 more than August'],['Artists','212',.96,1,'9 fewer than August'],['New artists','23',1,.7,'7 more than August'],['Days listened','28 / 30',1,.9,'streak: 19 days'],['Tracks finished','71%',1,.94,'up 3 points · export plays']];
+$('stats').innerHTML=st.map(x=>`<div class="card stat"><span class="k">${x[0]}</span><span class="v">${x[1]}</span><div class="hm-vs"><span>Now</span><i class="now" style="width:${x[2]*100}%"></i><span>Before</span><i style="width:${x[3]*100}%"></i></div><span class="d">${x[4]}</span></div>`).join('');
+// days
+const days=[];for(let i=0;i<30;i++)days.push(30+r()*90+(i%7==5?60:0));days[12]=230;
+const mx=Math.max(...days);$('days').innerHTML=days.map((v,i)=>`<i class="${i==12?'on':''}" style="height:${v/mx*100}%"></i>`).join('');
+let gp=[];for(let i=0;i<30;i++)gp.push((i*10+5)+','+(120-(25+r()*70)/mx*120).toFixed(1));$('ghost').innerHTML=`<polyline fill="none" stroke="rgba(255,255,255,.28)" stroke-dasharray="4 3" stroke-width="1.5" points="${gp.join(' ')}"/>`;
+// clock
+const ck=[22,14,8,3,2,2,4,12,20,18,15,16,19,17,15,16,20,24,26,28,34,40,52,61];const cm=70;
+$('clock').innerHTML=ck.map((v,i)=>`<div class="h ${i==23?'on':''}"><i style="height:${v/cm*100}%"></i><b style="bottom:${v*(0.75+r()*.4)/cm*100}%"></b></div>`).join('');
+$('wk').innerHTML=[['Mon',48],['Tue',44],['Wed',52],['Thu',46],['Fri',58],['Sat',80],['Sun',66]].map(d=>`<div class="col" style="gap:4px"><span class="grow ${d[0]=='Sat'?'hot':''}" style="width:${d[1]}%"></span><span class="xs ${d[0]=='Sat'?'':'faint'}">${d[0]}</span></div>`).join('');
+// ranks
+const sp=()=>{let p=[];for(let i=0;i<12;i++)p.push(i*5.8+','+(19-r()*17).toFixed(1));return `<svg class="spark" viewBox="0 0 64 20"><polyline points="${p.join(' ')}"/></svg>`};
+const rk=[['Alice Coltrane','In progress','6.2 h','▲2','up'],['John Coltrane','Explored','5.9 h','▼1','dn'],['Floating Points','Not saved','4.9 h','New','new'],['Prateek Kuhad','Explored','4.1 h','▼2','dn'],['Miles Davis','Explored','3.6 h','=','dn'],['Kate Bush','Explored','2.9 h','▲4','up'],['Pharoah Sanders','In progress','2.4 h','New','new'],['Kelly Lee Owens','Planned','2.1 h','▲9','up'],['Air','Explored','1.8 h','▼3','dn'],['Radiohead','Explored','1.6 h','▼2','dn']];
+$('ranks').innerHTML=rk.map((x,i)=>`<div class="rk"><span class="hm-rank-n">${i+1}</span><div class="col" style="gap:5px;min-width:0"><a href="#" style="color:var(--color-text);font-weight:700">${x[0]}</a><span class="hm-bar ${i==0?'hot':''}" style="width:${100-i*8}%"></span></div>${sp()}<div class="col" style="gap:0;align-items:flex-end"><span class="mono sm">${x[2]}</span><span class="xs muted">${x[1]}</span></div><span class="mv ${x[4]}">${x[3]}</span></div>`).join('');
+// life
+const life=[];for(let i=0;i<140;i++){let b=20+i*.35+Math.sin(i/9)*12;if(i>62&&i<80)b+=45;life.push(Math.max(4,b+r()*18))}const lm=Math.max(...life);
+$('life').style.gridTemplateColumns='repeat(140,minmax(0,1fr))';$('life').innerHTML=life.map((v,i)=>`<i class="${i>=118&&i<124?'sel':''}${i==109?' gap':''}" style="height:${i==109?2:v/lm*100}%"></i>`).join('');
+$('eras').innerHTML=[[0,22,'Prateek Kuhad','years'],[23,18,'Massive Attack','& Air'],[42,9,'Miles Davis',''],[52,18,'Lockdown','· John Coltrane'],[71,14,'Kate Bush',''],[86,14,'Alice Coltrane','· now']].map(e=>`<div class="era" style="left:${e[0]}%;width:${e[1]-.6}%"><b>${e[2]}</b> ${e[3]}</div>`).join('');
+// arcs
+const arcs=[['Floating Points','rising · new in Sep','took time from Massive Attack',0],['Kelly Lee Owens','rising · 3rd month up','came with Floating Points',0],['Pharoah Sanders','rising','follows Alice Coltrane',0],['Massive Attack','fading · −74% in a year','gave time to Floating Points, Air',1],['Kate Bush','back again','quiet 2021–2025, back since Aug',2]];
+$('arcs').innerHTML=arcs.map(a=>{let p=[],v=a[3]==1?6:a[3]==2?18:20;for(let i=0;i<36;i++){if(a[3]==0)v-=i>27?1.7:.05;else if(a[3]==1)v+=.38;else v=i<8?5:i<31?30:30-(i-30)*4.3;p.push(i*28.5+','+Math.max(2,Math.min(34,v+r()*2)).toFixed(1))}return `<div class="arc"><div class="col" style="gap:0"><a href="#" style="color:var(--color-text);font-weight:700">${a[0]}</a><span class="xs muted">${a[1]}</span></div><svg viewBox="0 0 1000 36" preserveAspectRatio="none"><polyline fill="none" stroke="${a[3]==1?'var(--color-text-2)':'var(--color-accent)'}" stroke-width="2" points="${p.join(' ')}"/></svg><span class="sm t2">${a[2]}</span></div>`}).join('');
+// multiples
+const ms=[['Regularity','share of days with music',88],['Discovery','time on artists new that year',23],['Focus','time on your top 10 artists',54],['Variety','how spread out your listening is',62],['Repeat','plays of tracks you\'d played before',71]];
+$('mult').innerHTML=ms.map(m=>{let p=[];for(let i=0;i<12;i++)p.push(i*9+','+(50-(m[2]*.4+r()*25)).toFixed(1));return `<div class="card col" style="gap:4px"><span class="sm b">${m[0]}</span><span class="xs muted">${m[1]}</span><div class="rowf"><span class="hm-big" style="font-size:22px">${m[2]}</span></div><svg viewBox="0 0 100 56" preserveAspectRatio="none"><polyline fill="none" stroke="var(--color-text-2)" stroke-width="1.5" points="${p.join(' ')}"/><circle cx="99" cy="${50-m[2]*.4}" r="3" fill="var(--color-accent)"/></svg><div class="ticks"><span>2015</span><span>2026</span></div></div>`}).join('');
+// calendar
+const cal=$('cal');for(let i=0;i<7*52;i++){const c=document.createElement('i');const v=r();if(i>296){c.style.background='var(--color-surface-2)'}else c.style.opacity=v<.05?.06:v<.3?.25:v<.65?.45:v<.9?.7:1;cal.appendChild(c)}
+// discovery
+let dh='';for(let i=0;i<24;i++){const t=10+r()*30,k=t*(.2+r()*.3);dh+=`<div style="display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:2px"><span style="display:block;height:${(t-k)*2.3}%;background:var(--color-bar);border-radius:3px 3px 0 0"></span><span style="display:block;height:${k*2.3}%;background:var(--color-accent);border-radius:0 0 3px 3px"></span></div>`}$('disc').innerHTML=dh;
+const seg=(id,kid,a)=>{$(id).innerHTML=a.map(x=>`<i style="width:${x[1]}%;background:${x[2]}"></i>`).join('');$(kid).innerHTML=a.map(x=>`<span><i style="background:${x[2]}"></i>${x[0]} <b class="mono">${x[1]}%</b></span>`).join('')};
+seg('starts','startskey',[['Followed on',52,'var(--color-bar)'],['You picked it',41,'var(--color-accent)'],['Back button',4,'var(--color-text-2)'],['Other',3,'var(--color-line-strong)']]);
+seg('ends','endskey',[['Played to the end',71,'var(--color-text-2)'],['Skipped forward',13,'var(--color-accent)'],['Went back',6,'var(--color-bar)'],['Stopped or closed',10,'var(--color-line-strong)']]);
+$('dlog').innerHTML=[['Floating Points','4 Sep 2026, 21:14','Silhouettes (I, II & III)','71','In rotation'],['Pharoah Sanders','28 Aug 2026, 08:02','Love Is Everywhere','44','In rotation'],['Kelly Lee Owens','2 Jul 2026, 23:40','On','63','In rotation'],['Sons of Kemet','19 Jun 2026, 22:15','My Queen Is Ada Eastman','9','Dropped'],['Kate Bush','14 Feb 2018, 20:03','Running Up That Hill','612','Back again']].map(d=>`<tr><td><a href="#" style="color:var(--color-text);font-weight:700">${d[0]}</a></td><td class="mono xs">${d[1]}</td><td class="t2">${d[2]}</td><td class="n">${d[3]}</td><td>${d[4]=='Dropped'?'<span class="faint">Dropped</span>':'<span class="badge" style="background:var(--color-surface-2);color:var(--color-text-2);font-weight:600">'+d[4]+'</span>'}</td></tr>`).join('');
+// habits
+const sk=[10,8,6,5,5,6,12,22,34,30,18,14,15,13,12,14,16,18,15,12,10,8,6,7];$('skiph').innerHTML=sk.map((v,i)=>`<i class="${i==8?'on':''}" style="height:${v/34*100}%"></i>`).join('');
+const row=(a,b,c)=>`<li class="in-rank" style="grid-template-columns:minmax(0,1fr) auto"><div class="col" style="gap:0;min-width:0"><span class="b">${a}</span><span class="xs muted">${b}</span></div><span class="mono sm">${c}</span></li>`;
+$('bail').innerHTML=[['Teardrop','Massive Attack','14 times'],['Bitches Brew','Miles Davis','11 times'],['cold/mess','Prateek Kuhad','9 times'],['Hounds of Love','Kate Bush','8 times']].map(x=>row(...x)).join('');
+$('dev').innerHTML=[['Phone',52],['This PC',39],['Web player',6],['Other',3]].map(d=>`<div class="in-spread" style="grid-template-columns:90px minmax(0,1fr) 40px"><span class="sm">${d[0]}</span><span class="grow ${d[0]=='Phone'?'hot':''}" style="width:${d[1]}%"></span><span class="mono xs">${d[1]}%</span></div>`).join('');
+$('sess').innerHTML=[14,22,30,24,16,10,6,3,2,1].map((v,i)=>`<i class="${i==2?'on':''}" style="height:${v/30*100}%"></i>`).join('');
+$('dives').innerHTML=[['Floating Points','Thu 11 Sep · 21:30 → 01:10 · 41 tracks','3h 40m'],['Mezzanine, three times through','Sun 7 Sep · 30 tracks','2h 07m'],['"Silhouettes" on repeat','Thu 4 Sep · first day','1h 49m'],['Alice Coltrane','Sat 13 Sep · 14:02 → 18:30','4h 28m']].map(x=>row(...x)).join('');
+// records
+$('recs').innerHTML=[['First play in your history','Hope','Prateek Kuhad · 14 Feb 2015, 19:02'],['Most played track ever','Teardrop','1,204 plays across 4 eras'],['Longest streak','212 days','Apr → Nov 2020'],['Biggest year','2020 · 1,402 h','3.8 h a day'],['Biggest day','9 h 40 m','Sat 14 Mar 2026'],['Most loyal','Miles Davis','in your top 20 in 10 of 12 years'],['Next milestone','185,000th play','in about 2 days at your pace'],['Most artists in a month','388','Apr 2020']].map(x=>`<div class="card"><span class="xs muted">${x[0]}</span><span class="${/^\d/.test(x[1])?'v':'b'}" style="${/^\d/.test(x[1])?'':'font-size:17px'}">${x[1]}</span><span class="xs t2">${x[2]}</span></div>`).join('');
+$('otd').innerHTML=[['2025','Mezzanine, start to finish','and 38 other plays'],['2023','Kate Bush all evening','2 h 51 m'],['2020','Your biggest 24 Oct: 7 h 02 m','Lockdown'],['2017','First play of Air','"La femme d\'argent"']].map(x=>`<a href="#" class="lrow col" style="gap:2px;padding-block:8px;color:var(--color-text)"><span class="mono xs faint">${x[0]}</span><span class="b sm">${x[1]}</span><span class="xs muted">${x[2]}</span></a>`).join('');
+$('forgot').innerHTML=[['Massive Attack','top 10 in 2023 · last played Jan 2025'],['Bon Iver','top 10 in 2017 · last played Mar 2022'],['The National','top 10 in 2016 · last played Aug 2021'],['Sufjan Stevens','top 10 in 2019 · last played Feb 2023']].map(x=>`<li class="in-rank" style="grid-template-columns:minmax(0,1fr) auto"><div class="col" style="gap:0"><span class="b">${x[0]}</span><span class="xs muted">${x[1]}</span></div><button class="btn btn-secondary s">Play again</button></li>`).join('');
+// explore
+let a=[],b=[];for(let i=0;i<93;i++){const x=i*10.8;a.push(x+','+(190-Math.max(4,(i<45?i*3:i<52?135-(i-45)*2:120-(i-52)*2.8)+r()*15)).toFixed(1));b.push(x+','+(i<92?196:150))}
+$('exsvg').innerHTML=`<polyline fill="none" stroke="var(--color-accent)" stroke-width="2.5" points="${a.join(' ')}"/><polyline fill="none" stroke="var(--color-text)" stroke-width="2.5" points="${b.slice(85).join(' ')}"/><line x1="0" x2="1000" y1="198" y2="198" stroke="var(--color-line)"/>`;
+$('qs').innerHTML=['When did I stop listening to Massive Attack, and what took its place?','What did I play most in winter 2021?','Which artists do I only play late at night?','What was I into this week five years ago?','Which tracks do I always skip on shuffle?'].map(q=>`<button class="st-summary" style="margin:0;text-align:left">${q}</button>`).join('');
+
+// music ratio, radar, tags
+$('ratio').innerHTML=[['Tracks','723',1,.9,'▲ 64'],['Albums','341',1,.95,'▲ 18'],['Artists','212',.96,1,'▼ 9']].map(x=>`<div class="col" style="gap:4px"><div class="rowf between"><span class="sm">${x[0]}</span><span class="rowf" style="gap:8px"><span class="mono b">${x[1]}</span><span class="mono xs ${x[4][0]=='▲'?'':'faint'}">${x[4]}</span></span></div><div class="hm-vs"><span>Now</span><i class="now" style="width:${x[2]*100}%"></i><span>Before</span><i style="width:${x[3]*100}%"></i></div></div>`).join('');
+(()=>{const ax=['Regularity','Discovery','Focus','Variety','Repeat'],now=[93,31,54,62,71],avg=[80,22,60,58,66],cx=150,cy=135,R=92;
+const pt=(i,v)=>{const a=-Math.PI/2+i*2*Math.PI/5;return [cx+Math.cos(a)*R*v/100,cy+Math.sin(a)*R*v/100]};
+let h='';[25,50,75,100].forEach(l=>h+=`<polygon points="${ax.map((_,i)=>pt(i,l).join(',')).join(' ')}" fill="none" stroke="var(--color-line-2)"/>`);
+ax.forEach((n,i)=>{const [x,y]=pt(i,100),[lx,ly]=pt(i,118);h+=`<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--color-line-2)"/><text x="${lx}" y="${ly+4}" text-anchor="middle" font-size="11" fill="var(--color-muted)">${n} <tspan font-family="JetBrains Mono" fill="var(--color-text)">${now[i]}</tspan></text>`});
+h+=`<polygon points="${avg.map((v,i)=>pt(i,v).join(',')).join(' ')}" fill="none" stroke="var(--color-text-2)" stroke-dasharray="4 3" stroke-width="1.5"/>`;
+h+=`<polygon points="${now.map((v,i)=>pt(i,v).join(',')).join(' ')}" fill="rgba(245,181,68,.14)" stroke="var(--color-accent)" stroke-width="2"/>`;$('radar').innerHTML=h})();
+const tg=[['spiritual jazz',24],['late night',19],['electronic',14],['indie folk',11],['trip-hop',9],['comfort',7]];
+$('tags').innerHTML=tg.map((x,i)=>`<div class="in-spread" style="grid-template-columns:110px minmax(0,1fr) 36px"><span class="chip" style="padding:2px 8px;font-size:12px">${x[0]}</span><span class="grow ${i==0?'hot':''}" style="width:${x[1]*4}%"></span><span class="mono xs">${x[1]}%</span></div>`).join('');
+$('tagheat').innerHTML='<div class="tagheat"><span></span>'+['O','N','D','J','F','M','A','M','J','J','A','S'].map(m=>`<span class="faint mono" style="text-align:center">${m}</span>`).join('')+'</div>'+tg.map(x=>'<div class="tagheat"><span class="t2">'+x[0]+'</span>'+Array.from({length:12},(_,i)=>`<i style="opacity:${Math.min(1,.08+r()*x[1]/26+(x[0]=='spiritual jazz'&&i>8?.5:0)).toFixed(2)}"></i>`).join('')+'</div>').join('');
+// genres
+const G=[['Spiritual jazz',22,'var(--color-accent)'],['Electronic',17,'var(--color-text)'],['Hard bop',14,'var(--color-text-2)'],['Trip-hop',11,'var(--color-line-hover)'],['Indie folk',9,'var(--color-bar)'],['Art pop',7,'var(--color-line-strong)']];
+$('genres').innerHTML=G.concat([['Ambient',5],['Neo-soul',4],['Hindi indie',4],['Modal jazz',3]]).map((g,i)=>`<li class="in-rank"><span class="hm-rank-n">${i+1}</span><div class="col" style="gap:5px"><span class="b sm">${g[0]}</span><span class="grow ${i==0?'hot':''}" style="width:${g[1]*4.2}%"></span></div><span class="mono xs">${g[1]}%</span></li>`).join('');
+let sh='';for(let m=0;m<24;m++){const parts=G.map((g,k)=>{let v=g[1]*(0.6+r()*0.8);if(k==0)v*=m>16?1.8:0.5;if(k==3)v*=m<10?2.2:0.6;return v});const s=parts.reduce((a,b)=>a+b,0);sh+='<div>'+parts.map((v,k)=>`<span style="height:${v/s*100}%;background:${G[k][2]};border-radius:2px"></span>`).join('')+'</div>'}
+$('stack').innerHTML=sh;$('stackkey').innerHTML=G.map(g=>`<span><i style="background:${g[2]}"></i>${g[0]}</span>`).join('');
+const D=[['1950s',6,'Kind of Blue'],['1960s',18,'A Love Supreme'],['1970s',21,'Journey in Satchidananda'],['1980s',8,'Hounds of Love'],['1990s',14,'Mezzanine'],['2000s',7,'Moon Safari'],['2010s',12,'cold/mess'],['2020s',14,'Promises']];
+$('dec').innerHTML=D.map(d=>`<div class="c ${d[0]=='1970s'?'on':''}"><span class="mono xs t2" style="text-align:center">${d[1]}%</span><i style="height:${d[1]*7}px"></i><span class="sm b" style="text-align:center">${d[0]}</span><span class="xs muted" style="text-align:center;min-height:32px">${d[2]}</span></div>`).join('');
+$('ctry').innerHTML=[['United States',46],['United Kingdom',24],['India',11],['France',8],['Germany',4],['Other (14 countries)',7]].map((c,i)=>`<div class="in-spread" style="grid-template-columns:160px minmax(0,1fr) 40px"><span class="sm">${c[0]}</span><span class="grow ${i==0?'hot':''}" style="width:${c[1]*2}%"></span><span class="mono xs">${c[1]}%</span></div>`).join('');
+</script>
+</body></html>

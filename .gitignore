@@ -36,3 +36,5 @@ my_spotify_data*/
 
 # Agent worktrees
 .claude/worktrees/
+
+.superpowers/

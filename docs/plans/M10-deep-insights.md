@@ -1,0 +1,75 @@
+# Plan: M10 Deep listening insights (Insights v3)
+
+Specs: [MILESTONES M10](../MILESTONES.md#m10--deep-listening-insights-insights-v3) · design and every definition: [design/M10-insights-v3.md](../design/M10-insights-v3.md) (mockup + screens in `docs/design/`) · TSD §4.9, §4.14, §4.13 · API.md §4 · BRD FR-031, 032, 047, 048, NFR-04, D35, O8.
+Agents: `rust-core` (WI 2–5), `react-ui` (WI 6–8), `spec-reviewer` (each step), `spotify-researcher` (WI 9's T6, only after U-11).
+
+**Entry:** M9 screens Insights and Home settled, so M10 builds on their recipes (charts.tsx, `.hm-plot`, `Stat`, `useSlide`). Unlike M2–M7, M10 is one feature end to end: contract, mock, UI, Rust, integration, in that order per tab.
+
+**Known gaps owned here:** G-45 (skip-rate denominator), G-46 (comparisons mix coverage). Remove each row when fixed.
+
+## Steps
+1. **Contract (WI 1).** API.md §4 first:
+   - `get_period_report(grain, at, vs, custom?)`, `get_trends(measure)`, `get_discovery(range)`, `get_listening_habits(range)`, `get_records()`, `explore(query)`, `get_data_coverage()`;
+   - every payload is `Sourced<T>` plus a `coverage {compared_sources, desktop_only_since?, gaps[]}` block;
+   - `get_listening_insights` keeps `range` for Home and gains the same `coverage` block. Its `plays_prev` / `ms_prev` become like-for-like (design §4.4), and Home's period strip shows the short coverage note (G-46).
+
+   Then `src/api.ts` types, the `src/mocks/` implementation (shaped from the mockup's data, "heavy" state = 180k plays), and the contract check in `check.py`.
+2. **Schema + logger (WI 2).** Migration `0006`:
+   - `listening_event.duration_ms`, `listening_event.shuffle` (nullable);
+   - `logger_run`;
+   - rollups `listening_day`, `listening_month_artist`, `artist_first_play` with triggers (pattern: `0005`), rebuilt after import.
+
+   Logger: keep SMTC `EndTime` (already read in `logger/session.rs`) and shuffle state; write `logger_run` on start/stop/pause/resume.
+   - Tests: accumulator carries duration and shuffle; triggers keep the rollups equal to a full recount after insert, delete and reconcile; migration from a v7 DB with data.
+3. **Definitions (WI 3).** One Rust function per design §4.2 term in `insights/`, each with a fixture test against hand-computed values:
+   - the base terms: play, streaks across gaps, stick rate, the skip rate fix (G-45), quick bail, started-by-you, device classes over the KB's seen `platform` values;
+   - sessions, deep dives, eras, arcs, "took time from";
+   - the fingerprint, music ratio, records and top tags.
+4. **Coverage engine (WI 4).** Per-source ranges, gaps, and the FR-048 rule as one function used by every comparison (G-46).
+   - Tests: the current period crosses the export end → desktop-only on both sides; no logger run in the earlier period → delta hidden with a reason; a gap day doesn't break a streak.
+5. **Commands + performance (WI 5).**
+   - Assemble the WI 1 commands from WI 3–4.
+   - Extend `perf_listening` (500k events): each command < 500 ms, `explore` < 200 ms, import 10 years still < 60 s.
+   - Record the numbers in kb/perf-integrity.md.
+6. **UI: Report + header (WI 6).** Page header (grain, stepper, compare), line tabs with deep links, and all Report cards per the design and mockup:
+   - "the period in a few lines" (design §5.1 rules, in Rust, returned as structured sentences);
+   - loading, empty, error and heavy states, CountUp, Motion recipes as M9.
+7. **UI: Trends, Discovery, How you listen, Records (WI 7).** One tab per sub-step, each with its states, journeys and screenshots. The calendar links to Recent plays for a date; the brush sets a custom period.
+8. **UI: Explore + Your data (WI 8).**
+   - Explore: builder, ready-made questions, saved views (reuse saved filters), Copy as CSV.
+   - Your data: coverage strip, import history, the reminder switch, and the private-session switch (moved from where it lives today).
+9. **Genres & decades (WI 9, gated).** Only after **U-11 = yes**:
+   - `spotify-researcher` resolves T6 (licence, rate limit, match rate on real names);
+   - then `change-spec` adds the source to BRD §5.1, the allowed host to `check.py` and TSD §5;
+   - then `enrich/` (names-only lookups, ≤ 1 request/s, separate tables, delete switch) and the tab.
+
+   If U-11 = no, drop the step and record it.
+10. **Integration + record (WI 10).**
+    - Switch the commands from mock to `invoke`.
+    - Installed-build run on the user's real history: hand-check 10 numbers against SQL.
+    - Journeys, check.py, spec review, then SOURCE_MAP rows to `built`, KB facts, DESIGN §6 SC-09 states, then `close-milestone M10`.
+
+## Parallelism
+1 first (both sides depend on it). Then the two streams run side by side:
+- **Backend:** 2 → 3 → 4 → 5 (Rust);
+- **UI:** 6 → 7 → 8 (on the mock, React).
+
+10 needs both streams. 9 runs any time after U-11 and T6, independent of the rest.
+
+## Rules
+- Sources U, S, E only. `check.py` "insights no cache" stays green. No autofill-cache durations, years or genres anywhere in `insights/`.
+- Every heuristic is labelled in the UI as an estimate (design §4.2). Every comparison goes through the WI 4 coverage function, never a raw delta.
+- Fingerprint scores are never exported, copied or shared. "Copy as CSV" in Explore copies plays and hours, not scores.
+- No new colours or components outside DESIGN §3/§5. A new recipe goes in `app.css` `@layer components` with its reason in DESIGN §3.
+- Fixtures carry structure only; never commit real export values.
+
+## Risks
+| Risk | Response |
+|---|---|
+| Lifetime queries miss NFR-04 on 500k events | Rollups in WI 2; measure in WI 5 before any UI depends on timing; precompute eras and arcs after import if needed |
+| Heuristics (eras, arcs) read badly on real data | Tune thresholds once on the installed build (WI 10); each threshold is one constant |
+| Coverage banner shows too often (exports are rare) | The monthly export reminder (off by default) and clear wording; desktop-only deltas still shown |
+| U-11 never answered | WI 9 stays open; M10 closes without it, with a G-n row owned by a later milestone |
+
+## Done when
+MILESTONES M10 acceptance passes; `python scripts/check.py` and `node scripts/journeys.mjs` exit 0; the installed-build hand-check is recorded.

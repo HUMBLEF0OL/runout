@@ -17,7 +17,8 @@ Work is agentic (BRD D31): each milestone is hours of parallel agent build and e
 | 6 | [M6-integration-mvp.md](M6-integration-mvp.md) | Integration phase: MVP screens on real commands, installer | M3, M4, M5 all done | M7 (U-5 in parallel, D32; U-3/U-4 optional, D33) |
 | 7 | [M7-integration-r2-r3.md](M7-integration-r2-r3.md) | Integration phase: R2/R3 screens on real commands **+ Runout Inbox** (phone capture, D33) | M6 done (apart from U-5) | M8 |
 | 8 | [M8-stabilization-ui.md](M8-stabilization-ui.md) | Stabilization & UI Polish: end-to-end functionality hardening, gap resolution, UI streamline via taste skill | M7 done | M9 |
-| 9 | [M9-motion-ui.md](M9-motion-ui.md) | Interactive UI refinement: taste skill at motion 7, screen by screen (Settings first) | M8 UI audit done | — |
+| 9 | [M9-motion-ui.md](M9-motion-ui.md) | Interactive UI refinement: taste skill at motion 7, screen by screen (Settings first) | M8 UI audit done | M10 |
+| 10 | [M10-deep-insights.md](M10-deep-insights.md) | Deep listening insights (Insights v3, D35): contract, schema + logger, definitions, coverage engine, seven listening tabs; Genres & decades gated by U-11 | M9 done | — |
 
 ```
  FRONTEND            BACKEND                      INTEGRATION

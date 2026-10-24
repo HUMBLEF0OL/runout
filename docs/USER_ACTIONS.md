@@ -22,6 +22,7 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 | U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 · **done 19 Oct 2026** (gate login; live Studio check on test playlist passed 20 Oct 2026) |
 | U-8 | *(Optional)* Ask Spotify developer support one question | Before M5 | 5 min | Nothing |
 | U-10 | Test the Runout Inbox from your phone (on mobile data) | M7 (WI 4) | 5 min | M7 Inbox acceptance · **done 22 Oct 2026** (album → one album item, single track → name-needed track, Inbox emptied, deleted Inbox → Create Inbox) |
+| U-11 | Decide: may Runout look up artist and album names in an open music database (for genres, decades, artist countries)? | Before M10 WI 9 (any time) | 2 min | M10 WI 9 only (Genres & decades); everything else in M10 goes ahead |
 
 ---
 
@@ -192,3 +193,15 @@ I'll also stop, even outside the list above, when:
 - **Scope or compliance changes:** Spotify changes its rules or API in a way that changes what the BRD promises.
 - **The export doesn't match what the BRD assumed:** its real format is missing something the BRD relies on.
 - **Your Student plan doesn't qualify:** the U-6 test shows it isn't accepted for developer apps.
+
+## U-11 — Allow an open music database? (M10, your judgement)
+
+**Why only you:** it changes a promise. Today nothing leaves your PC except to Spotify. This would send **artist and album names** (never anything about you, no account) to MusicBrainz, and to Wikidata when MusicBrainz has nothing. That's BRD O8 and D35.
+
+What you get if yes: the Genres & decades tab (top genres, genres over time, music by decade, the age of your music, where your artists are from) and genres filling gaps in Top tags. One switch turns lookups off and deletes everything looked up. Mockup: `docs/design/screens/m10-insights/6-genres.png`.
+
+What it costs: names of what you listen to go to an outside service, once each (at most one request a second, a first fill of about an hour for artists and a few hours for albums). Licence and match rate are checked before building (TSD T6).
+
+If no: WI 9 is dropped; nothing else changes.
+
+**Send back:** "U-11 yes" or "U-11 no".

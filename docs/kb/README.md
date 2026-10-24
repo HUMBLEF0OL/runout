@@ -27,6 +27,7 @@ Facts the specs rely on, and facts learned while building. The BRD says *what*, 
 | O4 / O5 | Snapshot retention 30 d / cache expiry 7 d | M5 | agent | resolved 20 Oct 2026: built as proposed (TSD §5.2) |
 | O7 | Spotify support on export-data analysis (optional) | before M5 | U-8 | optional |
 | T5 | Runout Inbox: playlist item removal shape, followed-artists endpoint + `user-follow-read` in Dev Mode, album-batch rule (TSD §5.3, BRD D33) | M7 | agent, then U-10 live | **resolved** 2026-10-22: shapes documented 21 Oct ([spotify.md](spotify.md#web-api-release-3)), verified live on the installed build 22 Oct (U-10: create, import, album batch, removal, missing → Create Inbox); followed-artists and saved-albums options not run live (G-40) |
+| T6 / O8 | Open music database for M10 Genres & decades: licence (core CC0; tags believed CC BY-NC-SA), rate limit, match rate on real names | M10 WI 9 | U-11, then agent | open: waits on U-11 |
 
 ## Glossary
 | Term | Meaning |

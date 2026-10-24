@@ -225,6 +225,15 @@ Insert a `usage_event` on app open, on each page visit, and on each capture. A c
 | Low-rated track | rating ≤ 2★ | Playlist check-up (FR-033), Playlist Studio cut suggestions |
 | Never played | no event with `counts_as_play` | Playlist check-up, Your take |
 
+### 4.14 Deep listening insights (FR-047, FR-048; M10, D35) — planned
+Design and every definition: [design/M10-insights-v3.md](design/M10-insights-v3.md) §4 (one constant each, like §4.13). In short:
+- **Same isolation as §4.9:** sources U, S, E only; the insights module never reaches the cache DB; private sessions excluded by default; every response carries `sources` and `freshness`.
+- **Coverage rule (FR-048):** a comparison uses only sources that cover both periods completely. Past the last export's end, both sides are desktop-only and the response says so (`coverage` field, contract in API.md during M10 WI 1). Dates with no events and no logger interval are gaps: shown as "no data", skipped by streaks.
+- **Skip rate** = `skipped = 1` ÷ events with `skipped IS NOT NULL` (fixes G-45; today's denominator counts desktop events, which have no flag).
+- **Schema (planned, M10 WI 2):** `listening_event.duration_ms` and `listening_event.shuffle` from SMTC (source S, desktop rows only); `logger_run(start_utc, end_utc, reason)`; rollups `listening_day`, `listening_month_artist`, `artist_first_play`, kept by triggers like `0005` and rebuilt after an import.
+- **Performance:** every tab < 500 ms and Explore < 200 ms on the 500k-event reference (NFR-04), measured in `perf_listening`.
+- **Genres & decades (gated by U-11, BRD O8; T6):** only if approved. Names-only lookups to MusicBrainz (≤ 1 request/s, then Wikidata), cached in their own tables as a new source, deletable with one switch.
+
 ## 5. Integrations
 
 ### 5.1 Capture listener (FR-018, NFR-18; resolves BRD O6 → local listener)
@@ -323,4 +332,5 @@ spotify-companion/
 | T2 | ~~NSIS checkbox relabel and update-mode detection in the pre-uninstall hook (4.11)~~ Resolved 20 Oct 2026 ([KB windows-tauri.md](kb/windows-tauri.md#tauri-2)) | M6 |
 | T3 | Re-check redirect-URI rules just before registering the app (5.2); confirmed 18 Oct 2026; dynamic loopback port verified with a real login 19 Oct 2026 (registered `:8888`, `:58163` accepted) | M5 |
 | T5 | Runout Inbox (§5.3): request shapes **documented** 21 Oct 2026 (kb/spotify.md): `DELETE /playlists/{id}/items` `{items: [{uri}], snapshot_id}`, `POST /me/playlists`, `GET /me/following?type=artist` + `user-follow-read` still available, `GET /me/albums` and playlist entries carry `added_at`.  **Verified live 22 Oct 2026** (installed build, the user's account): create on connect, items read, `DELETE /playlists/{id}/items` JSON body removal, 404/unlisted → `missing`; a phone whole-album add collapsed to one album item (one minute bucket), a single track imported as name needed. Followed artists not exercised (option off). | M7 |
+| T6 | Open music database for M10 Genres & decades (§4.14, only if U-11 approves): MusicBrainz/Wikidata licence for core data and genre tags, rate limit and user-agent rule, and the match rate on the user's real artists and albums (target ≥ 85% of listening time). | M10 WI 9, after U-11 |
 | T4 | ~~Incognito (InPrivate) WebView2 works with Spotify embeds and keeps no disk cache (§1)~~ Resolved 18 Oct 2026: yes ([KB](kb/windows-tauri.md#webview2)); re-check in the real app window in M2 | M2 |
