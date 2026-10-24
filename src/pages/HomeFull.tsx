@@ -77,7 +77,7 @@ function EmptyListening() {
     <>
       <Empty h="No listening data yet" line="Runout learns your listening from two places: the desktop logger, which records what Spotify plays on this PC, and your Spotify history export, which covers every device.">
         <div className="flex flex-wrap gap-2 items-center">
-          <Link className="btn btn-primary" to="/import/1">Import your Spotify history</Link>
+          <Link className="btn btn-primary" to="/import/1">Import history</Link>
           <button className="btn btn-secondary" onClick={() => setLogger({ on: true }).then(() => toast("Desktop logger is on"))}>Turn on the desktop logger</button>
         </div>
       </Empty>

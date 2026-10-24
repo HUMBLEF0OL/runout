@@ -22,7 +22,7 @@ function Choose() {
     <div className="card flex flex-col gap-3 items-center text-center p-10 border border-dashed border-line-2">
       <b className="text-lg">Choose the folder or .zip from Spotify's email</b>
       <span className="text-text-2">Runout reads it on this PC; nothing is uploaded.</span>
-      <button className="btn btn-secondary" onClick={choose} disabled={busy}>{busy ? <Dots /> : "Choose folder or .zip"}</button>
+      <button className="btn btn-light" onClick={choose} disabled={busy}>{busy ? <Dots /> : "Choose folder or .zip"}</button>
       {path && <span className="font-mono text-text-2 text-xs">{shortPath(path)} (selected)</span>}
     </div>
     {err && <ErrorBanner error={err.code === "import_unrecognized" ? { ...err, message: "Choose the unzipped folder from Spotify's email, or the .zip itself." } : err}
@@ -80,7 +80,7 @@ function Check({ path }: { path: string }) {
 }
 
 function Done({ result, preview }: { result: ImportResult; preview: api.ImportPreview }) {
-  if (!result.added) return <Empty h="Nothing new to import" line={`Every play in this export is already in Runout. Your history covers up to ${dayY(preview.until)}.`}><Link className="btn btn-secondary" to="/insights">Open insights</Link></Empty>;
+  if (!result.added) return <Empty h="Nothing new to import" line={`Every play in this export is already in Runout. Your history covers up to ${dayY(preview.until)}.`}><Link className="btn btn-primary" to="/insights">See your insights</Link></Empty>;
   return (
     <div className="card flex flex-col gap-3 p-7">
       <b className="text-xl">Imported {pl(result.added, "play")}.</b>

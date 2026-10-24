@@ -72,7 +72,7 @@ export function MvpBody({ dash }: { dash: Dashboard }) {
                 <span className="font-mono text-faint text-xs">{TYPE[it.type]}, started {age(dash.started_at[it.id] ?? it.modified_at)} ago{from(it)}</span>
               </div>
               <div className="flex flex-wrap gap-2 items-center">
-                <button className="btn btn-light" onClick={() => markExplored(it)} aria-label={`Mark explored: ${nameOf(it)}`}>Mark explored</button>
+                <button className="btn btn-light s" onClick={() => markExplored(it)} aria-label={`Mark explored: ${nameOf(it)}`}>Mark explored</button>
                 <OpenSpotify uri={it.spotify_uri} name={nameOf(it)} />
               </div>
             </div>
@@ -127,7 +127,7 @@ function NameRow({ link, when, note, onName }: { link: string; when: string; not
         <span className="font-mono truncate text-text-2 text-xs">{link}</span>
         <span className="text-muted text-xs">Shared from iPhone {t}{note}</span>
       </span>
-      <button className="btn btn-primary s" onClick={onName} aria-label={`Name the link shared ${t}`}>Name it</button>
+      <button className="btn btn-light s" onClick={onName} aria-label={`Name the link shared ${t}`}>Name it</button>
     </div>
   );
 }

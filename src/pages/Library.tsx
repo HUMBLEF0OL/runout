@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { getCounts, listItems, saveFilter, toAppError, type AppError, type ItemFilter, type ItemType, type Status } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
-import { ArtTiles, Dialog, Empty, ErrorBanner, RecordCard, Seg, SkelTiles, Switch, useToast } from "../components/ui";
+import { ArtTiles, Dialog, Empty, ErrorBanner, RecordCard, Seg, SkelTiles, Switch, useSlide, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { pl, STATUS, STATUS_ORDER, statusMeta, TYPE } from "../lib/format";
 
@@ -27,9 +27,10 @@ export default function Library() {
   const counts = useApi(getCounts).data;
   const n = { album: counts?.albums ?? 0, track: counts?.tracks ?? 0, artist: counts?.artists ?? 0 };
   const filtered = status !== "any" || rating !== "any";
+  const [dir, slide] = useSlide(TABS, tab);
   const reset = () => { setStatusF("any"); setRating("any"); setPage(1); };
 
-  const tabs = <Seg<ItemType> label="Type" options={TABS.map((t) => [t, `${TYPE[t]}s ${n[t]}`])} value={tab} onChange={(t) => { setPage(1); nav(`/library/${t}`); }} />;
+  const tabs = <Seg<ItemType> label="Type" options={TABS.map((t) => [t, `${TYPE[t]}s ${n[t]}`])} value={tab} onChange={(t) => { slide(t); setPage(1); nav(`/library/${t}`); }} />;
   const head = (
     <div className="page-head">
       <div className="flex flex-col gap-2.5"><h1 className="page-title">Library</h1>{tabs}</div>
@@ -43,8 +44,8 @@ export default function Library() {
         <option value="any">Any</option>{[3, 4, 4.5, 5].map((r) => <option key={r} value={r}>{r} and up</option>)}
       </select>
       <button className="btn btn-secondary" onClick={() => setSaving(true)}>Save as filter</button>
-      <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />
       <Link className="btn btn-secondary" to="/settings/tags">Manage tags</Link>
+      <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />
       </div>
     </div>
   );
@@ -75,7 +76,7 @@ export default function Library() {
     <>
       <Topbar />
       {head}
-      {body}
+      <div key={tab} role="tabpanel" aria-label={`${TYPE[tab]}s`} className={`tab-panel ${dir} flex flex-col gap-6`}>{body}</div>
       {saving && <SaveFilter filter={filter} onClose={() => setSaving(false)} onSaved={() => { setSaving(false); toast("Filter saved"); }} />}
     </>
   );

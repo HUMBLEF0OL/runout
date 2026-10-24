@@ -407,11 +407,11 @@ await step("E3 artwork set ends with Open Spotify; record opens with Open Spotif
 
 /* F — review listening history on the user's real export (M7 WI 1, journey F) */
 if (J.has("F")) {
-await step("F1 import: Settings → Import an export → choose → check → import", async () => {
+await step("F1 import: Settings → Import history → choose → check → import", async () => {
   if (!EXPORT) throw new Skip("RUNOUT_EXPORT unset");
   await go("Settings", "#/settings");
   await pickTab("History");
-  await activate(`el.tagName === "A" && ${byName("Import an export")}`, { what: "Import an export" });
+  await activate(`el.tagName === "A" && ${byName("Import history")}`, { what: "Import history" });
   await waitFor(`location.hash === "#/import/1"`);
   await waitFor(`!!document.querySelector("main") && txt().includes("Choose folder or .zip")`);
   await shot("F1-import-choose");

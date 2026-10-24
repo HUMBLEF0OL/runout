@@ -11,7 +11,7 @@ export function ShortcutDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => onEvent("capture-received", () => setGot(true)), []);
   const addr = cap ? `${cap.address}:${cap.port}` : "…";
   return (
-    <Dialog title="Set up the iPhone Shortcut" wide onClose={onClose} footer={<button className="btn btn-secondary" onClick={onClose}>Done</button>}>
+    <Dialog title="Set up the iPhone Shortcut" wide onClose={onClose} footer={<button className="btn btn-primary" onClick={onClose}>Done</button>}>
       <ol className="m-0 pl-[18px] list-decimal flex flex-col gap-2.5 leading-[1.5]">
         <li>On your iPhone, open <b>Shortcuts</b> and create a new shortcut named <b>Save to Runout</b>. Turn on <b>Show in Share Sheet</b> and accept <b>URLs</b>.</li>
         <li>Add <b>Get Contents of URL</b>: URL <span className="inline-flex items-center gap-1 align-middle"><span className="font-mono">http://{addr}/capture</span>{cap && <CopyButton text={`http://${addr}/capture`} label="Copy capture URL" />}</span>, method <b>POST</b>, body <b>JSON</b> with <span className="font-mono">code</span> = <span className="inline-flex items-center gap-1 align-middle"><span className="font-mono">{cap?.code ?? "…"}</span>{cap && <CopyButton text={cap.code} label="Copy pairing code" />}</span> and <span className="font-mono">link</span> = Shortcut Input.</li>

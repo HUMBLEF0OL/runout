@@ -50,7 +50,7 @@ export default function Rediscover() {
 
   const tagNames = (tags.data ?? []).map((t) => t.name).sort();
   const playlistBtn = (m: Make, label = "Make a Spotify playlist") => r3 && (
-    <button className="btn btn-secondary s" disabled={!online} title={online ? undefined : "Needs a connection"} onClick={() => setMake(m)}
+    <button className="btn btn-light s" disabled={!online} title={online ? undefined : "Needs a connection"} onClick={() => setMake(m)}
       aria-label={`${label} from ${m.title}`}>{label}</button>);
 
   return (
@@ -88,7 +88,7 @@ export default function Rediscover() {
             <div className="flex flex-col gap-0.5"><h2 className="section-title">{active.name}</h2><span className="text-muted text-sm">Your saved filter</span></div>
             <span className="flex flex-wrap gap-2 items-center">
               {playlistBtn({ title: active.name, items: activeRows.data?.rows ?? [], kind: "filter", filterId: active.id }, "Make a Spotify playlist")}
-              <button className="btn btn-ghost s" onClick={async () => {
+              <button className="btn btn-danger s" onClick={async () => {
                 const gone = active; setActive(null); await deleteSavedFilter(gone.id);
                 toast(`Filter ${gone.name} deleted`, () => saveFilter(gone.name, gone.definition));
               }}>Delete filter</button>

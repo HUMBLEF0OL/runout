@@ -163,7 +163,7 @@ function Year() {
       {year === now && <span className="text-muted text-sm">{now} so far, up to {day(today().toISOString())}</span>}
     </div>
     {yr.loading ? <SkelBlock h={280} /> : yr.error ? <ErrorBanner error={yr.error} title="Couldn't load your year." onRetry={yr.reload} />
-      : !y?.plays ? <Empty h={`No listening in ${year}`} line="Import your Spotify history to see this year." ><Link className="btn btn-secondary" to="/import/1">Import history</Link></Empty>
+      : !y?.plays ? <Empty h={`No listening in ${year}`} line="Import your Spotify history to see this year."><Link className="btn btn-primary" to="/import/1">Import history</Link></Empty>
       : (
         <section className="card year p-8 flex flex-col gap-[18px]">
           <span className="text-muted">Your {y.year} in Runout</span>
@@ -204,13 +204,17 @@ export default function Insights() {
   const empty = probe.data && probe.data.data.totals.plays === 0;
   const groups: [Tab, string][] = [["listening", "Listening"], ["collection", "Collection"], ["take", "Your take"], ["year", "Year in review"]];
   const [dir, slide] = useSlide(groups.map((g) => g[0]), tab);
-  const tabs = <Seg label="Insight group" value={tab} onChange={(t) => { slide(t); nav(`/insights/${t}`); }} options={groups} />;
+  const tabs = <Seg label="Insight group" value={tab} onChange={(t) => { slide(t); setRanged(false); nav(`/insights/${t}`); }} options={groups} />;
+  // Time range tabs slide the listening panel too, but only after a range pick (the group panel already slid in).
+  const ranges: [Range, string][] = [["30d", "30 days"], ["12m", "12 months"], ["all", "All time"]];
+  const [rdir, rslide] = useSlide(ranges.map((r) => r[0]), range);
+  const [ranged, setRanged] = useState(false);
   return (
     <>
       <Topbar />
       <div className="page-head">
         <div className="flex flex-col gap-2.5"><h1 className="page-title">Insights</h1>{tabs}</div>
-        {tab === "listening" && !empty && <Seg label="Time range" value={range} onChange={setRange} options={[["30d", "30 days"], ["12m", "12 months"], ["all", "All time"]]} />}
+        {tab === "listening" && !empty && <Seg label="Time range" value={range} onChange={(r) => { rslide(r); setRanged(true); setRange(r); }} options={ranges} />}
       </div>
       {empty ? (
         <Empty h="Nothing to show yet" line="Insights need listening data. Import your Spotify history for all devices, or let the desktop logger collect plays on this PC.">
@@ -223,7 +227,10 @@ export default function Insights() {
         </p>
         <StaleBanner f={fresh.data} />
         <div key={tab} role="tabpanel" aria-label={groups.find((g) => g[0] === tab)?.[1]} className={`tab-panel ${dir} flex flex-col gap-6`}>
-          {tab === "listening" && <Listening range={range} />}
+          {tab === "listening" && (
+            <div key={range} role="tabpanel" aria-label={ranges.find((r) => r[0] === range)?.[1]} className={`${ranged ? `tab-panel ${rdir} ` : ""}flex flex-col gap-6`}>
+              <Listening range={range} />
+            </div>)}
           {tab === "collection" && <Collection />}
           {tab === "take" && <Take />}
           {tab === "year" && <Year />}

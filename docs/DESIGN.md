@@ -113,6 +113,7 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 | Source tag | “From: Your records + Desktop log + Spotify export” on every card built from listening data (FR-032) |
 | Rating control | `role="slider"`, 0.5 steps, arrow keys; visible focus |
 | Skipped play | text in `--faint`, never dimmed with opacity (contrast) |
+| Buttons (M9 rule) | `btn-primary`: the single main action of a page or dialog; `btn-light`: a card's or section's main action when the page has its primary (or none); `btn-secondary`: every other action; `btn-ghost`: inline text action beside a value; `btn-danger`: destructive. `.s` only in rows, lists, banners, the selection bar or beside a value. Same intent, same variant, size and label everywhere |
 | Switch (M9) | `Switch` (`input.toggle`, role `switch`): every on/off setting (Settings, Item, Artwork, Revisit only, Private playlist). Label left, switch right in a `.switch-row` with a hover fill; flips at once, rolls back if the save fails |
 | Selection checkbox (M9) | 18px rounded-rect box, accent fill + ink check that springs in; for choosing rows or tracks, never for a setting |
 | Page tabs (M9) | `Seg line` + a keyed `.tab-panel` that slides in from the picked side (`useSlide`): Settings, Insights groups, Playlists mode. List filters stay filled segments |

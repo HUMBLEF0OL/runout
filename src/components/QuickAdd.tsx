@@ -175,7 +175,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
   switch (step) {
     case "blank":
       state = <span className="help">{versionOf != null ? "Paste the link to the other version." : "Detects albums, tracks and artists. Short links from the iPhone share sheet work too."}</span>;
-      foot = <><button type="button" className="btn btn-ghost" onClick={() => setManual(true)}>Add without a link</button>{saveBtn}</>;
+      foot = <><button type="button" className="btn btn-secondary" onClick={() => setManual(true)}>Add without a link</button>{saveBtn}</>;
       break;
     case "checking":
       state = <span className="flex flex-wrap gap-2 items-center"><Dots /><span className="text-muted">{parsed?.state === "short" ? "Opening the short link…" : "Checking the link…"}</span></span>;
@@ -204,7 +204,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
         <span>{dup ? `${nameOf(dup)} is already in your library, ${STATUS[dup.status]} since ${day(dup.history[0]?.at ?? dup.added_at)}.` : "This is already in your library."}</span></div>;
       foot = <>
         {naming == null && <button type="button" className="btn btn-secondary" onClick={() => { setVersionOf(existingId ?? null); setLink(""); }}>Add a different version</button>}
-        <Link className="btn btn-light" to={`/item/${existingId}`} onClick={onClose}>Open existing</Link></>;
+        <Link className="btn btn-primary" to={`/item/${existingId}`} onClick={onClose}>Open existing</Link></>;
       break;
     case "form":
       state = <span className="help">{parsed?.state === "short" ? `Short link opened: ${an(kind)}.` : `Detected ${an(kind)}.`}{naming == null ? " Not in your library yet." : ""}</span>;

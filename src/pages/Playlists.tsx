@@ -72,7 +72,7 @@ function Checkup() {
   const wrap = (body: ReactNode) => <Layout tab="checkup" list={list} title={sel?.name ?? "Playlists"} subline={sel && `Your playlist, ${pl(sel.tracks, "track")}`}>{body}</Layout>;
   if (pls.loading || cu.loading) return wrap(<SkelRows n={8} />);
   if (pls.error || cu.error) return wrap(<ErrorBanner error={pls.error ?? cu.error} title="Couldn't load this playlist." onRetry={() => { pls.reload(); cu.reload(); }} />);
-  if (!sel || !cu.data) return wrap(<Empty h="No playlists in your export" line="Import an Account data export from Spotify to check your playlists."><Link className="btn btn-secondary" to="/import/1">Import</Link></Empty>);
+  if (!sel || !cu.data) return wrap(<Empty h="No playlists in your export" line="Import an Account data export from Spotify to check your playlists."><Link className="btn btn-primary" to="/import/1">Import history</Link></Empty>);
   const t = cu.data.tracks;
   const never = t.filter((x) => x.never_played).length;
   return wrap(<>
@@ -234,7 +234,7 @@ function Studio() {
           <div key={i} className="flex flex-col gap-0.5 px-3 py-2.5 rounded-control bg-surface-2">
             <span className="text-accent text-xs font-bold">{t.dupe_of ? "Remove duplicate" : "Remove"}</span><span>{t.name}</span>
           </div>)) : <span className="text-muted">No changes yet.</span>}
-        <button className="btn btn-primary l" disabled={!changes.length || busy} onClick={openConfirm}>{busy && !confirm ? <Dots /> : `Apply ${pl(changes.length, "change")} to Spotify`}</button>
+        <button className="btn btn-primary" disabled={!changes.length || busy} onClick={openConfirm}>{busy && !confirm ? <Dots /> : `Apply ${pl(changes.length, "change")} to Spotify`}</button>
         <span className="text-muted text-xs leading-[1.45]">Runout checks the playlist hasn't changed on Spotify first. You can undo for 30 days.</span>
         <button className="btn btn-secondary" onClick={() => { setEdit(undefined); toast("Draft discarded"); }}>Discard draft</button>
         <h2 className="card-title">In your other playlists</h2>

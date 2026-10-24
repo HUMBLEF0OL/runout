@@ -3,7 +3,7 @@
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import * as api from "../api";
 import type { SpotifyEntry } from "../api";
-import { Attribution, Empty, ErrorBanner, Seg, SkelRows, SpotifyLogo } from "../components/ui";
+import { Attribution, Empty, ErrorBanner, Seg, SkelRows, SpotifyLogo, useSlide } from "../components/ui";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import { useApi, useOnline } from "../hooks/useApi";
@@ -35,6 +35,7 @@ export default function Spotify() {
   const status = useApi(api.getSpotifyStatus);
   const top = useApi(() => api.getTopItems(kind, range), [kind, range]);
   const recent = useApi(api.getRecentPlaysApi);
+  const [dir, slide] = useSlide(["tracks", "artists"], kind);
   if (!r3) return <Navigate to="/" replace />;
 
   const state = status.data?.state;
@@ -46,7 +47,7 @@ export default function Spotify() {
       </div>
       {state === "connected" && (
         <div className="flex flex-wrap gap-2 items-center">
-          <Seg label="Top items" value={kind} onChange={(k) => nav(`/spotify/${k}?r=${range}`)} options={[["tracks", "Top tracks"], ["artists", "Top artists"]]} />
+          <Seg label="Top items" value={kind} onChange={(k) => { slide(k); nav(`/spotify/${k}?r=${range}`); }} options={[["tracks", "Top tracks"], ["artists", "Top artists"]]} />
           <Seg label="Spotify time range" value={range} onChange={(r) => nav(`/spotify/${kind}?r=${r}`)} options={[["4w", "4 weeks"], ["6m", "6 months"], ["1y", "1 year"]]} />
         </div>
       )}
@@ -71,7 +72,7 @@ export default function Spotify() {
     const rows = top.data!.slice(0, MAX);
     body = (
       <div className="flex flex-wrap gap-7 items-start">
-        <section className="flex-[1.5_1_520px] min-w-0 flex flex-col gap-3.5" aria-label={`Your top ${kind} on Spotify`}>
+        <section key={kind} role="tabpanel" className={`tab-panel ${dir} flex-[1.5_1_520px] min-w-0 flex flex-col gap-3.5`} aria-label={`Your top ${kind} on Spotify`}>
           {rows.length ? <div className="card pad-s"><div className="list">
             {rows.map((t, i) => (
               <div key={t.uri} className="row grid-cols-[28px_minmax(0,1fr)_auto]">

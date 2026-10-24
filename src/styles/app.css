@@ -222,6 +222,8 @@ input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 .switch-row:hover { background: var(--color-surface-2); }
 .switch-row:active { background: var(--color-surface-3); }
 .switch-row:has(:disabled) { cursor: not-allowed; background: transparent; }
+/* In a toolbar or inline row the hover fill keeps the gap to its neighbours; in a card column it bleeds to the card edge */
+:where(.page-head, .flex-wrap) .switch-row { margin-inline: 0; }
 /* Page-level tabs (Seg `line`): an underline on the hairline instead of a fill; the underline lands with a spring */
 .seg.line { display: flex; gap: 4px; padding: 0; border: 0; border-bottom: 1px solid var(--color-line); border-radius: 0; background: transparent; }
 .seg.line button { height: 38px; padding: 0 12px; border-radius: var(--radius-control) var(--radius-control) 0 0; color: var(--color-muted); font-size: 14px; font-weight: 600; }

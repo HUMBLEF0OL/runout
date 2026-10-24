@@ -11,7 +11,7 @@ import { XIcon as X } from "@phosphor-icons/react";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import {
-  Attribution, Dialog, Dots, EmbedSlot, Empty, ErrorBanner, FreshnessNote, PrioritySelect, Rating, SkelBlock, SkelRows, SourceTag,
+  Attribution, CountUp, Dialog, Dots, EmbedSlot, Empty, ErrorBanner, FreshnessNote, PrioritySelect, Rating, SkelBlock, SkelRows, SourceTag,
   StatusBadge, StatusControl, Switch, TagChips, useToast,
 } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
@@ -89,8 +89,8 @@ function Detail({ it }: { it: ItemDetail }) {
   );
 
   const spotifySave = !savable ? null
-    : !online ? <span className="text-faint text-xs">Saved in Spotify can’t change while you’re offline</span>
-    : saved.error ? <span className="text-faint text-xs">Saved in Spotify isn’t available. {saved.error.message}</span>
+    : !online ? <span className="text-faint text-xs py-1.5">Saved in Spotify can’t change while you’re offline</span>
+    : saved.error ? <span className="text-faint text-xs py-1.5">Saved in Spotify isn’t available. {saved.error.message}</span>
     : <Switch label="Saved in your Spotify library" on={!!saved.data?.[0]} disabled={saved.loading} onChange={async (on) => {
         const u = [it.spotify_uri!];
         const ok = await run("Couldn’t change your Spotify library.", () => (on ? saveToSpotifyLibrary(u) : removeFromSpotifyLibrary(u)));
@@ -102,7 +102,12 @@ function Detail({ it }: { it: ItemDetail }) {
     <div className="field">
       <span className="label">Status</span>
       <StatusControl value={it.status} onChange={changeStatus} />
-      <div className="flex flex-wrap gap-4 items-center text-text-2 text-sm">
+      <div className="flex flex-wrap gap-2 items-center">
+        <label className="sr-only" htmlFor="st-note">Note for the next status change</label>
+        <input id="st-note" className="input h-[34px] flex-[1_1_260px]" placeholder="Optional note for the next status change" value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
+      {/* Settings-style switch rows (label left, switch right), stacked so each keeps its own hover fill */}
+      <div className="flex flex-col max-w-[380px] pt-1">
         <Switch label="Revisit later" on={it.revisit} onChange={async (v) => {
           const ok = await patch("Couldn’t save that change.", { revisit: v });
           if (ok) toast(`${name}: ${v ? "flagged to revisit" : "revisit flag removed"}`, () => updateItem(it.id, { revisit: !v }));
@@ -113,14 +118,10 @@ function Detail({ it }: { it: ItemDetail }) {
           if (ok) toast(`${name}: ${v ? "favourite" : "no longer a favourite"}`, () => updateItem(it.id, { favourite: !v }));
           return ok;
         }} />
-        {it.in_backlog && <>
-          <label htmlFor="dt-prio">Priority</label>
-          <PrioritySelect id="dt-prio" className="input h-[34px]" value={it.priority ?? ""} onChange={(p) => patch("Couldn’t save that change.", { priority: p || null })} /></>}
         {spotifySave}
-      </div>
-      <div className="flex flex-wrap gap-2 items-center">
-        <label className="sr-only" htmlFor="st-note">Note for the next status change</label>
-        <input id="st-note" className="input h-[34px] flex-[1_1_260px]" placeholder="Optional note for the next status change" value={note} onChange={(e) => setNote(e.target.value)} />
+        {it.in_backlog && <div className="flex justify-between items-center gap-3 py-1.5">
+          <label htmlFor="dt-prio">Priority</label>
+          <PrioritySelect id="dt-prio" className="input h-[34px] w-auto" value={it.priority ?? ""} onChange={(p) => patch("Couldn’t save that change.", { priority: p || null })} /></div>}
       </div>
     </div>
   );
@@ -165,8 +166,8 @@ function Detail({ it }: { it: ItemDetail }) {
           <div key={t.id} className="flex justify-between items-baseline gap-3 py-[3px]"><Link to={`/item/${t.id}`} className="text-text">{nameOf(t)}</Link><span className="text-muted text-xs">{statusMeta(t)}</span></div>))
         : <span className="text-muted">None yet. Add tracks to see which ones you haven’t played.</span>}
       <div className="flex flex-wrap gap-2 items-center">
-        <button className="btn btn-secondary s" onClick={addTrack}>Add a track</button>
-        {r3 && it.spotify_uri && !it.track_list?.length && <button className="btn btn-secondary s" disabled={!online} onClick={() => setFilling(true)}>Fill the track list from Spotify</button>}
+        <button className="btn btn-secondary" onClick={addTrack}>Add a track</button>
+        {r3 && it.spotify_uri && !it.track_list?.length && <button className="btn btn-secondary" disabled={!online} onClick={() => setFilling(true)}>Fill the track list from Spotify</button>}
       </div>
     </section>
   );
@@ -195,7 +196,7 @@ function Detail({ it }: { it: ItemDetail }) {
       {listening.loading ? <SkelBlock h={60} />
         : listening.error ? <ErrorBanner title="Couldn’t load your listening." error={listening.error} onRetry={listening.reload} />
         : l && l.data.plays ? <>
-          <span className="font-mono text-[22px] font-semibold">{pl(l.data.plays, "play")}</span>
+          <span className="font-mono text-[22px] font-semibold"><CountUp text={pl(l.data.plays, "play")} /></span>
           <span className="text-text-2 text-sm">{l.data.last_played_local ? `Last played ${ago(l.data.last_played_local).toLowerCase()}.` : ""}{it.type === "album" ? " Counts every track from this album." : it.type === "artist" ? " Counts every track by this artist." : ""}</span>
         </> : <span className="text-text-2">No plays yet.</span>}
       {l && <FreshnessNote freshness={l.freshness} />}

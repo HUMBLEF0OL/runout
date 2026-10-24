@@ -9,12 +9,13 @@ import {
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
-import { ArtTiles, Empty, ErrorBanner, NameNeeded, PageHead, Seg, SkelRows, StatusBadge, Switch, useToast } from "../components/ui";
+import { ArtTiles, Empty, ErrorBanner, NameNeeded, PageHead, Seg, SkelRows, StatusBadge, Switch, useSlide, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { age, ago, nameOf, pl, statusMeta, sub, TYPE } from "../lib/format";
 import { moveTo } from "../lib/backlog";
 
 type TypeF = "all" | ItemType;
+const TYPES: [TypeF, string][] = [["all", "All"], ["album", "Albums"], ["track", "Tracks"], ["artist", "Artists"]];
 const GROUPS: [string, Priority | null][] = [["High priority", "high"], ["Medium", "medium"], ["Low", "low"], ["No priority", null]];
 
 export default function Backlog() {
@@ -24,6 +25,8 @@ export default function Backlog() {
   const toast = useToast();
   const [type, setType] = useState<TypeF>("all");
   const [tag, setTag] = useState("");
+  const [dir, slide] = useSlide(TYPES.map((t) => t[0]), type);
+  const pickType = (t: TypeF) => { slide(t); setType(t); };
   const [sort, setSort] = useState<"order" | "added">("order");
   const [art, setArt] = useState(false);
   const [sel, setSel] = useState<Set<number>>(new Set());
@@ -77,7 +80,6 @@ export default function Backlog() {
   const head = (
     <PageHead title="Backlog" sub={isEmpty || items.loading || items.error ? undefined : `${planned} planned, ${inProg} in progress${oldest ? `, oldest added ${age(oldest)} ago` : ""}`}>
       {!isEmpty && <>
-        <Seg<TypeF> label="Type" options={[["all", "All"], ["album", "Albums"], ["track", "Tracks"], ["artist", "Artists"]]} value={type} onChange={setType} />
         <label className="sr-only" htmlFor="bl-tag">Tag</label>
         <select id="bl-tag" className="input surface" value={tag} onChange={(e) => setTag(e.target.value)}>
           <option value="">All tags</option>{tags.map((t) => <option key={t}>{t}</option>)}
@@ -91,7 +93,8 @@ export default function Backlog() {
     </PageHead>
   );
 
-  if (items.loading) return <><Topbar />{head}<SkelRows n={8} /></>;
+  const tabs = <Seg<TypeF> label="Type" options={TYPES} value={type} onChange={pickType} />;
+  if (items.loading) return <><Topbar />{head}{tabs}<SkelRows n={8} /></>;
   if (items.error) return <><Topbar />{head}<ErrorBanner title="Couldn’t load your backlog." error={items.error} onRetry={items.reload} /></>;
   if (isEmpty) return <><Topbar />{head}<Empty h="Nothing waiting" line="Paste a Spotify link above, or share one from your phone, and it lands here."><button className="btn btn-primary" onClick={() => quickAdd()}>Add a link</button></Empty></>;
 
@@ -121,7 +124,9 @@ export default function Backlog() {
     <>
       <Topbar />
       {head}
+      {tabs}
       {actErr && <ErrorBanner title="Couldn’t save that change." error={actErr} />}
+      <div key={type} role="tabpanel" aria-label={TYPES.find((t) => t[0] === type)![1]} className={`tab-panel ${dir} flex flex-col gap-6`}>
       {(needName.length > 0 || unresolved.length > 0) && !filtered && (
         <section className="flex flex-col gap-1.5">
           <h2 className="text-accent text-sm font-bold">Waiting for a name</h2>
@@ -133,7 +138,7 @@ export default function Backlog() {
                   <span className="text-muted text-xs">Shared from iPhone {ago(it.added_at).toLowerCase()}</span>
                 </span>
                 <NameNeeded />
-                <button className="btn btn-primary s" onClick={() => quickAdd({ namingItemId: it.id })} aria-label={`Name the link shared ${ago(it.added_at).toLowerCase()}`}>Name it</button>
+                <button className="btn btn-light s" onClick={() => quickAdd({ namingItemId: it.id })} aria-label={`Name the link shared ${ago(it.added_at).toLowerCase()}`}>Name it</button>
               </div>))}
             {unresolved.map((u) => (
               <div key={u.id} className="row grid-cols-[minmax(0,1fr)_auto_auto]">
@@ -142,12 +147,12 @@ export default function Backlog() {
                   <span className="text-muted text-xs">{u.source === "shortcut" ? "Shared from iPhone" : "Pasted"} {ago(u.received_at).toLowerCase()}, link not opened yet</span>
                 </span>
                 <button className="btn btn-secondary s" onClick={retry}>Try again</button>
-                <button className="btn btn-ghost s" onClick={async () => { await run(discardUnresolved(u.id)); }} aria-label={`Discard ${u.raw_link}`}>Discard</button>
+                <button className="btn btn-danger s" onClick={async () => { await run(discardUnresolved(u.id)); }} aria-label={`Discard ${u.raw_link}`}>Discard</button>
               </div>))}
           </div></div>
         </section>)}
       {!list.length ? (filtered
-        ? <Empty h="No matches" line="Nothing in the backlog fits these filters."><button className="btn btn-secondary" onClick={() => { setType("all"); setTag(""); }}>Clear filters</button></Empty>
+        ? <Empty h="No matches" line="Nothing in the backlog fits these filters."><button className="btn btn-secondary" onClick={() => { pickType("all"); setTag(""); }}>Clear filters</button></Empty>
         : null)
         : art ? <ArtTiles items={list} meta={statusMeta} />
         : groups.map(([g, rows]) => (
@@ -156,6 +161,7 @@ export default function Backlog() {
             <div className="card pad-s"><div className="list">{rows.map((it, n) => row(it, rows, n))}</div></div>
           </section>))}
       <span className="font-mono text-faint text-xs">{list.length} of {named.length} shown</span>
+      </div>
       {sel.size > 0 && (
         <div className="selbar" role="region" aria-label="Selection actions">
           <span className="font-bold px-1.5">{sel.size} selected</span>

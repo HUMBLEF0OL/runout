@@ -4,13 +4,14 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import * as api from "../api";
 import { playSources } from "../components/logic";
 import type { Play, Range, Unmatched } from "../api";
-import { Dialog, Dots, Empty, ErrorBanner, FreshnessNote, PageHead, PlayRow, Seg, SkelRows, SourceTag, useToast } from "../components/ui";
+import { Dialog, Dots, Empty, ErrorBanner, FreshnessNote, PageHead, PlayRow, Seg, SkelRows, SourceTag, useSlide, useToast } from "../components/ui";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import { useApi } from "../hooks/useApi";
 import { daysSince, day, nameOf, pl, sub } from "../lib/format";
 
 type Tab = "all" | "unrated" | "missing";
+const TABS: Tab[] = ["all", "unrated", "missing"];
 const RANGES: Range[] = ["30d", "12m", "all"];
 const PER_DAY = 12;
 
@@ -57,8 +58,8 @@ function Logger() {
             {s === "paused" ? "Paused. Nothing is logged until you resume." : s === "off" ? "The logger is off. Nothing on this PC is logged." : "Logging Spotify on this PC. A play counts after 30 seconds."}
           </span>
           <div className="flex flex-wrap gap-2 items-center">
-            {busy ? <Dots /> : s === "paused" ? <button className="btn btn-light" onClick={() => act(api.resumeLogger)}>Resume</button>
-              : s === "off" ? <button className="btn btn-light" onClick={() => act(() => api.setLogger({ on: true }))}>Turn on the logger</button>
+            {busy ? <Dots /> : s === "paused" ? <button className="btn btn-light" onClick={() => act(api.resumeLogger)}>Resume logging</button>
+              : s === "off" ? <button className="btn btn-light" onClick={() => act(() => api.setLogger({ on: true }))}>Turn on the desktop logger</button>
               : <><button className="btn btn-light" onClick={() => act(() => api.pauseLogger(60))}>Pause for 1 hour</button>
                 <button className="btn btn-secondary" onClick={() => act(() => api.pauseLogger(null))}>Pause</button></>}
           </div>
@@ -117,6 +118,7 @@ export default function Plays() {
   const missing = useApi(() => api.listPlays({ tab: "missing", range: "all", offset: 0, limit: 0 }));
   const fresh = useApi(api.getFreshness);
   const logger = useApi(api.getLoggerStatus);
+  const [dir, slide] = useSlide(TABS, tab);
 
   const groups = new Map<string, Play[]>();
   plays.data?.rows.forEach((p) => { const k = dayLabel(p); const g = groups.get(k); if (g) g.push(p); else groups.set(k, [p]); });
@@ -127,7 +129,7 @@ export default function Plays() {
   else if (plays.error) content = <ErrorBanner error={plays.error} title="Couldn't load your plays." onRetry={plays.reload} />;
   else if (!plays.data?.rows.length) content = tab === "all"
     ? <Empty h="No plays yet" line="Turn on the desktop logger, or import your Spotify history to see plays from every device.">
-        <div className="flex flex-wrap gap-2 items-center"><button className="btn btn-primary" onClick={() => api.setLogger({ on: true })}>Turn on the logger</button><Link className="btn btn-secondary" to="/import/1">Import history</Link></div>
+        <div className="flex flex-wrap gap-2 items-center"><Link className="btn btn-primary" to="/import/1">Import history</Link><button className="btn btn-secondary" onClick={() => api.setLogger({ on: true })}>Turn on the desktop logger</button></div>
       </Empty>
     : <Empty h="Nothing here" line={tab === "unrated" ? "Every play you've counted has your rating." : "Every play is linked to a record in your library."}>
         <Link className="btn btn-secondary" to="/plays/all">See all plays</Link>
@@ -148,11 +150,13 @@ export default function Plays() {
       <div className="flex flex-wrap gap-7 items-start">
         <section className="flex-[1.6_1_560px] min-w-0 flex flex-col gap-3">
           <PageHead title="Recent plays">
-            <Seg label="Which plays" value={tab} onChange={(t) => nav(`/plays/${t}`)}
+            <Seg label="Which plays" value={tab} onChange={(t) => { slide(t); nav(`/plays/${t}`); }}
               options={[["all", "All"], ["unrated", `Not rated${n(unrated)}`], ["missing", `Not in library${n(missing)}`]]} />
           </PageHead>
-          <span className="flex flex-wrap gap-1.5 items-center">{plays.data && plays.data.rows.length > 0 && <SourceTag sources={playSources(plays.data.rows)} />}<FreshnessNote freshness={fresh.data} loggerState={logger.data?.state} /></span>
-          {content}
+          <div key={tab} role="tabpanel" aria-label={tab === "all" ? "All plays" : tab === "unrated" ? "Not rated" : "Not in library"} className={`tab-panel ${dir} flex flex-col gap-3`}>
+            <span className="flex flex-wrap gap-1.5 items-center">{plays.data && plays.data.rows.length > 0 && <SourceTag sources={playSources(plays.data.rows)} />}<FreshnessNote freshness={fresh.data} loggerState={logger.data?.state} /></span>
+            {content}
+          </div>
         </section>
         <aside className="flex-[1_1_320px] min-w-0 flex flex-col gap-3">
           <Logger />

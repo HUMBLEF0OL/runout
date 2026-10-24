@@ -21,13 +21,13 @@ export default function FirstRun() {
       <div className="tiles grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
         <div className="card flex flex-col gap-3"><b>Share from your phone</b>
           <span className="text-text-2 text-sm">Set up the iPhone Shortcut so songs you hear on the go land here.</span>
-          <button className="btn btn-ghost self-start p-0 h-auto [font-size:inherit]" onClick={() => setDlg("shortcut")}>Set it up</button></div>
+          <button className="btn btn-light self-start" onClick={() => setDlg("shortcut")}>Set it up</button></div>
         <div className="card flex flex-col gap-3"><b>Bring your history</b>
           <span className="text-text-2 text-sm">Import your Spotify listening history to see what you actually play.</span>
-          {r2 ? <Link to="/import/1" className="font-semibold">Import</Link> : later}</div>
+          {r2 ? <Link to="/import/1" className="btn btn-light self-start">Import history</Link> : later}</div>
         <div className="card flex flex-col gap-3"><b>Clean up playlists</b>
           <span className="text-text-2 text-sm">Connect Spotify to tidy your own playlists with your ratings.</span>
-          {r3 ? <button className="btn btn-ghost self-start p-0 h-auto [font-size:inherit]" onClick={() => setDlg("connect")}>Connect Spotify</button> : later}</div>
+          {r3 ? <button className="btn btn-light self-start" onClick={() => setDlg("connect")}>Connect Spotify</button> : later}</div>
       </div>
       <span className="text-faint text-xs">Everything stays on this PC. <span className="kbd">Ctrl+N</span> adds a link from anywhere.</span>
       {dlg === "shortcut" && <ShortcutDialog onClose={() => setDlg(null)} />}

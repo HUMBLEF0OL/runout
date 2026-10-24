@@ -178,7 +178,7 @@ export default function Settings() {
                   <span className="font-mono text-text-2 text-xs">{ib.last_check ? `${day(ib.last_check)}, ${time(ib.last_check)} · ${pl(ib.imported_last, "item")} imported` : "not yet"}</span></span>)}
               {connected && <div className="flex flex-wrap gap-2 items-center">
                 {ib.state === "ready" && !gone
-                  ? <button className="btn btn-secondary" disabled={!online || !!busy} onClick={() => run("inbox", check).then((r) => r && toast(r.imported ? `${pl(r.imported, "item")} from your Inbox saved to the backlog as Name needed` : "Nothing new in your Inbox"))}>
+                  ? <button className="btn btn-light" disabled={!online || !!busy} onClick={() => run("inbox", check).then((r) => r && toast(r.imported ? `${pl(r.imported, "item")} from your Inbox saved to the backlog as Name needed` : "Nothing new in your Inbox"))}>
                       {busy === "inbox" ? <Dots /> : "Check now"}</button>
                   : <button className="btn btn-primary" disabled={!online || !!busy} onClick={() => run("inbox", createInbox).then((r) => { if (r) { setIbGone(false); toast("Runout Inbox created in your Spotify playlists"); } })}>
                       {busy === "inbox" ? <Dots /> : "Create Inbox"}</button>}
@@ -248,13 +248,13 @@ export default function Settings() {
                   </span>))}
               </div>
             )}
-            <div><Link className="btn btn-light" to="/import/1">Import an export</Link></div>
+            <div><Link className="btn btn-light" to="/import/1">Import history</Link></div>
           </Card>
         )}
 
         {tab === "tags" && <Card id="tags" title="Tags">
           <span className="text-text-2">{tags.data ? `${pl(tags.data.length, "tag")} in use.` : " "}</span>
-          <div><Link className="btn btn-secondary" to="/settings/tags">Rename, merge or delete tags</Link></div>
+          <div><Link className="btn btn-light" to="/settings/tags">Rename, merge or delete tags</Link></div>
         </Card>}
 
         {tab === "metrics" && <Card id="metrics" title="Is Runout working for you?">
