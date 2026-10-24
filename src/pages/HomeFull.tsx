@@ -2,9 +2,9 @@
 // albums, tracks), recent plays, your take vs your plays, backlog. Built to stay readable for years of history.
 // Listening data only from your records + desktop log + export (sources U/S/E); Spotify Top items never appear here.
 // Motion (M9, user 24 Oct 2026): Motion for React for data arriving and changing; CSS keeps hover/press states.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AnimatePresence, m, useMotionValue, useReducedMotion, useSpring, useTransform } from "motion/react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { ArrowDownRightIcon, ArrowUpRightIcon, PlusIcon } from "@phosphor-icons/react";
 import {
   getDashboard, getFreshness, getListeningInsights, getLoggerStatus, getTakeInsights, listItems, listPlays, resumeLogger, search, setLogger,
@@ -13,19 +13,18 @@ import {
 import { Topbar } from "../components/Shell";
 import { playSources } from "../components/logic";
 import { useQuickAdd } from "../components/QuickAddContext";
+import { MonthBars, monthLong, SPRING, Versus } from "../components/charts";
 import {
   ArtTiles, EmbedSlot, Empty, ErrorBanner, FreshnessNote, LiveDot, OpenSpotify, PlayRow, Seg, SkelRows, SkelTiles, SourceTag, spot, Stat, Stars, Switch, useSlide, useToast,
 } from "../components/ui";
 import { useApi } from "../hooks/useApi";
-import { hm, hmBig, hrs, mmss, monthName, nameOf, num, pl, PRIO, STATUS, statusMeta, TYPE } from "../lib/format";
+import { hmBig, hrs, mmss, nameOf, num, pl, PRIO, STATUS, statusMeta, TYPE } from "../lib/format";
 import { byPriority } from "../lib/backlog";
 import { MvpBody, StatSkel } from "./HomeMvp";
 
 const RANGES: [Range, string][] = [["7d", "7 days"], ["30d", "30 days"], ["12m", "12 months"], ["all", "All time"]];
 const PERIOD: Record<Range, string> = { "7d": "The last 7 days", "30d": "The last 30 days", "12m": "The last 12 months", all: "All time" };
 const EASE = [0.16, 1, 0.3, 1] as const; // DESIGN §3 --ease-out
-const SPRING = { type: "spring", bounce: 0.15, visualDuration: 0.45 } as const;
-const monthLong = (ym: string) => new Date(`${ym}-01T00:00`).toLocaleString("en-GB", { month: "long", year: "numeric" });
 
 /** Change against the period before; nothing to compare for All time or a first period. */
 function Delta({ now, prev, fmt, more, less }: { now: number; prev: number; fmt: (n: number) => string; more: string; less: string }) {
@@ -37,20 +36,6 @@ function Delta({ now, prev, fmt, more, less }: { now: number; prev: number; fmt:
 /** Arrival (DESIGN §2.4 "arrival of data"): the page's sections rise in once, 70 ms apart. */
 const PAGE = { show: { transition: { staggerChildren: 0.07 } } };
 const RISE = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: EASE } } };
-
-/** This period against the one before as two bars (no track), drawn under the delta line. */
-function Versus({ now, prev, children }: { now: number; prev: number; children: React.ReactNode }) {
-  const reduce = useReducedMotion();
-  const max = Math.max(now, prev, 1);
-  const bar = (v: number, cls: string, delay: number) => <m.i className={cls} style={{ width: `${Math.max(2, (v / max) * 100)}%`, originX: 0 }}
-    initial={reduce ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ ...SPRING, delay }} />;
-  return (
-    <span className="flex flex-col gap-2.5">
-      <span className="hm-vs" aria-hidden><span>Now</span>{bar(now, "now", 0.35)}<span>Before</span>{bar(prev, "", 0.42)}</span>
-      {children}
-    </span>
-  );
-}
 
 /** Reduced motion: Motion's MotionConfig stops transforms but still fades, and `mode="wait"` still waits; swaps go instant. */
 const swap = (reduce: boolean | null, t: object) => (reduce ? { duration: 0 } : t);
@@ -93,7 +78,7 @@ export default function HomeFull() {
         {!t ? <StatSkel />
           : <div className="stats">
               <Stat k="Plays" v={num(t.plays)} d={compare ? <Versus now={t.plays} prev={t.plays_prev}><Delta now={t.plays} prev={t.plays_prev} fmt={num} more="more" less="fewer" /></Versus> : "Played 30 seconds or more"} />
-              <Stat k="Listening time" v={hmBig(t.ms)} d={compare ? <Versus now={t.ms} prev={t.ms_prev}><Delta now={t.ms} prev={t.ms_prev} fmt={hm} more="more" less="less" /></Versus>
+              <Stat k="Listening time" v={hmBig(t.ms)} d={compare ? <Versus now={t.ms} prev={t.ms_prev}><Delta now={t.ms} prev={t.ms_prev} fmt={hmBig} more="more" less="less" /></Versus>
                 : t.ms >= 172_800_000 ? `About ${pl(Math.round(t.ms / 86_400_000), "day")} of music` : "In this period"} />
               <Stat k="New artists" v={num(t.new_artists)} d={range === "all" ? `${pl(t.artists_total, "artist")} in your history` : "First heard in this period"} />
               <Link to="/plays/unrated" className="text-inherit grid" aria-label={`${num(t.unrated_plays)} plays you haven’t rated. Rate what you keep coming back to`}>
@@ -194,35 +179,11 @@ function NowCard({ logger, loading, error, retry }: { logger: LoggerStatus | und
 
 /* ------------------------------------------------------------------ your year: 12 months as bars, scrubbable */
 function Pulse({ months, sources }: { months: { month: string; hours: number }[] | undefined; sources: Source[] }) {
-  const reduce = useReducedMotion();
-  const [at, setAt] = useState<number | null>(null);
-  // The value label rides a spring to the month in focus (pointer or keys); it rests on the latest month.
-  const n = months?.length ?? 0;
-  const tx = useMotionValue(1);
-  const sx = useSpring(tx, SPRING);
-  const x = useTransform(sx, [0, 1], ["0%", "100%"]);
-  useEffect(() => { if (n) { const k = (n - 0.5) / n; tx.jump(k); sx.jump(k); } }, [n, tx, sx]);
   if (!months) return <div className="card hm-pulse"><div className="skel h-full min-h-[220px]" /></div>;
-  if (n < 2) return null;
-  const max = Math.max(1, ...months.map((m_) => m_.hours));
+  if (months.length < 2) return null;
   const sum = months.reduce((a, m_) => a + m_.hours, 0);
   const peak = months.reduce((p, m_, i) => (m_.hours > months[p].hours ? i : p), 0);
-  const cur = at ?? n - 1;
-  const pick = (i: number | null) => {
-    const k = ((i ?? n - 1) + 0.5) / n;
-    setAt(i);
-    tx.set(k);
-    if (reduce) sx.jump(k); // useSpring ignores MotionConfig reducedMotion
-  };
-  const keys = (e: React.KeyboardEvent) => {
-    const step: Record<string, number> = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -3, PageUp: 3 };
-    const k = e.key in step ? cur + step[e.key] : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
-    if (k === null) return;
-    e.preventDefault();
-    pick(Math.max(0, Math.min(n - 1, k)));
-  };
-  const mo = months[cur];
-  const soFar = cur === n - 1 ? " so far" : "";
+  const last = months.length - 1;
   return (
     <div className="card hm-pulse">
       <h2 className="card-title">Your last 12 months</h2>
@@ -230,22 +191,9 @@ function Pulse({ months, sources }: { months: { month: string; hours: number }[]
         <span className="hm-big">{hrs(sum)}</span>
         <span className="text-muted text-sm">listened, busiest in {monthLong(months[peak].month)}</span>
       </div>
-      <div className="hm-plot" role="slider" tabIndex={0} aria-label="Listening by month" aria-valuemin={0} aria-valuemax={n - 1} aria-valuenow={cur}
-        aria-valuetext={`${monthLong(mo.month)}${soFar}: ${hrs(mo.hours)}${cur === peak ? ", your busiest month" : ""}`}
-        onPointerMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left) / r.width) * n))); if (i !== at) pick(i); }}
-        onPointerLeave={() => pick(null)} onKeyDown={keys} onBlur={() => pick(null)}>
-        <m.div className="hm-tip-track" style={{ x }} aria-hidden><span className={`hm-tip${at === null ? "" : " on"}`}>{hrs(mo.hours)}</span></m.div>
-        <div className="hm-cols" aria-hidden>
-          <span className="hm-avg" style={{ bottom: `${(sum / n / max) * 100}%` }} />
-          {months.map((m_, i) => (
-            <span key={m_.month} className={`hm-col${i === cur ? " on" : ""}`}>
-              <m.i style={{ height: `${Math.max(2, (m_.hours / max) * 100)}%`, originY: 1 }}
-                initial={reduce ? false : { scaleY: 0 }} animate={{ scaleY: 1 }} transition={{ ...SPRING, delay: 0.15 + i * 0.03 }} />
-            </span>))}
-        </div>
-      </div>
-      <div className="hm-months" aria-hidden>{months.map((m_, i) => <span key={m_.month} className={i === cur ? "on" : undefined}>{monthName(m_.month)}</span>)}</div>
-      <span className="text-muted text-xs min-h-[17px]" aria-hidden>{at === null ? `Average ${hrs(sum / n)} a month, the faint line.` : `${monthLong(mo.month)}${soFar}${cur === peak ? ", your busiest month" : ""}.`}</span>
+      <MonthBars months={months.map((m_) => ({ month: m_.month, value: m_.hours }))} fmt={hrs} label="Listening by month" avg
+        caption={(i) => i === null ? `Average ${hrs(sum / months.length)} a month, the faint line.`
+          : `${monthLong(months[i].month)}${i === last ? " so far" : ""}${i === peak ? ", your busiest month" : ""}.`} />
       <SourceTag sources={sources} />
     </div>
   );

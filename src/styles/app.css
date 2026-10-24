@@ -141,7 +141,7 @@ button.chip.on:hover:not([disabled]) { background: #F8C566; }
 .stat { display: flex; flex-direction: column; gap: 6px; padding: 16px; }
 .stat .v { font-family: var(--font-mono); font-size: 26px; font-weight: 600; letter-spacing: -0.02em; word-spacing: -0.35em; } /* "497 h", "13h 26m": a mono space is a full cell */
 .stat .k, .stat .d { font-size: 12px; color: var(--color-muted); }
-.stat .v.txt { font-family: var(--font-sans); font-size: 20px; font-weight: 800; letter-spacing: -0.015em; }
+.stat .v.txt { font-family: var(--font-sans); font-size: 20px; font-weight: 800; letter-spacing: -0.015em; word-spacing: normal; } /* a name, not a number: normal spaces */
 .stat .d.act { color: var(--color-accent); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
 .tiles.five { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); } /* 5 fixed columns broke long titles mid-word */
@@ -252,9 +252,9 @@ input.toggle:disabled, input.toggle:disabled + .toggle-thumb { opacity: 0.4; cur
 /* Spotlight: a light that follows the pointer along the card's hairline (--mx/--my set by Settings `spot`). */
 :is(.st-panel, .hm-page, .lit) .card:not(.danger)::before { content: ""; position: absolute; inset: -1px; padding: 1px; border-radius: inherit; background: radial-gradient(240px circle at var(--mx, 50%) var(--my, -240px), rgba(255,255,255,0.32), transparent 70%); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity: 0; transition: opacity 250ms; pointer-events: none; }
 :is(.st-panel, .hm-page, .lit) .card:not(.danger):hover::before { opacity: 1; }
-.hm-page .card { isolation: isolate; } /* the glow sits behind the card content, above its fill */
-.hm-page .card:not(.danger)::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: radial-gradient(420px circle at var(--mx, 50%) var(--my, -420px), rgba(255,255,255,0.035), transparent 65%); opacity: 0; transition: opacity 250ms; pointer-events: none; }
-.hm-page .card:not(.danger):hover::after { opacity: 1; }
+:is(.hm-page, .lit) .card { isolation: isolate; } /* the glow sits behind the card content, above its fill */
+:is(.hm-page, .lit) .card:not(.danger)::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: radial-gradient(420px circle at var(--mx, 50%) var(--my, -420px), rgba(255,255,255,0.035), transparent 65%); opacity: 0; transition: opacity 250ms; pointer-events: none; }
+:is(.hm-page, .lit) .card:not(.danger):hover::after { opacity: 1; }
 .st-metric { display: flex; flex-direction: column; gap: 2px; }
 .st-summary, .st-details summary { border: 0; background: transparent; font: inherit; display: flex; align-items: center; gap: 8px; width: fit-content; margin-inline: -6px; padding: 4px 6px; border-radius: var(--radius-control); cursor: pointer; list-style: none; color: var(--color-text-2); transition: color 150ms, background 150ms; }
 .st-details summary::-webkit-details-marker { display: none; }
@@ -313,6 +313,37 @@ a.hm-lead-name:hover { color: var(--color-link-hover); }
 .hm-bar.hot { background: var(--color-accent); }
 .hm-rank:hover .hm-bar:not(.hot) { background: var(--color-text-2); }
 
+/* ---------- Backlog (M9): the backlog's shape (priority mix, age) up top; groups with counts; rows glide on reorder
+   (Motion layout) and are whole-row targets. Priority colours: high is the accent (attention), the rest step down in grey. */
+.bl-sum { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px 32px; padding: 18px 20px; }
+.bl-big { font-family: var(--font-mono); font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+.bl-mix { flex: 1 1 340px; max-width: 560px; display: flex; flex-direction: column; gap: 10px; }
+.bl-mix-bar { display: flex; gap: 3px; height: 10px; }
+.bl-seg { min-width: 6px; height: 100%; padding: 0; border: 0; border-radius: var(--radius-bar); cursor: pointer; transition: filter 150ms, transform 100ms var(--ease-out); }
+.bl-seg:hover { filter: brightness(1.25); }
+.bl-seg:active { transform: scaleY(0.8); }
+.p0 { background: var(--color-accent); } .p1 { background: var(--color-text-2); } .p2 { background: var(--color-line-hover); } .p3 { background: var(--color-line-strong); }
+.bl-mix-key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--color-text-2); }
+.bl-mix-key span { display: inline-flex; align-items: center; gap: 6px; }
+.bl-mix-key span.zero { color: var(--color-faint); }
+.bl-mix-key i, .bl-group-head i { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-bar); }
+.bl-group { display: flex; flex-direction: column; gap: 8px; scroll-margin-top: 16px; content-visibility: auto; contain-intrinsic-size: auto 600px; }
+.bl-group-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+.bl-group .list > .row { animation: none; } /* rows arrive through Motion here */
+.bl-row { position: relative; grid-template-columns: 18px minmax(0, 1fr) minmax(120px, 0.6fr) 96px 104px 72px; transition: background 600ms var(--ease-out), opacity 150ms; }
+.bl-row.dragging { opacity: 0.5; }
+.bl-row.moved { background: rgba(245,181,68,0.12); transition: none; } /* lit at once, then fades back (600 ms) */
+.bl-row:has(.bl-stretch:active) { background: var(--color-surface-3); }
+.bl-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; } /* the whole row opens the record */
+.bl-above { position: relative; z-index: 1; }
+.bl-row .icon-btn[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+.bl-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-age { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bl-age i { display: block; height: 3px; border-radius: var(--radius-bar); background: var(--color-bar); transition: background 150ms; }
+.bl-age i.old { background: var(--color-accent); }
+.bl-row:hover .bl-age i:not(.old) { background: var(--color-text-2); }
+@media (max-width: 1100px) { .bl-row { grid-template-columns: 18px minmax(0, 1fr) 96px 104px 72px; } .bl-meta { display: none; } }
+
 /* ---------- Recent plays (M9): days as sections with a sticky head and a 24-hour strip; rows are whole-row targets.
    Off-screen days skip layout and paint, so years of plays stay cheap to scroll. Motion for React drives row arrival. */
 .pl-day { display: flex; flex-direction: column; gap: 8px; content-visibility: auto; contain-intrinsic-size: auto 520px; }
@@ -336,29 +367,31 @@ a.hm-lead-name:hover { color: var(--color-link-hover); }
 .pl-state { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border-radius: var(--radius-thumb); background: var(--color-surface-2); color: var(--color-text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .pl-state.on { color: var(--color-text); }
 
-/* ---------- Library + Rediscover (M9): collection cards, filter bar, rails. Motion (CollectionCard, ShelfRail) moves
-   them; these recipes only draw. */
-.cc-cell { min-width: 0; display: flex; }
-.cc-card { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; min-height: 148px; color: var(--color-text); }
-.cc-card:hover { color: var(--color-text); }
-.cc-type { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; color: var(--color-muted); }
-.cc-name { font-size: 15px; font-weight: 700; line-height: 1.25; letter-spacing: -0.005em; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; } /* a link still waiting for a name stays two lines */
-.cc-sub { font-size: 13px; color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cc-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: auto -18px -18px; padding: 10px 18px 12px; border-top: 1px solid var(--color-line); }
-.lb-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
-.lb-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.lb-result { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--color-text-2); font-size: 13px; }
-.lb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
-.lb-more { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 4px; }
-.rd-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; }
-/* A rail scrolls sideways and snaps per card; the ends fade only where more cards hide (set by ShelfRail) */
-.rd-rail { display: flex; gap: 14px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 4px; padding: 6px 4px 12px; margin: -6px -4px -4px;
-  scrollbar-width: thin; scrollbar-color: var(--color-line-2) transparent;
-  mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
-.rd-rail.at-start { mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
-.rd-rail.at-end { mask-image: linear-gradient(90deg, transparent, #000 32px); }
-.rd-rail.at-start.at-end { mask-image: none; }
-.rd-rail > .cc-cell { flex: 0 0 224px; scroll-snap-align: start; }
+/* ---------- Insights (M9): rings for shares, ranked rows with bars, a heatmap you can point at. `.grow` is the shared
+   track-less bar from charts.tsx (Grow); month bars reuse the Home recipes (.hm-plot ...). */
+.grow { display: block; height: 4px; border-radius: var(--radius-bar); background: var(--color-bar); transition: background 150ms; }
+.grow.hot { background: var(--color-accent); }
+.in-ringstat { flex-direction: row; justify-content: space-between; align-items: center; gap: 12px; }
+.in-ring { flex: none; width: 56px; height: 56px; transform: rotate(-90deg); }
+.in-ring circle { fill: none; stroke-width: 6; }
+.in-ring .track { stroke: var(--color-line-2); }
+.in-ring .fill { stroke: var(--color-text-2); stroke-linecap: round; }
+.in-ranks { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.in-rank { position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-inline: -8px; padding: 7px 8px; border-radius: var(--radius-control); transition: background 150ms, transform 100ms var(--ease-out); }
+.in-rank:hover { background: var(--color-surface-2); }
+.in-rank:hover .grow:not(.hot) { background: var(--color-text-2); }
+.in-rank:has(.in-stretch:active) { transform: scale(0.99); background: var(--color-surface-3); }
+.in-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; } /* the whole row opens the record */
+.in-spread { display: grid; grid-template-columns: 40px minmax(0, 1fr) 28px; gap: 10px; align-items: center; margin-inline: -6px; padding: 3px 6px; border-radius: var(--radius-thumb); transition: background 150ms; }
+.in-spread:hover { background: var(--color-surface-2); }
+.in-spread:hover .grow:not(.hot) { background: var(--color-text-2); }
+/* Heatmap crosshair: the pointed row and column get a hairline, the cell itself a light ring */
+.in-quad { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1180px) { .in-quad { grid-template-columns: repeat(2, minmax(0, 1fr)); } } /* 4 or 2 across, never 3 + 1 */
+.in-heat { cursor: crosshair; }
+.in-heat .c { transition: box-shadow 120ms; }
+.in-heat .r.on .c, .in-heat .c.col { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.22); }
+.in-heat .c.here { box-shadow: 0 0 0 2px var(--color-text); }
 
 /* ---------- Playlists (M9): issue share per playlist, where issues sit along it, a kept/cut meter that springs (Motion).
    Rows arrive through Motion, so the generic row entrance is off here. */

@@ -34,13 +34,25 @@ Agents: `react-ui` (screens), `spec-reviewer` (design + a11y review). UI only: n
    - **Each day:** a sticky head with the day, plays and listening time, and a 24-hour strip of bars (ticks 00/06/12/18). Pointing at a play lights its hour in accent (a DOM class, no React state).
    - **Rows:** whole-row link to the record, hover fill and press, device as an icon (this PC / phone), duration, and your stars or Rate/Save; rows arrive with a short Motion fade-rise.
    - **Side:** the logger card shows its state (Logging with the live dot / Paused / Off) and what's playing, and stays in view while you scroll.
-5. **Playlists and From Spotify (WI 6)**, done 24 Oct 2026 (user: "refactor the playlists and from spotify feature using taste + motion"):
+5. **Insights (WI 5)**, done 24 Oct 2026 (user: "refactor the insights and backlog feature using taste + motion"):
+   - Shared charts in `src/components/charts.tsx` (Home uses them too): `MonthBars` (scrubbable month bars, `role="slider"`, spring tip, the month in focus in accent), `Grow` (track-less bar that springs in), `Versus` (now/before bars).
+   - Listening: month bars with total, busiest month and average; Plays and Listening time with now/before bars and the change (none for All time); skip rate and phone share as rings that fill once; the heatmap is a crosshair you point at (readout "Fridays at 18:00, 38% of your busiest hour"; gaps keep the last cell) and reveals left to right; Unfinished albums get progress bars; Top artists/albums/tracks are whole-row links with bars, hover and press.
+   - Collection: library size as month bars (caption: added and finished that month), Explored as a ring, rating spread bars with the mode in accent, tags arrive in a short stagger.
+   - Year in review: years as a segment, the headline counts up, stats 4 or 2 across (never 3 + 1).
+   - Fixed: the Home `.stat .v` word spacing squeezed text stats ("AliceColtrane"); source tags moved under each card's content (InsightCard) so titles stop wrapping; large listening-time changes use `hmBig`.
+   - Card spotlight and pointer glow now apply to any `.lit` container (Insights), not just Home and Settings.
+6. **Playlists and From Spotify (WI 6)**, done 24 Oct 2026 (user: "refactor the playlists and from spotify feature using taste + motion"):
    - **Check-up:** each exported playlist in the side list has a bar for its share of flagged tracks (duplicates + rated 2 or lower). The track card has All tracks / Needs a look tabs and a strip that draws where the flagged tracks sit along the playlist (one gradient with a hard stop per run, `stripBg` in `src/lib/studio.ts`, tested; one element whatever the length; it grows in once). Flagged rows get an accent edge and a badge; rows rise in staggered (Motion, delay capped).
    - **Studio:** a cut row dims and its name strikes through (CSS transition); Keep/Cut lights in accent when cut. The draft panel stays in view (sticky) and leads with a kept/cut meter: the kept number swaps on the `LAND` spring and two bars spring to their share. Changes slide in and out (`AnimatePresence`, height to auto, small content); the Undo banner slides in.
    - **From Spotify:** Spotify's #1 is a lead and 2 to 20 flow down two columns (Home's `hm-lead` / `hm-rank`); the kind and range controls moved into the card, and the set slides from the picked side when either changes (one order: kind, then range). No count of how much of the set is saved (review: a number derived from Spotify's ranking breaks S9); in the library is a check that opens the record; not saved is a + that opens Quick add. Recent plays use the same rows with the time in mono.
    - Both pages opt into the card spotlight (`.lit` + `spot`). Found on the way: `.lit .card` sets `position: relative`, which turns a sticky card's `top` into a 20 px offset; `.py-page .py-side` wins now.
-6. **Next screens (WI 7+)**, one per step, same rules: Backlog, Insights (bars grow in, rank bars), Item. Each gets its own scoped recipes and a before/after journeys screenshot diff.
-7. **Review** — `spec-reviewer` against DESIGN §2–3 and accessibility; findings fixed.
+7. **Backlog (WI 7)**, done 24 Oct 2026 (user: "refactor the insights and backlog feature using taste + motion"):
+   - **Scale:** Rust caps `list_items` at `MAX_LIMIT` 10,000; the page asked for 1,000, so a larger backlog was cut off silently and reorder saw only those rows. It now asks for 10,000 and warns past it (`check.py` "plays page" also keeps this limit under `MAX_LIMIT`). Groups show 40 rows, then "Show N more" (200 at a time); heavy dev state: 2,340 records render 160 DOM rows.
+   - **Summary card** above the tabs: waiting count, planned / in progress, oldest age, records planned over six months (accent), and a priority mix bar with a legend; a part scrolls to its group. It carries the card spotlight (`.lit`).
+   - **Rows:** whole-row link, one "type, from" column (hidden below 1100 px), an age bar against the longest wait in view (accent past 180 days planned).
+   - **Motion:** reorder glides (Motion `layout`, its feature bundle loaded only on this page via `LazyMotion` + `domMax`) and the moved row flashes accent; rows arrive and leave with `AnimatePresence`; the selection bar springs in. Move up/down at a group's end is `aria-disabled` (focus kept) and out of the Tab order, as are the mix-bar parts (screen readers still reach them by name).
+8. **Next screens (WI 8+)**, one per step, same rules: Item. Each gets its own scoped recipes and a before/after journeys screenshot diff.
+9. **Review** — `spec-reviewer` against DESIGN §2–3 and accessibility; findings fixed.
 
 ## Done when
 - Every screen refined under the rules above; DESIGN §3 motion table lists each new motion.

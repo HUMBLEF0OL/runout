@@ -163,6 +163,19 @@ function counts(): Counts {
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b.slice(0, 10)) - Date.parse(a.slice(0, 10))) / 86400000);
 const nameKey = (i: MItem) => (i.display_name ?? "\uffff").toLowerCase();
 
+/** Dev state "heavy": a backlog of ~2,400 records (the mock backlog repeated with new ids, priorities and ages spread).
+ *  Read-only: writes to these ids fail, which is fine for checking layout and scale. */
+function heavyBacklog(f: ItemFilter): Page<ItemSummary> {
+  const base = filterItems({ ...f, offset: 0, limit: 1e6 }).rows;
+  const prio: ItemSummary["priority"][] = ["high", "medium", "medium", "low", "low", null, null, null];
+  const rows = Array.from({ length: 90 }, (_, k) => base.map((it, n) => {
+    const d = new Date(TODAY); d.setDate(d.getDate() - ((k * 7 + n * 3) % 900));
+    return { ...it, id: it.id + (k + 1) * 100_000, priority: k ? prio[(k + n) % prio.length] : it.priority, added_at: k ? d.toISOString().slice(0, 10) : it.added_at };
+  })).flat();
+  const offset = f.offset ?? 0, limit = f.limit ?? 50;
+  return { rows: rows.slice(offset, offset + limit), total: rows.length, offset };
+}
+
 function filterItems(f: ItemFilter): Page<ItemSummary> {
   let rows = items.filter((i) =>
     (!f.type || i.type === f.type) && (!f.status?.length || f.status.includes(i.status)) &&
@@ -256,7 +269,7 @@ const H: Record<string, Handler> = {
     started_at: Object.fromEntries(items.filter((i) => i.status === "in_progress").map((i) => [i.id,
       history.filter((h) => h.item_id === i.id && h.to === "in_progress").reduce((m, h) => (h.at > m ? h.at : m), "") || i.added_at])),
   }),
-  list_items: ({ filter }) => filterItems(filter ?? {}),
+  list_items: ({ filter }) => (dev.view === "heavy" && filter?.in_backlog ? heavyBacklog(filter) : filterItems(filter ?? {})),
   get_item: ({ id }) => detail(need(id)),
   create_item: ({ input }: { input: NewItem }) => {
     if (input.spotify_uri && existingFor(input.spotify_uri)) fail("duplicate", "That's already in your library.", { existing_id: existingFor(input.spotify_uri) });

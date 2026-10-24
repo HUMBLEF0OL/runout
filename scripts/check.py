@@ -798,7 +798,14 @@ def check_plays_page():
     bad = []
     if not (rs and mock and page):
         bad.append("MAX_PAGE (plays.rs), PLAYS_MAX_PAGE (mocks) or PAGE (Plays.tsx) not found")
-    else:
+    # Same for list_items (M9 WI 6): Backlog loads the whole backlog in one call, so it must not ask past Rust's MAX_LIMIT
+    lim = re.search(r"pub const MAX_LIMIT: i64 = ([\d_]+);", (ROOT / "src-tauri/src/library/filters.rs").read_text(encoding="utf-8"))
+    bl = re.search(r"const ALL = ([\d_]+);", (ROOT / "src/pages/Backlog.tsx").read_text(encoding="utf-8"))
+    if not (lim and bl):
+        bad.append("MAX_LIMIT (library/filters.rs) or ALL (Backlog.tsx) not found")
+    elif int(bl.group(1).replace("_", "")) > int(lim.group(1).replace("_", "")):
+        bad.append(f"Backlog.tsx ALL {bl.group(1)} > Rust list_items MAX_LIMIT {lim.group(1)}")
+    if rs and mock and page:
         if rs.group(1) != mock.group(1):
             bad.append(f"mock PLAYS_MAX_PAGE {mock.group(1)} != Rust MAX_PAGE {rs.group(1)}")
         if int(page.group(1)) > int(rs.group(1)):

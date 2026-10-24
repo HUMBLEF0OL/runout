@@ -212,8 +212,10 @@ export const SourcedTag = ({ res }: { res: Pick<Sourced<unknown>, "sources" | "f
 export function InsightCard({ title, res, children, className = "", side }: { title: ReactNode; res: Pick<Sourced<unknown>, "sources" | "freshness"> | undefined; children: ReactNode; className?: string; side?: boolean }) {
   return (
     <section className={`card flex flex-col gap-3 ${side ? "flex-[1_1_320px] min-w-0" : className}`}>
-      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">{title}</h2><SourcedTag res={res} /></div>
+      <h2 className="card-title">{title}</h2>
       {children}
+      {/* The source tag sits under the content (M9): beside the title it squeezed titles onto two lines */}
+      <span className="mt-auto pt-1"><SourcedTag res={res} /></span>
     </section>
   );
 }
@@ -308,8 +310,6 @@ export function RecordCard({ it, meta, act }: { it: ItemSummary; meta?: ReactNod
   );
 }
 
-/** Rank bar row: rank, name + your-status suffix, bar without track, mono count. */
-/** Play row: track, artist, your stars or a Rate button, mono relative time. Skipped text in --faint (never opacity). */
 /** Collection card (Library grid, Rediscover rails; M9): type + Revisit, title, artist, then a hairline footer with your
  *  status (accent when it asks for action) or the shelf's own line, and your stars. Rises in with `RISE` (custom = index). */
 export function CollectionCard({ it, i = 0, meta, act }: { it: ItemSummary; i?: number; meta?: ReactNode; act?: boolean }) {
@@ -329,6 +329,8 @@ export function CollectionCard({ it, i = 0, meta, act }: { it: ItemSummary; i?: 
   );
 }
 
+/** Rank bar row: rank, name + your-status suffix, bar without track, mono count. */
+/** Play row: track, artist, your stars or a Rate button, mono relative time. Skipped text in --faint (never opacity). */
 export function PlayRow({ p, onRate, onSave, wide }: { p: Play; onRate?: (p: Play) => void; onSave?: (p: Play) => void; wide?: boolean }) {
   if (wide) return <PlayRowWide p={p} onRate={onRate} onSave={onSave} />;
   return (
