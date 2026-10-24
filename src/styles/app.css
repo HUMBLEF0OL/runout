@@ -255,11 +255,14 @@ input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 .tab-panel.from-left { animation: panel-in-l 320ms var(--ease-out) both; }
 @keyframes panel-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
 @keyframes panel-in-l { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
-.st-panel .card { position: relative; }
-.st-panel .card:not(.danger):hover { border-color: rgba(255,255,255,0.10); }
+:is(.st-panel, .hm-page) .card { position: relative; }
+:is(.st-panel, .hm-page) .card:not(.danger):hover { border-color: rgba(255,255,255,0.10); }
 /* Spotlight: a light that follows the pointer along the card's hairline (--mx/--my set by Settings `spot`). */
-.st-panel .card:not(.danger)::before { content: ""; position: absolute; inset: -1px; padding: 1px; border-radius: inherit; background: radial-gradient(240px circle at var(--mx, 50%) var(--my, -240px), rgba(255,255,255,0.32), transparent 70%); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity: 0; transition: opacity 250ms; pointer-events: none; }
-.st-panel .card:not(.danger):hover::before { opacity: 1; }
+:is(.st-panel, .hm-page) .card:not(.danger)::before { content: ""; position: absolute; inset: -1px; padding: 1px; border-radius: inherit; background: radial-gradient(240px circle at var(--mx, 50%) var(--my, -240px), rgba(255,255,255,0.32), transparent 70%); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity: 0; transition: opacity 250ms; pointer-events: none; }
+:is(.st-panel, .hm-page) .card:not(.danger):hover::before { opacity: 1; }
+.hm-page .card { isolation: isolate; } /* the glow sits behind the card content, above its fill */
+.hm-page .card:not(.danger)::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: radial-gradient(420px circle at var(--mx, 50%) var(--my, -420px), rgba(255,255,255,0.035), transparent 65%); opacity: 0; transition: opacity 250ms; pointer-events: none; }
+.hm-page .card:not(.danger):hover::after { opacity: 1; }
 .st-metric { display: flex; flex-direction: column; gap: 2px; }
 .st-details { interpolate-size: allow-keywords; }
 .st-details::details-content { block-size: 0; overflow: clip; transition: block-size 300ms var(--ease-out), content-visibility 300ms allow-discrete; }
@@ -275,37 +278,55 @@ input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
 .copy svg { animation: pop-in 260ms var(--ease-spring); }
 @keyframes pop-in { from { transform: scale(0.5); opacity: 0; } to { transform: none; opacity: 1; } }
 
-/* ---------- Home (M9): your last 12 months (scrubbable), most played (lead + ranks). Motion for React drives arrivals;
-   these recipes only draw. Sizes stay fixed whatever the history length (top 10, 12 months). */
+/* ---------- Home (M9): your last 12 months (bars, scrubbable), the period, most played (lead + ranks). Motion for React
+   drives arrivals and springs; these recipes draw and give hover/press. Sizes stay fixed whatever the history (top 10, 12 months). */
+.hm-page { display: flex; flex-direction: column; gap: 24px; }
 .hm-pulse { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .hm-big { font-family: var(--font-mono); font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; white-space: nowrap; word-spacing: -0.35em; } /* "428 h": a mono space is a full cell */
-.hm-plot { position: relative; height: 112px; margin-top: 4px; cursor: crosshair; touch-action: pan-y; border-radius: var(--radius-thumb); overflow: clip; overflow-clip-margin: 10px; } /* the marker layer slides by its own width; clip it, keep the dot */
-.hm-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.hm-line { fill: none; stroke: var(--color-text-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.hm-stop { stop-color: var(--color-text-2); } /* the line is data, not attention: accent only on the marker (DESIGN §1.5) */
-.hm-avg { stroke: var(--color-line-2); stroke-width: 1; }
-/* Marker: a hairline + dot on the month in focus; brighter while scrubbing */
-.hm-mark { position: absolute; inset: 0; pointer-events: none; }
-.hm-mark::before { content: ""; position: absolute; top: -4px; bottom: 0; left: -0.5px; width: 1px; background: rgba(255,255,255,0.10); transition: background 150ms; }
-.hm-mark.on::before { background: rgba(255,255,255,0.28); }
-.hm-dot { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 3px var(--color-surface); }
-.hm-months { display: flex; justify-content: space-between; margin-top: -2px; font-size: 11px; color: var(--color-faint); }
-.hm-months span { width: 26px; text-align: center; transition: color 150ms; }
-.hm-months span:first-child { margin-left: -13px; } .hm-months span:last-child { margin-right: -13px; }
+/* 12 month bars: grey data, the month in focus in accent (DESIGN §3 --accent "active bar"); a value tip springs above it */
+.hm-plot { position: relative; height: 136px; padding-top: 26px; cursor: crosshair; touch-action: pan-y; border-radius: var(--radius-thumb); overflow: clip; overflow-clip-margin: 28px; } /* the tip track slides by its own width; clip it but let an edge tip show */
+.hm-cols { position: relative; height: 100%; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; align-items: end; }
+.hm-col { position: relative; height: 100%; display: flex; align-items: flex-end; border-radius: var(--radius-bar); transition: background 150ms; }
+.hm-col i { display: block; width: 100%; border-radius: var(--radius-bar); background: var(--color-bar); transition: background 180ms var(--ease-out); }
+.hm-plot:hover .hm-col:not(.on) i { background: var(--color-line-strong); }
+.hm-col.on { background: rgba(255,255,255,0.035); }
+.hm-col.on i { background: var(--color-accent); box-shadow: 0 0 0 1px rgba(245,181,68,0.25), 0 6px 18px rgba(245,181,68,0.18); }
+.hm-avg { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed rgba(255,255,255,0.22); z-index: 1; pointer-events: none; }
+.hm-tip-track { position: absolute; left: 0; right: 0; top: 0; height: 22px; pointer-events: none; }
+.hm-tip { position: absolute; left: 0; top: 0; transform: translateX(-50%); padding: 2px 7px; border-radius: var(--radius-thumb); background: var(--color-surface-3); color: var(--color-text-2); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; word-spacing: -0.3em; transition: background 150ms, color 150ms; }
+.hm-tip.on { background: var(--color-text); color: var(--color-accent-ink); font-weight: 700; }
+.hm-months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; margin-top: -2px; font-size: 11px; color: var(--color-faint); text-align: center; }
+.hm-months span { transition: color 150ms; }
 .hm-months .on { color: var(--color-text); font-weight: 700; }
 .hm-swap { display: inline-block; overflow: hidden; }
 .hm-delta { display: inline-flex; align-items: center; gap: 4px; }
+/* This period vs the period before: two bars, no track */
+.hm-vs { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px; align-items: center; font-size: 11px; color: var(--color-faint); }
+.hm-vs i { display: block; height: 4px; border-radius: var(--radius-bar); background: var(--color-bar); }
+.hm-vs i.now { background: var(--color-text-2); }
 .hm-charts { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
-.hm-lead { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: var(--radius-control); background: rgba(255,255,255,0.025); border: var(--hair); }
+.hm-charts .seg.line { flex: 1 1 auto; } /* the hairline runs the card's width, not just under the tabs */
+.hm-lead { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 18px; padding: 20px; border-radius: var(--radius-control); background: linear-gradient(160deg, rgba(255,255,255,0.05), rgba(255,255,255,0.012) 60%); border: var(--hair); box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }
 .hm-lead-name { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.12; overflow-wrap: anywhere; }
 a.hm-lead-name:hover { color: var(--color-link-hover); }
-/* Ranks 2–10 flow down two columns when there is room, one when not; each row keeps together */
-.hm-ranks { flex: 2.6 1 440px; min-width: 0; margin: 0; padding: 0; list-style: none; columns: 2 280px; column-gap: 32px; }
-.hm-rank { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 28px; gap: 12px; align-items: center; padding: 7px 0; break-inside: avoid; }
+.hm-ring { position: relative; flex: none; width: 72px; height: 72px; display: grid; place-items: center; }
+.hm-ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.hm-ring circle { fill: none; stroke-width: 5; }
+.hm-ring .track { stroke: var(--color-line-2); }
+.hm-ring .fill { stroke: var(--color-text); stroke-linecap: round; }
+.hm-ring span { font-family: var(--font-mono); font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+/* Ranks 2–10 flow down two columns when there is room, one when not; the whole row is the target */
+.hm-ranks { flex: 2.6 1 440px; min-width: 0; margin: 0; padding: 0; list-style: none; columns: 2 280px; column-gap: 24px; }
+.hm-rank { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 28px; gap: 12px; align-items: center; margin-inline: -8px; padding: 7px 8px; border-radius: var(--radius-control); break-inside: avoid; transition: background 150ms, transform 100ms var(--ease-out); }
+.hm-rank:hover { background: var(--color-surface-2); }
+.hm-rank:has(.hm-stretch:active) { transform: scale(0.99); background: var(--color-surface-3); }
+.hm-rank-n { font-family: var(--font-mono); font-size: 13px; color: var(--color-faint); transition: color 150ms; }
+.hm-rank:hover .hm-rank-n { color: var(--color-text); }
+.hm-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; } /* row-wide click target */
+.hm-save { position: relative; z-index: 1; width: 28px; height: 28px; border-radius: var(--radius-thumb); }
 .hm-bar { display: block; height: 4px; border-radius: var(--radius-bar); background: var(--color-bar); transition: background 150ms; }
 .hm-bar.hot { background: var(--color-accent); }
-.hm-rank:hover .hm-bar:not(.hot) { background: var(--color-line-hover); }
-.hm-save { width: 28px; height: 28px; border-radius: var(--radius-thumb); }
+.hm-rank:hover .hm-bar:not(.hot) { background: var(--color-text-2); }
 
 /* ---------- prototype controls (not product UI) */
 .proto { position: fixed; right: 16px; bottom: 16px; z-index: 40; width: 280px; font-size: 12px; background: #F3F1EA; color: #1B1B1B; border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); font-family: var(--font-mono); }

@@ -2,9 +2,9 @@
 // albums, tracks), recent plays, your take vs your plays, backlog. Built to stay readable for years of history.
 // Listening data only from your records + desktop log + export (sources U/S/E); Spotify Top items never appear here.
 // Motion (M9, user 24 Oct 2026): Motion for React for data arriving and changing; CSS keeps hover/press states.
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AnimatePresence, m as motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "motion/react";
+import { AnimatePresence, m, useMotionValue, useReducedMotion, useSpring, useTransform } from "motion/react";
 import { ArrowDownRightIcon, ArrowUpRightIcon, PlusIcon } from "@phosphor-icons/react";
 import {
   getDashboard, getFreshness, getListeningInsights, getLoggerStatus, getTakeInsights, listItems, listPlays, resumeLogger, search, setLogger,
@@ -14,7 +14,7 @@ import { Topbar } from "../components/Shell";
 import { playSources } from "../components/logic";
 import { useQuickAdd } from "../components/QuickAddContext";
 import {
-  ArtTiles, EmbedSlot, Empty, ErrorBanner, FreshnessNote, LiveDot, OpenSpotify, PlayRow, Seg, SkelRows, SkelTiles, SourceTag, Stat, Stars, Switch, useSlide, useToast,
+  ArtTiles, EmbedSlot, Empty, ErrorBanner, FreshnessNote, LiveDot, OpenSpotify, PlayRow, Seg, SkelRows, SkelTiles, SourceTag, spot, Stat, Stars, Switch, useSlide, useToast,
 } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { hm, hmBig, hrs, mmss, monthName, nameOf, num, pl, PRIO, STATUS, statusMeta, TYPE } from "../lib/format";
@@ -32,6 +32,24 @@ function Delta({ now, prev, fmt, more, less }: { now: number; prev: number; fmt:
   if (now === prev) return <span>Same as the period before</span>;
   const Icon = now > prev ? ArrowUpRightIcon : ArrowDownRightIcon;
   return <span className="hm-delta"><Icon size={12} weight="bold" aria-hidden />{fmt(Math.abs(now - prev))} {now > prev ? more : less} than the period before</span>;
+}
+
+/** Arrival (DESIGN §2.4 "arrival of data"): the page's sections rise in once, 70 ms apart. */
+const PAGE = { show: { transition: { staggerChildren: 0.07 } } };
+const RISE = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: EASE } } };
+
+/** This period against the one before as two bars (no track), drawn under the delta line. */
+function Versus({ now, prev, children }: { now: number; prev: number; children: React.ReactNode }) {
+  const reduce = useReducedMotion();
+  const max = Math.max(now, prev, 1);
+  const bar = (v: number, cls: string, delay: number) => <m.i className={cls} style={{ width: `${Math.max(2, (v / max) * 100)}%`, originX: 0 }}
+    initial={reduce ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ ...SPRING, delay }} />;
+  return (
+    <span className="flex flex-col gap-2.5">
+      <span className="hm-vs" aria-hidden><span>Now</span>{bar(now, "now", 0.35)}<span>Before</span>{bar(prev, "", 0.42)}</span>
+      {children}
+    </span>
+  );
 }
 
 /** Reduced motion: Motion's MotionConfig stops transforms but still fades, and `mode="wait"` still waits; swaps go instant. */
@@ -57,35 +75,36 @@ export default function HomeFull() {
     <>
       <Topbar>{seg}</Topbar>
       <h1 className="sr-only">Home</h1>
-      <section aria-label="Now playing and your year" className="flex flex-wrap gap-5 items-stretch">
+      <m.div className="hm-page" variants={PAGE} initial={reduce ? false : "hidden"} animate="show" onPointerMove={spot}>
+      <m.section variants={RISE} aria-label="Now playing and your year" className="flex flex-wrap gap-5 items-stretch">
         <NowCard logger={logger.data} loading={logger.loading} error={!!logger.error} retry={logger.reload} />
         <Pulse months={ins.data?.data.monthly} sources={src} />
-      </section>
+      </m.section>
 
-      <section aria-labelledby="hm-period" className="flex flex-col gap-3.5">
+      <m.section variants={RISE} aria-labelledby="hm-period" className="flex flex-col gap-3.5">
         <div className="flex flex-wrap justify-between items-baseline gap-x-4 gap-y-1">
           <h2 id="hm-period" className="section-title hm-swap">
             <AnimatePresence mode="wait" initial={false}>
-              <motion.span key={range} className="inline-block" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={swap(reduce, { duration: 0.18, ease: EASE })}>{PERIOD[range]}</motion.span>
+              <m.span key={range} className="inline-block" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={swap(reduce, { duration: 0.18, ease: EASE })}>{PERIOD[range]}</m.span>
             </AnimatePresence>
           </h2>
           <span className="flex flex-wrap gap-x-2 items-baseline"><FreshnessNote freshness={fresh.data} loggerState={logger.data?.state} /><SourceTag sources={src} /></span>
         </div>
         {!t ? <StatSkel />
           : <div className="stats">
-              <Stat k="Plays" v={num(t.plays)} d={compare ? <Delta now={t.plays} prev={t.plays_prev} fmt={num} more="more" less="fewer" /> : "Played 30 seconds or more"} />
-              <Stat k="Listening time" v={hmBig(t.ms)} d={compare ? <Delta now={t.ms} prev={t.ms_prev} fmt={hm} more="more" less="less" />
+              <Stat k="Plays" v={num(t.plays)} d={compare ? <Versus now={t.plays} prev={t.plays_prev}><Delta now={t.plays} prev={t.plays_prev} fmt={num} more="more" less="fewer" /></Versus> : "Played 30 seconds or more"} />
+              <Stat k="Listening time" v={hmBig(t.ms)} d={compare ? <Versus now={t.ms} prev={t.ms_prev}><Delta now={t.ms} prev={t.ms_prev} fmt={hm} more="more" less="less" /></Versus>
                 : t.ms >= 172_800_000 ? `About ${pl(Math.round(t.ms / 86_400_000), "day")} of music` : "In this period"} />
               <Stat k="New artists" v={num(t.new_artists)} d={range === "all" ? `${pl(t.artists_total, "artist")} in your history` : "First heard in this period"} />
               <Link to="/plays/unrated" className="text-inherit grid" aria-label={`${num(t.unrated_plays)} plays you haven’t rated. Rate what you keep coming back to`}>
                 <Stat k="Plays you haven’t rated" v={num(t.unrated_plays)} d="Rate what you keep coming back to" act />
               </Link>
             </div>}
-      </section>
+      </m.section>
 
-      <Charts range={range} loading={ins.loading} data={ins.data?.data} sources={src} />
+      <m.div variants={RISE}><Charts range={range} loading={ins.loading} data={ins.data?.data} sources={src} /></m.div>
 
-      <section className="flex flex-wrap gap-7 items-start">
+      <m.section variants={RISE} className="flex flex-wrap gap-7 items-start">
         <div className="flex-[1.4_1_480px] flex min-w-0 flex-col gap-3.5">
           <div className="flex justify-between items-baseline gap-3"><h2 className="section-title">Recent plays</h2><span className="flex flex-wrap gap-2 items-center">{!!plays.data?.rows.length && <SourceTag sources={playSources(plays.data.rows)} />}<Link to="/plays" className="text-sm font-semibold">See all</Link></span></div>
           <RecentPlays loading={plays.loading} rows={plays.data?.rows ?? []} error={plays.error} retry={plays.reload} />
@@ -94,7 +113,8 @@ export default function HomeFull() {
           <TakeCard />
           <BacklogCard />
         </div>
-      </section>
+      </m.section>
+      </m.div>
     </>
   );
 }
@@ -144,16 +164,15 @@ function NowCard({ logger, loading, error, retry }: { logger: LoggerStatus | und
   if (!np) return quiet("Nothing playing on your PC", "Play something in Spotify and it shows up here. Every play is a prompt for an opinion.");
   const track = np.item;
   return (
-    <div className={`card now ${NOW} flex flex-wrap gap-5 items-center`}>
-      <div className="flex-[0_0_152px]"><EmbedSlot uri={np.spotify_uri} compact /></div>
+    <div className={`card now ${NOW} flex flex-wrap gap-6 items-center`}>
       <div className="flex-[1_1_260px] min-w-0 flex flex-col gap-3">
         <h2 className="text-sm font-semibold flex items-center gap-2 text-accent"><LiveDot />Playing now on your PC</h2>
         {/* A new track slides in (state change); the card itself stays put */}
         <AnimatePresence mode="popLayout" initial={false}>
-          <motion.div key={np.track_name + np.artist_name} className="flex flex-col gap-3 min-w-0" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={swap(reduce, { duration: 0.28, ease: EASE })}>
+          <m.div key={np.track_name + np.artist_name} className="flex flex-col gap-3 min-w-0" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={swap(reduce, { duration: 0.28, ease: EASE })}>
             <span className="text-2xl font-extrabold tracking-[-0.02em] leading-[1.1]">{np.track_name}</span>
             <span className="text-text-2">{np.artist_name}, from {np.album_name}. {track ? (track.in_backlog ? "The track is in your backlog." : `You have it as ${STATUS[track.status]}.`) : "Not in your library yet."}</span>
-          </motion.div>
+          </m.div>
         </AnimatePresence>
         <span className="font-mono text-faint text-xs">{mmss(np.ms_played)} of {mmss(np.duration_ms)}, counted as a play after 0:30</span>
         <div className="flex flex-wrap gap-2 items-center">
@@ -167,37 +186,33 @@ function NowCard({ logger, loading, error, retry }: { logger: LoggerStatus | und
           <OpenSpotify uri={np.spotify_uri} name={np.track_name} />
         </div>
       </div>
+      {/* Spotify's compact player lays out from ~250 px wide; narrower it scrolls (DESIGN §5: never clip the embed) */}
+      <div className="flex-[1_1_260px] min-w-[250px] max-w-[360px]"><EmbedSlot uri={np.spotify_uri} compact /></div>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ your year: 12 months of listening, scrubbable */
+/* ------------------------------------------------------------------ your year: 12 months as bars, scrubbable */
 function Pulse({ months, sources }: { months: { month: string; hours: number }[] | undefined; sources: Source[] }) {
   const reduce = useReducedMotion();
-  const gid = useId();
   const [at, setAt] = useState<number | null>(null);
-  // The marker rides a spring between months (pointer or arrow keys); it rests on the latest month.
-  const mx = useMotionValue(1), my = useMotionValue(0.5);
-  const sx = useSpring(mx, SPRING), sy = useSpring(my, SPRING);
-  const x = useTransform(sx, [0, 1], ["0%", "100%"]), y = useTransform(sy, [0, 1], ["0%", "100%"]);
-  const last = months?.length ? months[months.length - 1].hours / Math.max(1, ...months.map((m) => m.hours)) : 0;
-  useEffect(() => { const k = 0.92 - last * 0.84; mx.jump(1); my.jump(k); sx.jump(1); sy.jump(k); }, [last, mx, my, sx, sy]); // rest on the latest month, no glide in
-  if (!months) return <div className="card hm-pulse"><div className="skel h-full min-h-[200px]" /></div>;
-  const n = months.length;
+  // The value label rides a spring to the month in focus (pointer or keys); it rests on the latest month.
+  const n = months?.length ?? 0;
+  const tx = useMotionValue(1);
+  const sx = useSpring(tx, SPRING);
+  const x = useTransform(sx, [0, 1], ["0%", "100%"]);
+  useEffect(() => { if (n) { const k = (n - 0.5) / n; tx.jump(k); sx.jump(k); } }, [n, tx, sx]);
+  if (!months) return <div className="card hm-pulse"><div className="skel h-full min-h-[220px]" /></div>;
   if (n < 2) return null;
-  const max = Math.max(1, ...months.map((m) => m.hours));
-  const sum = months.reduce((a, m) => a + m.hours, 0);
-  const peak = months.reduce((p, m, i) => (m.hours > months[p].hours ? i : p), 0);
-  const fy = (h: number) => 0.92 - (h / max) * 0.84; // 0 = top of the plot
-  const line = months.map((m, i) => `${i ? "L" : "M"}${(i / (n - 1)) * 100},${fy(m.hours) * 100}`).join("");
-  const avgY = fy(sum / n) * 100;
+  const max = Math.max(1, ...months.map((m_) => m_.hours));
+  const sum = months.reduce((a, m_) => a + m_.hours, 0);
+  const peak = months.reduce((p, m_, i) => (m_.hours > months[p].hours ? i : p), 0);
   const cur = at ?? n - 1;
   const pick = (i: number | null) => {
-    const k = i ?? n - 1;
+    const k = ((i ?? n - 1) + 0.5) / n;
     setAt(i);
-    mx.set(k / (n - 1));
-    my.set(fy(months[k].hours));
-    if (reduce) { sx.jump(k / (n - 1)); sy.jump(fy(months[k].hours)); } // useSpring ignores MotionConfig reducedMotion
+    tx.set(k);
+    if (reduce) sx.jump(k); // useSpring ignores MotionConfig reducedMotion
   };
   const keys = (e: React.KeyboardEvent) => {
     const step: Record<string, number> = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -3, PageUp: 3 };
@@ -206,29 +221,31 @@ function Pulse({ months, sources }: { months: { month: string; hours: number }[]
     e.preventDefault();
     pick(Math.max(0, Math.min(n - 1, k)));
   };
-  const m = months[cur];
+  const mo = months[cur];
+  const soFar = cur === n - 1 ? " so far" : "";
   return (
     <div className="card hm-pulse">
       <h2 className="card-title">Your last 12 months</h2>
-      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 min-h-[34px]" aria-hidden={at !== null}>
-        <span className="hm-big">{at === null ? hrs(sum) : hrs(m.hours)}</span>
-        <span className="text-muted text-sm">{at === null ? `listened, busiest in ${monthLong(months[peak].month)}` : `in ${monthLong(m.month)}${cur === n - 1 ? " so far" : ""}${cur === peak ? ", your busiest month" : ""}`}</span>
+      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <span className="hm-big">{hrs(sum)}</span>
+        <span className="text-muted text-sm">listened, busiest in {monthLong(months[peak].month)}</span>
       </div>
       <div className="hm-plot" role="slider" tabIndex={0} aria-label="Listening by month" aria-valuemin={0} aria-valuemax={n - 1} aria-valuenow={cur}
-        aria-valuetext={`${monthLong(m.month)}${cur === n - 1 ? " so far" : ""}: ${hrs(m.hours)}${cur === peak ? ", your busiest month" : ""}`}
-        onPointerMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.round(((e.clientX - r.left) / r.width) * (n - 1)))); if (i !== at) pick(i); }}
+        aria-valuetext={`${monthLong(mo.month)}${soFar}: ${hrs(mo.hours)}${cur === peak ? ", your busiest month" : ""}`}
+        onPointerMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left) / r.width) * n))); if (i !== at) pick(i); }}
         onPointerLeave={() => pick(null)} onKeyDown={keys} onBlur={() => pick(null)}>
-        <motion.svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden
-          initial={reduce ? false : { clipPath: "inset(0 100% 0 0)" }} animate={{ clipPath: "inset(0 0% 0 0)" }} transition={{ duration: 0.9, ease: EASE }}>
-          <defs><linearGradient id={gid} x1="0" x2="0" y1="0" y2="1"><stop offset="0" className="hm-stop" stopOpacity="0.1" /><stop offset="1" className="hm-stop" stopOpacity="0" /></linearGradient></defs>
-          <line x1="0" x2="100" y1={avgY} y2={avgY} className="hm-avg" vectorEffect="non-scaling-stroke" />
-          <path d={`${line}L100,100L0,100Z`} fill={`url(#${gid})`} />
-          <path d={line} className="hm-line" vectorEffect="non-scaling-stroke" />
-        </motion.svg>
-        <motion.div className={`hm-mark${at === null ? "" : " on"}`} style={{ x }} aria-hidden><motion.div className="absolute inset-0" style={{ y }}><span className="hm-dot" /></motion.div></motion.div>
+        <m.div className="hm-tip-track" style={{ x }} aria-hidden><span className={`hm-tip${at === null ? "" : " on"}`}>{hrs(mo.hours)}</span></m.div>
+        <div className="hm-cols" aria-hidden>
+          <span className="hm-avg" style={{ bottom: `${(sum / n / max) * 100}%` }} />
+          {months.map((m_, i) => (
+            <span key={m_.month} className={`hm-col${i === cur ? " on" : ""}`}>
+              <m.i style={{ height: `${Math.max(2, (m_.hours / max) * 100)}%`, originY: 1 }}
+                initial={reduce ? false : { scaleY: 0 }} animate={{ scaleY: 1 }} transition={{ ...SPRING, delay: 0.15 + i * 0.03 }} />
+            </span>))}
+        </div>
       </div>
-      <div className="hm-months" aria-hidden>{months.map((mo, i) => <span key={mo.month} className={i === cur ? "on" : undefined}>{monthName(mo.month)}</span>)}</div>
-      <span className="text-muted text-xs">Average {hrs(sum / n)} a month, the faint line.</span>
+      <div className="hm-months" aria-hidden>{months.map((m_, i) => <span key={m_.month} className={i === cur ? "on" : undefined}>{monthName(m_.month)}</span>)}</div>
+      <span className="text-muted text-xs min-h-[17px]" aria-hidden>{at === null ? `Average ${hrs(sum / n)} a month, the faint line.` : `${monthLong(mo.month)}${soFar}${cur === peak ? ", your busiest month" : ""}.`}</span>
       <SourceTag sources={sources} />
     </div>
   );
@@ -257,15 +274,15 @@ function Charts({ range, loading, data, sources }: { range: Range; loading: bool
   const body = loading || (artOn && albums_.loading) ? (artOn ? <SkelTiles n={5} /> : <SkelRows n={6} />)
     : !rows.length ? <span className="text-muted">No plays in this period.</span>
     : artOn ? <ArtTiles items={saved} meta={(it) => statusMeta(it)} />
-    : <div className="flex flex-wrap gap-x-8 gap-y-5 items-start">
+    : <div className="flex flex-wrap gap-x-8 gap-y-5 items-stretch">
         <Lead r={rows[0]} kind={kind} share={periodH ? rows[0].hours / periodH : 0} onSave={save} />
         <ol className="hm-ranks" start={2}>{rows.slice(1, 10).map((r, i) => (
           <li key={r.name + r.by} className="hm-rank">
-            <span className="font-mono text-faint text-xs">{i + 2}</span>
+            <span className="hm-rank-n">{i + 2}</span>
             <div className="min-w-0 flex flex-col gap-1">
-              <span className="truncate" title={kind === "artists" ? r.name : `${r.name}, ${r.by}`}>{r.item_id ? <Link to={`/item/${r.item_id}`} className="text-text font-semibold">{r.name}</Link> : <b>{r.name}</b>}
+              <span className="truncate" title={kind === "artists" ? r.name : `${r.name}, ${r.by}`}>{r.item_id ? <Link to={`/item/${r.item_id}`} className="hm-stretch text-text font-semibold">{r.name}</Link> : <b>{r.name}</b>}
                 {kind !== "artists" && r.by && <span className="text-muted">, {r.by}</span>}</span>
-              <motion.span className={`hm-bar${r.item_id ? "" : " hot"}`} style={{ width: `${Math.max(2, (r.hours / max) * 100)}%`, originX: 0 }}
+              <m.span className={`hm-bar${r.item_id ? "" : " hot"}`} style={{ width: `${Math.max(2, (r.hours / max) * 100)}%`, originX: 0 }}
                 initial={reduce ? false : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ ...SPRING, delay: 0.08 + i * 0.035 }} />
             </div>
             <span className="flex flex-col items-end gap-0.5"><span className="font-mono text-text-2 text-xs whitespace-nowrap">{hrs(r.hours)}</span><Opinion r={r} /></span>
@@ -281,10 +298,10 @@ function Charts({ range, loading, data, sources }: { range: Range; loading: bool
         {kind === "albums" && <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />}
       </div>
       <AnimatePresence mode="wait" initial={false}>
-        <motion.div key={`${kind}-${range}-${artOn}`} role="tabpanel" aria-label={label} className="min-w-0"
+        <m.div key={`${kind}-${range}-${artOn}`} role="tabpanel" aria-label={label} className="min-w-0"
           initial={{ opacity: 0, x: dir === "from-right" ? 18 : -18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, transition: swap(reduce, { duration: 0.12 }) }} transition={swap(reduce, { duration: 0.32, ease: EASE })}>
           {body}
-        </motion.div>
+        </m.div>
       </AnimatePresence>
     </section>
   );
@@ -296,18 +313,28 @@ const Opinion = ({ r }: { r: Rank }) => (
 );
 
 function Lead({ r, kind, share, onSave }: { r: Rank; kind: Kind; share: number; onSave: (r: Rank) => void }) {
+  const reduce = useReducedMotion();
+  const pct = share >= 0.005 ? `${Math.round(share * 100)}%` : "<1%";
   return (
     <div className="hm-lead">
-      <span className="text-muted text-xs font-semibold">Your top {ONE[kind]}</span>
-      <div className="flex flex-col gap-1 min-w-0">
-        {r.item_id ? <Link to={`/item/${r.item_id}`} className="hm-lead-name text-text">{r.name}</Link> : <span className="hm-lead-name">{r.name}</span>}
-        {kind !== "artists" && r.by && <span className="text-text-2">{r.by}</span>}
+      <div className="flex justify-between items-start gap-4">
+        <div className="flex flex-col gap-1.5 min-w-0">
+          <span className="text-muted text-xs font-semibold">Your top {ONE[kind]}</span>
+          {r.item_id ? <Link to={`/item/${r.item_id}`} className="hm-lead-name text-text">{r.name}</Link> : <span className="hm-lead-name">{r.name}</span>}
+          {kind !== "artists" && r.by && <span className="text-text-2">{r.by}</span>}
+        </div>
+        {/* Share of your listening time in the period, drawn once as the ring fills */}
+        <div className="hm-ring" role="img" aria-label={`${pct} of your listening time`}>
+          <svg viewBox="0 0 64 64" aria-hidden><circle cx="32" cy="32" r="28" className="track" />
+            <m.circle cx="32" cy="32" r="28" className="fill" initial={reduce ? false : { pathLength: 0 }} animate={{ pathLength: Math.min(1, Math.max(0.01, share)) }} transition={{ duration: 0.9, ease: EASE, delay: 0.2 }} /></svg>
+          <span aria-hidden>{pct}</span>
+        </div>
       </div>
-      <div className="grid grid-cols-[repeat(3,minmax(0,auto))] justify-start gap-x-6 gap-y-1">
-        <span className="hm-big">{hrs(r.hours)}</span><span className="hm-big">{num(r.plays)}</span><span className="hm-big">{share >= 0.005 ? `${Math.round(share * 100)}%` : "<1%"}</span>
-        <span className="text-muted text-xs">listened</span><span className="text-muted text-xs">plays</span><span className="text-muted text-xs">of your time</span>
+      <div className="flex gap-7">
+        <span className="flex flex-col gap-0.5"><span className="hm-big">{hrs(r.hours)}</span><span className="text-muted text-xs">listened</span></span>
+        <span className="flex flex-col gap-0.5"><span className="hm-big">{num(r.plays)}</span><span className="text-muted text-xs">plays</span></span>
       </div>
-      <div className="flex flex-wrap gap-2 items-center">
+      <div className="flex flex-wrap gap-2 items-center mt-auto">
         {r.item_id ? <><Opinion r={r} /><Link to={`/item/${r.item_id}`} className="btn btn-secondary s">{r.rating ? "Open" : "Rate it"}</Link></>
           : <button className="btn btn-light" onClick={() => onSave(r)}>Save to backlog</button>}
       </div>

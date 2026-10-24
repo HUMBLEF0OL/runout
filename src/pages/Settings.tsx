@@ -10,7 +10,7 @@ import {
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { ConnectDialog, ShortcutDialog } from "../components/SetupDialogs";
-import { CopyButton, CountUp, Dialog, Dots, ErrorBanner, Seg, SkelRows, Switch, useSlide, useToast } from "../components/ui";
+import { CopyButton, CountUp, Dialog, Dots, ErrorBanner, Seg, SkelRows, Switch, spot, useSlide, useToast } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { day, dayY, pl, time } from "../lib/format";
@@ -30,14 +30,6 @@ function Card({ id, title, children, danger }: { id: string; title: ReactNode; c
 const Metric = ({ v, k }: { v: ReactNode; k: string }) =>
   <div className="st-metric"><span className="font-mono text-xl font-semibold"><CountUp text={String(v)} /></span><span className="text-muted text-xs">{k}</span></div>;
 
-/** Spotlight border: the card under the pointer gets the pointer position, read by `.st-panel .card::before`. */
-const spot = (e: React.PointerEvent) => {
-  const c = (e.target as HTMLElement).closest<HTMLElement>(".card");
-  if (!c) return;
-  const r = c.getBoundingClientRect();
-  c.style.setProperty("--mx", `${e.clientX - r.left}px`);
-  c.style.setProperty("--my", `${e.clientY - r.top}px`);
-};
 
 /** Run a write with a busy key; errors stay inline (DESIGN §5 toast rule). */
 function useRun() {

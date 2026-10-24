@@ -69,6 +69,16 @@ export function Seg<T extends string>({ label, options, value, onChange, radio, 
 }
 
 /* ------------------------------------------------------------------ M9 controls */
+/** Spotlight (DESIGN §3, M9): the card under the pointer gets the pointer position as --mx/--my, read by the
+ *  `.st-panel .card` / `.hm-page .card` light. CSS variables only, no React state, so it costs nothing per move. */
+export const spot = (e: React.PointerEvent) => {
+  const c = (e.target as HTMLElement).closest<HTMLElement>(".card");
+  if (!c) return;
+  const r = c.getBoundingClientRect();
+  c.style.setProperty("--mx", `${e.clientX - r.left}px`);
+  c.style.setProperty("--my", `${e.clientY - r.top}px`);
+};
+
 const reduced = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 /** On/off setting (DESIGN §3 Controls). Flips at once (the write takes a moment); `onChange` resolves falsy when the write
