@@ -1,7 +1,8 @@
 // SC-13 Settings and data (+ SC-13c connect, SC-13d restore, SC-13e Shortcut steps, SC-13f delete library).
 // Tray menu and the NSIS uninstall dialog are native, not React.
-import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { CaretRight, Check, Copy } from "@phosphor-icons/react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   backupNow, checkBackup, checkInbox, chooseBackupDir, createInbox, deleteLibrary, getInbox, setInboxOptions, disconnectSpotify, exportLibrary, getCapture, getLoggerStatus,
   getSettings, getSpotifyStatus, getSuccessMetrics, listBackups, listImports, listTags, moveLibrary, newPairingCode, onEvent, pauseLogger,
@@ -9,13 +10,15 @@ import {
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { ConnectDialog, ShortcutDialog } from "../components/SetupDialogs";
-import { Dialog, Dots, ErrorBanner, SkelRows, useToast } from "../components/ui";
+import { Dialog, Dots, ErrorBanner, Seg, SkelRows, useToast } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { day, dayY, pl, time } from "../lib/format";
 
 const mb = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
 const backupLabel = (b: Backup, i: number) => `${day(b.created_at)}, ${time(b.created_at)}${i === 0 ? " (latest)" : ""}`;
+
+const reduced = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 function Card({ id, title, children, danger }: { id: string; title: ReactNode; children: ReactNode; danger?: boolean }) {
   return (
@@ -25,11 +28,77 @@ function Card({ id, title, children, danger }: { id: string; title: ReactNode; c
     </section>
   );
 }
-function Switch({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return <label className="flex justify-between items-center gap-3"><span>{label}</span><input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} /></label>;
+/** Flips at once (the write takes a moment); `onChange` resolves undefined when the write failed, and the switch goes
+ *  back to the saved value, unless a later click has superseded that write. */
+export function Switch({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => Promise<unknown>; disabled?: boolean }) {
+  const [v, setV] = useState(on);
+  const seq = useRef(0);
+  const saved = useRef(on);
+  saved.current = on;
+  useEffect(() => setV(on), [on]);
+  return (
+    <label className="st-switch">
+      <span>{label}</span>
+      <input type="checkbox" role="switch" className="toggle" checked={v} disabled={disabled}
+        onChange={(e) => { const n = e.target.checked, k = ++seq.current; setV(n); onChange(n).then((r) => { if (r === undefined && k === seq.current) setV(saved.current); }); }} />
+    </label>
+  );
+}
+
+/** Counts up from 0 the first time it scrolls into view; screen readers get the final text only. */
+export function CountUp({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.textContent = text;
+    const m = /^\d+(\.\d+)?/.exec(text);
+    if (!m || reduced() || typeof IntersectionObserver === "undefined") return;
+    const to = Number(m[0]), dp = m[1] ? m[1].length - 1 : 0, rest = text.slice(m[0].length);
+    el.textContent = (0).toFixed(dp) + rest;
+    let raf = 0;
+    const io = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return;
+      io.disconnect();
+      const t0 = performance.now();
+      const tick = (t: number) => {
+        const p = Math.min(1, (t - t0) / 900);
+        el.textContent = (to * (1 - (1 - p) ** 3)).toFixed(dp) + rest;
+        if (p < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    });
+    io.observe(el);
+    return () => { io.disconnect(); cancelAnimationFrame(raf); el.textContent = text; };
+  }, [text]);
+  return <><span className="sr-only">{text}</span><span ref={ref} aria-hidden /></>;
 }
 const Metric = ({ v, k }: { v: ReactNode; k: string }) =>
-  <div className="flex flex-col gap-0.5"><span className="font-mono text-xl font-semibold">{v}</span><span className="text-muted text-xs">{k}</span></div>;
+  <div className="st-metric"><span className="font-mono text-xl font-semibold"><CountUp text={String(v)} /></span><span className="text-muted text-xs">{k}</span></div>;
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const toast = useToast();
+  const [done, setDone] = useState(false);
+  useEffect(() => { if (!done) return; const t = setTimeout(() => setDone(false), 1600); return () => clearTimeout(t); }, [done]);
+  return (
+    <>
+      <button type="button" className={`icon-btn st-copy${done ? " done" : ""}`} aria-label={label}
+        onClick={() => (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => setDone(true), () => toast("Couldn’t copy. Select the code and copy it instead."))}>
+        {done ? <Check size={16} weight="bold" /> : <Copy size={16} />}
+      </button>
+      <span className="sr-only" role="status">{done ? "Copied" : ""}</span>
+    </>
+  );
+}
+
+/** Spotlight border: the card under the pointer gets the pointer position, read by `.st-panel .card::before`. */
+const spot = (e: React.PointerEvent) => {
+  const c = (e.target as HTMLElement).closest<HTMLElement>(".card");
+  if (!c) return;
+  const r = c.getBoundingClientRect();
+  c.style.setProperty("--mx", `${e.clientX - r.left}px`);
+  c.style.setProperty("--my", `${e.clientY - r.top}px`);
+};
 
 /** Run a write with a busy key; errors stay inline (DESIGN §5 toast rule). */
 function useRun() {
@@ -59,6 +128,8 @@ export default function Settings() {
   const [dlg, setDlg] = useState<null | "restore" | "shortcut" | "connect" | "disconnect" | "delete">(null);
   const [capOff, setCapOff] = useState<"wrong_code" | "error">();
   const [warn, setWarn] = useState("");
+  const [params, setParams] = useSearchParams();
+  const [dir, setDir] = useState<"from-right" | "from-left">("from-right"); // the new panel slides in from the picked side
   const [ibGone, setIbGone] = useState(false); // Check now found the Inbox deleted in Spotify (check_inbox → not_found)
   useEffect(() => onEvent("capture-disabled", (p) => setCapOff(p.reason)), []);
   useEffect(() => { if (s.data) setWarn(String(s.data.size_warn_mb)); }, [s.data]);
@@ -80,9 +151,23 @@ export default function Settings() {
     setIbGone(true); inbox.reload(); return undefined;
   });
 
+  const tabs: [string, string][] = [
+    ["data", "Your data"], ["spotify", "Spotify"], ...(r3 ? [["inbox", "Inbox"] as [string, string]] : []),
+    ...(r2 ? [["logger", "Logger"] as [string, string]] : []), ["phone", "Wi-Fi capture"],
+    ...(r2 ? [["import", "History"] as [string, string]] : []), ["tags", "Tags"], ["metrics", "Metrics"],
+  ];
+  // ?tab= deep-links a section (Connect Spotify → spotify, Import → import); unknown or hidden by release → Your data
+  const tab = tabs.some(([id]) => id === params.get("tab")) ? params.get("tab")! : "data";
+  const idx = tabs.findIndex(([id]) => id === tab);
+  const pick = (id: string) => {
+    setDir(tabs.findIndex((t) => t[0] === id) >= idx ? "from-right" : "from-left");
+    setParams(id === "data" ? {} : { tab: id }, { replace: true });
+  };
+
   return (
     <>
       {head}
+      <Seg label="Settings sections" options={tabs} value={tab} onChange={pick} line />
       {err && <ErrorBanner error={err} title="That didn’t work." />}
       {latest?.size_warning && (
         <div className="banner err" role="alert">
@@ -90,8 +175,8 @@ export default function Settings() {
           <button className="btn btn-secondary s" onClick={() => run("limit", () => updateSettings({ size_warn_mb: st.size_warn_mb + 50 })).then((r) => r && toast(`Limit raised to ${r.size_warn_mb} MB`))}>Raise the limit</button>
         </div>
       )}
-      <div className="tiles grid-cols-[repeat(auto-fill,minmax(min(100%,420px),1fr))] items-start">
-        <Card id="data" title="Your data">
+      <div key={tab} role="tabpanel" aria-label={tabs[idx][1]} className={`st-panel ${dir}`} onPointerMove={spot}>
+        {tab === "data" && <Card id="data" title="Your data">
           <div className="field">
             <span className="label">Library location</span>
             <span className="font-mono text-xs">{st.library_path}</span>
@@ -125,9 +210,9 @@ export default function Settings() {
               {busy === "export" ? <Dots /> : "Export as JSON"}
             </button>
           </div>
-        </Card>
+        </Card>}
 
-        <Card id="spotify" title="Spotify connection">
+        {tab === "spotify" && <Card id="spotify" title="Spotify connection">
           {!r3 ? <span className="text-muted">Arrives in Release 3: Playlist Studio, autofill and the From Spotify page.</span>
             : spotify.loading ? <div className="skel h-[60px]" />
             : sp?.state === "connected" ? (!online
@@ -143,9 +228,9 @@ export default function Settings() {
                 <div><button className="btn btn-primary" disabled={!online} onClick={() => setDlg("connect")}>{sp?.state === "reconnect" ? "Sign in again" : "Connect Spotify"}</button></div>
                 {!online && <span className="help">Connect when you’re back online.</span>}
               </>}
-        </Card>
+        </Card>}
 
-        {r3 && (
+        {r3 && tab === "inbox" && (
           <Card id="inbox" title="Runout Inbox">
             {inbox.loading || spotify.loading ? <div className="skel h-[90px]" /> : inbox.error || !ib ? <ErrorBanner error={inbox.error} title="Couldn’t read the Inbox settings." onRetry={inbox.reload} /> : <>
               <span>{!connected ? "Runout Inbox · connect Spotify first" : gone ? "Runout Inbox · missing" : ib.state === "ready" ? "Runout Inbox · ready" : "Runout Inbox · not created yet"}</span>
@@ -173,7 +258,7 @@ export default function Settings() {
           </Card>
         )}
 
-        {r2 && (
+        {r2 && tab === "logger" && (
           <Card id="logger" title="Desktop logger">
             {logger.loading || !lg ? <div className="skel h-[90px]" /> : <>
               <Switch label="Log what Spotify plays on this PC" on={lg.state !== "off"} onChange={(v) => run("log", () => setLogger({ on: v }))} />
@@ -191,18 +276,18 @@ export default function Settings() {
           </Card>
         )}
 
-        <Card id="phone" title="Home Wi-Fi capture">
+        {tab === "phone" && <Card id="phone" title="Home Wi-Fi capture">
           {cap.loading || !cap.data ? <div className="skel h-[90px]" /> : capOff ? <>
               <div className="banner err" role="alert"><span><b className="text-danger">Phone capture turned itself off.</b> <span className="text-text-2">{capOff === "wrong_code" ? "5 wrong pairing codes in a row. Make a new code and update your Shortcut." : "The listener stopped. Turn it on again to keep saving from your iPhone."}</span></span></div>
               <div><button className="btn btn-primary" onClick={() => run("code", async () => { await newPairingCode(); await setCaptureEnabled(true); }).then(() => { setCapOff(undefined); toast("New pairing code. Update it in your iPhone Shortcut."); })}>New code and turn on</button></div>
             </> : (
-            <details className="flex flex-col gap-3">
-              <summary className="cursor-pointer">Optional: instant capture on home Wi-Fi</summary>
+            <details className="st-details">
+              <summary><CaretRight size={14} weight="bold" aria-hidden />Optional: instant capture on home Wi-Fi</summary>
               <div className="flex flex-col gap-3 pt-3">
                 <Switch label="Accept shares from my iPhone on this Wi-Fi" on={cap.data.on} onChange={(v) => run("cap", () => setCaptureEnabled(v))} />
                 <div className="tiles grid-cols-2">
                   <div className="field"><span className="label">Address</span><span className="font-mono">{cap.data.address}:{cap.data.port}</span></div>
-                  <div className="field"><span className="label">Pairing code</span><span className="font-mono text-[18px] tracking-[2px]">{cap.data.code}</span></div>
+                  <div className="field"><span className="label">Pairing code</span><span className="flex items-center gap-2"><span className="font-mono text-[18px] tracking-[2px]">{cap.data.code}</span><CopyButton text={cap.data.code} label="Copy pairing code" /></span></div>
                 </div>
                 <span className="text-muted text-xs">Windows may ask to allow Runout on private networks. Your Wi-Fi must be set to Private.</span>
                 <div className="flex flex-wrap gap-2 items-center">
@@ -211,9 +296,9 @@ export default function Settings() {
                 </div>
               </div>
             </details>)}
-        </Card>
+        </Card>}
 
-        {r2 && (
+        {r2 && tab === "import" && (
           <Card id="import" title="Spotify history">
             {lastPlay ? <span>Last import covers plays up to {dayY(lastPlay)}.</span> : <span>No listening history imported yet.</span>}
             <span className="text-muted text-sm leading-[1.5]">Request a fresh copy from Spotify’s privacy page, then import it here. Plays already imported are skipped.</span>
@@ -230,12 +315,12 @@ export default function Settings() {
           </Card>
         )}
 
-        <Card id="tags" title="Tags">
+        {tab === "tags" && <Card id="tags" title="Tags">
           <span className="text-text-2">{tags.data ? `${pl(tags.data.length, "tag")} in use.` : " "}</span>
           <div><Link className="btn btn-secondary" to="/settings/tags">Rename, merge or delete tags</Link></div>
-        </Card>
+        </Card>}
 
-        <Card id="metrics" title="Is Runout working for you?">
+        {tab === "metrics" && <Card id="metrics" title="Is Runout working for you?">
           <span className="text-muted text-sm">Counted on this PC only, never sent anywhere.</span>
           {metrics.data && (
             <div className="tiles grid-cols-2">
@@ -247,16 +332,16 @@ export default function Settings() {
               <Metric v={`${metrics.data.explored_rated_pct}%`} k="Explored records you rated" />
             </div>
           )}
-        </Card>
-      </div>
+        </Card>}
 
-      <section className="card danger flex flex-wrap justify-between items-center gap-3" aria-labelledby="st-danger">
+        {tab === "data" && <section className="card danger flex flex-wrap justify-between items-center gap-3" aria-labelledby="st-danger">
         <div className="flex flex-col gap-1">
           <h2 id="st-danger" className="card-title text-danger">Delete your library</h2>
           <span className="text-text-2">Removes every record, note and play from this PC. Backups are kept. Uninstalling Runout asks the same question.</span>
         </div>
         <button className="btn btn-danger" onClick={() => setDlg("delete")}>Delete library</button>
-      </section>
+        </section>}
+      </div>
 
       {dlg === "restore" && <RestoreDialog backups={backups.data ?? []} onClose={() => setDlg(null)} />}
       {dlg === "shortcut" && <ShortcutDialog onClose={() => setDlg(null)} />}

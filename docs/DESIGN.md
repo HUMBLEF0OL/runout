@@ -19,13 +19,13 @@ The BRD says what, the TSD says how it works; this file says **how it looks and 
 
 ## 2. Design read and dials (taste skill)
 Personal desktop product UI for one deliberate listener; data-rich like Last.fm, calm like a notebook, **tactile rather than flat** (v1.1 uplift).
-`DESIGN_VARIANCE 5 · MOTION_INTENSITY 5 · VISUAL_DENSITY 6`. Product UI, so no marketing-page patterns (heroes, logo walls, marquees).
+`DESIGN_VARIANCE 5 · MOTION_INTENSITY 7 · VISUAL_DENSITY 6` (motion raised from 5 in M9, 24 Oct 2026). Product UI, so no marketing-page patterns (heroes, logo walls, marquees).
 
 What “not flat” means here, and nothing more:
 1. **Three depth layers** (canvas, raised, overlay) built from a 1px light hairline, an inner top highlight and a soft shadow tinted to the background. No glassmorphism, no neon glow.
 2. **One ambient moment:** the Now-playing card picks up a faint radial tint of the playing album’s dominant color (8% opacity, behind the card only). Everywhere else stays graphite.
 3. **Every interactive element has five drawn states:** default, hover, pressed, focus, disabled (plus loading where it applies).
-4. **Motion with a reason:** feedback (press), state change (segment indicator slides, row enters), live status (the Now-playing pulse, the only looping animation).
+4. **Motion with a reason:** feedback (press, switch thumb), state change (segment indicator slides, row enters, disclosure opens), orientation (tab underline springs to the pick, the panel slides in from that side), arrival of data (numbers count up once), live status (the Now-playing pulse, the only looping animation).
 5. **Typographic contrast:** big mono numbers against small muted labels; 800-weight section titles with tight tracking.
 
 ## 3. Tokens
@@ -66,7 +66,7 @@ Scale: 13 / 14 (body) / 15 / 17 / 20 (section) / 26 (stat, page title) / 32 (det
 **Spacing:** 4 · 8 · 12 · 16 · 20 · 24 · 32. Page padding 32 desktop.
 **Focus:** 2px `--accent` outline, 2px offset, on every interactive element.
 **Icons:** Phosphor (`@phosphor-icons/react`), regular weight, 20px; icon-only buttons have `aria-label`.
-**Motion:** curve `cubic-bezier(0.16, 1, 0.3, 1)`. Hover 150 ms; press `scale(0.98)` 100 ms; segmented-control indicator slides 220 ms; list insert/remove 200 ms (fade + 4px rise); dialog 180 ms (fade + scale from 0.98); toast slides up 220 ms. The Now-playing live dot pulses (2 s, opacity only) and is the only loop. Skeletons shimmer once per 1.6 s. Everything collapses to instant under `prefers-reduced-motion`.
+**Motion:** curve `cubic-bezier(0.16, 1, 0.3, 1)`. Hover 150 ms; press `scale(0.98)` 100 ms; segmented-control indicator slides 220 ms; list insert/remove 200 ms (fade + 4px rise); dialog 180 ms (fade + scale from 0.98); toast slides up 220 ms. The Now-playing live dot pulses (2 s, opacity only) and is the only loop. Skeletons shimmer once per 1.6 s. M9 additions: `--ease-spring` `cubic-bezier(0.34, 1.56, 0.64, 1)` for things that land (switch thumb 280 ms, jump underline 320 ms, caret, check-mark pop 260 ms); switch thumb stretches 4 px on press; cards enter 420 ms (fade + 10px rise, 45 ms stagger); disclosure height 300 ms; metric numbers count up 900 ms once on first view; card hairline spotlight follows the pointer (white 32%, 240 px). Page-level tabs (Settings) are `Seg line`: an accent underline on the hairline that springs to the picked tab, and the panel slides in 320 ms (fade + 18px from the picked side). Segment indicators everywhere use the spring (280 ms). **Controls:** every on/off setting is a switch (`input.toggle`, role `switch`; rounded-rect radius 6, not a pill; thumb springs across, stretches on press); selection checkboxes (rows, tracks) are an 18px rounded-rect box whose check mark springs in. A hover never repaints a selected/checked state (`check.py` “hover keeps selected”). Everything collapses to instant under `prefers-reduced-motion`.
 
 **Interaction states** (every interactive component draws all that apply):
 | State | Treatment |

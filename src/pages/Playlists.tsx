@@ -181,7 +181,7 @@ function Studio() {
   const err = pls.error ?? draft.error;
   if (err?.code === "spotify_auth" || err?.code === "spotify_forbidden") return wrap(<>{top}
     <Empty h="Connect Spotify to use Studio" line="Studio edits your own playlists on Spotify. The check-up from your export works without connecting.">
-      <Link className="btn btn-primary" to="/settings">Connect Spotify in Settings</Link>
+      <Link className="btn btn-primary" to="/settings?tab=spotify">Connect Spotify in Settings</Link>
     </Empty></>);
   if (!online || err?.code === "offline") return wrap(<>{top}<Empty h="Studio needs a connection" line="Your draft is kept. Reconnect to read the playlist from Spotify and apply changes." /></>);
   if (pls.loading || draft.loading) return wrap(<><span className="text-muted">Reading the playlist from Spotify…</span><SkelRows n={8} /></>);

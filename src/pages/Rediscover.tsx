@@ -157,7 +157,7 @@ function MakePlaylistDialog({ make, onClose }: { make: Make; onClose: () => void
           <span>{nameOf(i)}{i.artist_names.length > 0 && <span className="text-muted">, {i.artist_names.join(", ")}</span>}</span><span className="text-muted text-xs">{TYPE[i.type]}</span>
         </div>))}
       </div></div>
-      <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)} />Private playlist</label>
+      <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" role="switch" className="toggle" checked={priv} onChange={(e) => setPriv(e.target.checked)} />Private playlist</label>
       <Attribution><span className="help">Created on your Spotify account.</span></Attribution>
       {made ? <><ErrorBanner error={err} title="The playlist was created on Spotify, but not every track was added." /><Attribution uri={made} name={name.trim()} /></>
         : err && <ErrorBanner error={err} title="Couldn’t create the playlist." />}

@@ -743,6 +743,31 @@ def check_exit_flush():
 
 
 
+def check_hover_keeps_selected():
+    # M8 (segments) and M9 (switch thumb) review: a :hover rule outranked the selected/checked rule of the same control
+    # and made the selected state unreadable on hover. A hover that paints (color/background) a control that also has a
+    # :checked / aria-selected / aria-checked rule must exclude that state with :not(...).
+    css = re.sub(r"/\*.*?\*/", "", (ROOT / "src/styles/app.css").read_text(encoding="utf-8"), flags=re.S)
+    rules = [(sel.strip(), body) for sel, body in re.findall(r"([^{}@]+)\{([^{}]*)\}", css)]
+    paints = lambda body: re.search(r"(?<![-\w])(background|color)\s*:", body)
+    state = re.compile(r':checked|aria-(selected|checked)="true"')
+    bad = []
+    for sel, body in rules:
+        for part in sel.split(","):
+            part = part.strip()
+            if ":hover" not in part or not paints(body) or re.search(r":not\((:checked|\[aria-(selected|checked))", part):
+                continue
+            base = re.split(r"[:\[]", part)[0].strip()
+            if any(state.search(o) and o.strip().startswith(base) and paints(b) for s2, b in rules for o in s2.split(",")):
+                bad.append(part)
+    if bad:
+        failures.append("hover keeps selected")
+        print("--- hover keeps selected: FAIL (add :not(:checked) / :not([aria-selected=\"true\"]) to:)")
+        print("\n".join("  " + b for b in bad))
+    else:
+        print("--- hover keeps selected: ok")
+
+
 def check_doc_line_endings():
     # M7 r8: a scripted edit stored docs/MILESTONES.md with CRLF and a lone CR (462-line diff for a
     # 2-line change, blame lost). Staged/committed .md must be LF only.
@@ -807,6 +832,7 @@ check_link_parity()
 check_source_map()
 check_design()
 check_exit_flush()
+check_hover_keeps_selected()
 check_doc_line_endings()
 check_doc_drift()
 

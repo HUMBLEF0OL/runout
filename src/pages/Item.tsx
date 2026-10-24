@@ -91,7 +91,7 @@ function Detail({ it }: { it: ItemDetail }) {
   const spotifySave = !savable ? null
     : !online ? <span className="text-faint text-xs">Saved in Spotify can’t change while you’re offline</span>
     : saved.error ? <span className="text-faint text-xs">Saved in Spotify isn’t available. {saved.error.message}</span>
-    : <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" checked={!!saved.data?.[0]} disabled={saved.loading} onChange={async (e) => {
+    : <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" role="switch" className="toggle" checked={!!saved.data?.[0]} disabled={saved.loading} onChange={async (e) => {
         const on = e.target.checked, u = [it.spotify_uri!];
         if (await run("Couldn’t change your Spotify library.", () => (on ? saveToSpotifyLibrary(u) : removeFromSpotifyLibrary(u)))) toast(on ? `${name} saved in your Spotify library` : `${name} removed from your Spotify library`);
       }} />Saved in your Spotify library</label>;
@@ -101,10 +101,10 @@ function Detail({ it }: { it: ItemDetail }) {
       <span className="label">Status</span>
       <StatusControl value={it.status} onChange={changeStatus} />
       <div className="flex flex-wrap gap-4 items-center text-text-2 text-sm">
-        <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" checked={it.revisit} onChange={async (e) => {
+        <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" role="switch" className="toggle" checked={it.revisit} onChange={async (e) => {
           const v = e.target.checked; if (await patch("Couldn’t save that change.", { revisit: v })) toast(`${name}: ${v ? "flagged to revisit" : "revisit flag removed"}`, () => updateItem(it.id, { revisit: !v }));
         }} />Revisit later</label>
-        <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" checked={it.favourite} onChange={async (e) => {
+        <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" role="switch" className="toggle" checked={it.favourite} onChange={async (e) => {
           const v = e.target.checked; if (await patch("Couldn’t save that change.", { favourite: v })) toast(`${name}: ${v ? "favourite" : "no longer a favourite"}`, () => updateItem(it.id, { favourite: !v }));
         }} />Favourite</label>
         {it.in_backlog && <>

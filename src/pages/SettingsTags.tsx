@@ -16,7 +16,7 @@ export default function SettingsTags() {
   return (
     <>
       <Topbar />
-      <Link to="/settings" className="text-sm font-semibold">Back to settings</Link>
+      <Link to="/settings?tab=tags" className="text-sm font-semibold">Back to settings</Link>
       <h1 className="page-title">Tags</h1>
       {tags.loading ? <SkelRows n={6} />
         : tags.error ? <ErrorBanner title="Couldn’t load your tags." error={tags.error} onRetry={tags.reload} />

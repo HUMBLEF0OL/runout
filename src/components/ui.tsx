@@ -22,9 +22,9 @@ export function PageHead({ title, children, sub: subline }: { title: ReactNode; 
   );
 }
 
-/** Segmented control. `role` tablist for views, radiogroup for values (status). */
-export function Seg<T extends string>({ label, options, value, onChange, radio, accent }: {
-  label: string; options: [T, ReactNode][]; value: T; onChange: (v: T) => void; radio?: boolean; accent?: boolean;
+/** Segmented control. `role` tablist for views, radiogroup for values (status). `line`: page-level tabs, an underline instead of a fill. */
+export function Seg<T extends string>({ label, options, value, onChange, radio, accent, line }: {
+  label: string; options: [T, ReactNode][]; value: T; onChange: (v: T) => void; radio?: boolean; accent?: boolean; line?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const move = (e: React.KeyboardEvent, i: number) => {
@@ -52,7 +52,7 @@ export function Seg<T extends string>({ label, options, value, onChange, radio, 
     return () => ro.disconnect();
   }, [sel, options.length]);
   return (
-    <div ref={ref} className={`seg${accent ? " accent" : ""}${ind ? " slid" : ""}`} role={radio ? "radiogroup" : "tablist"} aria-label={label}>
+    <div ref={ref} className={`seg${accent ? " accent" : ""}${line ? " line" : ""}${ind ? " slid" : ""}`} role={radio ? "radiogroup" : "tablist"} aria-label={label}>
       {options.map(([v, t], i) => (
         <button key={v} type="button" role={radio ? "radio" : "tab"} {...(radio ? { "aria-checked": v === value } : { "aria-selected": v === value })}
           tabIndex={v === value || (!options.some((o) => o[0] === value) && i === 0) ? 0 : -1} onClick={() => onChange(v)} onKeyDown={(e) => move(e, i)}>{t}</button>

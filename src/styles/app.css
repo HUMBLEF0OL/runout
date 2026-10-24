@@ -79,13 +79,19 @@ textarea.input { height: auto; padding: 12px; line-height: 1.55; resize: vertica
 .input:focus { border-color: var(--color-accent); box-shadow: 0 0 0 3px rgba(245,181,68,0.18); }
 .input.error { border-color: var(--color-danger); }
 .input:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--color-line-2); }
-input[type="checkbox"]:disabled { opacity: 0.4; cursor: not-allowed; }
 .input.mono { font-family: var(--font-mono); font-size: 13px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .label { font-size: 13px; font-weight: 600; color: var(--color-text-2); }
 .help { font-size: 12px; color: var(--color-muted); }
 .help.err { color: var(--color-danger); }
-input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--color-accent); margin: 3px 3px 3px 4px; } /* browser default; preflight zeroes it */
+/* Selection checkbox (M9): rounded-rect box, the check mark lands with a spring; on/off settings use `input.toggle` instead. */
+input[type="checkbox"]:not(.toggle) { appearance: none; display: inline-grid; place-content: center; flex: none; width: 18px; height: 18px; margin: 2px; border-radius: var(--radius-thumb); background: var(--color-bg); box-shadow: inset 0 0 0 1.5px var(--color-line-hover); cursor: pointer; transition: background 160ms var(--ease-out), box-shadow 150ms, transform 100ms var(--ease-out); }
+input[type="checkbox"]:not(.toggle)::before { content: ""; width: 5px; height: 9px; margin-top: -2px; border: solid var(--color-accent-ink); border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); transition: transform 260ms var(--ease-spring); }
+input[type="checkbox"]:not(.toggle):not(:checked):hover:not(:disabled) { box-shadow: inset 0 0 0 1.5px var(--color-text-2); }
+input[type="checkbox"]:not(.toggle):active:not(:disabled) { transform: scale(0.9); }
+input[type="checkbox"]:not(.toggle):checked { background: var(--color-accent); box-shadow: none; }
+input[type="checkbox"]:not(.toggle):checked::before { transform: rotate(45deg) scale(1); }
+input[type="checkbox"]:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ---------- segmented, tabs, chips */
 .seg { position: relative; display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--color-surface); border: var(--hair); flex-wrap: wrap; }
@@ -96,7 +102,7 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--color-ac
 .seg button[aria-selected="true"], .seg button[aria-checked="true"], .seg button[aria-pressed="true"] { background: var(--color-text); color: var(--color-accent-ink); font-weight: 700; }
 .seg.accent button[aria-checked="true"] { background: var(--color-accent); }
 /* Sliding indicator (DESIGN §2.4): Seg positions it under the selected button; once placed, the button itself goes clear. */
-.seg-ind { position: absolute; z-index: 0; border-radius: 8px; background: var(--color-text); transition: left 220ms var(--ease-out), top 220ms var(--ease-out), width 220ms var(--ease-out); pointer-events: none; }
+.seg-ind { position: absolute; z-index: 0; border-radius: 8px; background: var(--color-text); transition: left 280ms var(--ease-spring), top 280ms var(--ease-spring), width 280ms var(--ease-out); pointer-events: none; }
 .seg.accent .seg-ind { background: var(--color-accent); }
 .seg.slid button[aria-selected="true"], .seg.slid button[aria-checked="true"] { background: transparent; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 10px; background: var(--color-surface-2); font-size: 13px; border: 0; color: var(--color-text); }
@@ -199,6 +205,54 @@ a.lrow:active { background: var(--color-surface-3); }
 .menu button:active:not([disabled]) { background: var(--color-surface-3); }
 .menu button[disabled] { opacity: 0.4; cursor: not-allowed; }
 .kbd { font-family: var(--font-mono); font-size: 11px; color: var(--color-faint); }
+
+/* ---------- toggle switch (M9): rounded-rect, not a pill (DESIGN §3 shape); the thumb overshoots a little and stretches on press */
+input.toggle { appearance: none; position: relative; flex: none; width: 38px; height: 22px; margin: 0; border-radius: var(--radius-thumb); background: var(--color-surface-3); box-shadow: inset 0 0 0 1px var(--color-line-strong); cursor: pointer; transition: background 220ms var(--ease-out), box-shadow 150ms; }
+input.toggle::before { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: var(--radius-thumb); background: var(--color-text-2); box-shadow: 0 1px 3px rgba(0,0,0,0.45); transform-origin: left; transition: transform 280ms var(--ease-spring), background 220ms; }
+input.toggle:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--color-line-hover); }
+input.toggle:not(:checked):hover:not(:disabled)::before { background: var(--color-text); }
+input.toggle:active:not(:disabled)::before { transform: scaleX(1.25); }
+input.toggle:checked { background: var(--color-accent); box-shadow: inset 0 1px 0 rgba(255,255,255,0.3); }
+input.toggle:checked::before { transform: translateX(16px); background: var(--color-accent-ink); transform-origin: right; }
+input.toggle:checked:active:not(:disabled)::before { transform: translateX(16px) scaleX(1.25); }
+input.toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- Settings (M9) */
+.st-switch { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-inline: -8px; padding: 6px 8px; border-radius: 10px; cursor: pointer; transition: background 150ms; }
+.st-switch:hover { background: var(--color-surface-2); }
+.st-switch:active { background: var(--color-surface-3); }
+.st-switch:has(:disabled) { cursor: not-allowed; background: transparent; }
+/* Page-level tabs (Seg `line`): an underline on the hairline instead of a fill; the underline lands with a spring */
+.seg.line { display: flex; gap: 4px; padding: 0; border: 0; border-bottom: 1px solid var(--color-line); border-radius: 0; background: transparent; }
+.seg.line button { height: 38px; padding: 0 12px; border-radius: var(--radius-control) var(--radius-control) 0 0; color: var(--color-muted); font-size: 14px; font-weight: 600; }
+.seg.line button:hover:not([disabled]):not([aria-selected="true"]) { background: var(--color-surface); }
+.seg.line button[aria-selected="true"] { background: transparent; color: var(--color-text); font-weight: 700; }
+.seg.line .seg-ind { background: transparent; border-radius: 0; box-shadow: inset 0 -2px 0 var(--color-accent); transition-duration: 320ms; transition-timing-function: var(--ease-spring); }
+/* One panel at a time; it slides in from the side of the tab picked (DESIGN §3, M9) */
+.st-panel { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
+.st-panel.from-right { animation: panel-in 320ms var(--ease-out) both; }
+.st-panel.from-left { animation: panel-in-l 320ms var(--ease-out) both; }
+@keyframes panel-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes panel-in-l { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+.st-panel .card { position: relative; }
+.st-panel .card:hover { border-color: rgba(255,255,255,0.09); }
+/* Spotlight: a light that follows the pointer along the card's hairline (--mx/--my set by Settings `spot`). */
+.st-panel .card::before { content: ""; position: absolute; inset: -1px; padding: 1px; border-radius: inherit; background: radial-gradient(240px circle at var(--mx, 50%) var(--my, -240px), rgba(255,255,255,0.32), transparent 70%); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity: 0; transition: opacity 250ms; pointer-events: none; }
+.st-panel .card:hover::before { opacity: 1; }
+.st-metric { display: flex; flex-direction: column; gap: 2px; }
+.st-details { interpolate-size: allow-keywords; }
+.st-details::details-content { block-size: 0; overflow: clip; transition: block-size 300ms var(--ease-out), content-visibility 300ms allow-discrete; }
+.st-details[open]::details-content { block-size: auto; }
+.st-details summary { display: flex; align-items: center; gap: 8px; width: fit-content; margin-inline: -6px; padding: 4px 6px; border-radius: var(--radius-control); cursor: pointer; list-style: none; color: var(--color-text-2); transition: color 150ms, background 150ms; }
+.st-details summary::-webkit-details-marker { display: none; }
+.st-details summary:hover { color: var(--color-text); background: var(--color-surface-2); }
+.st-details summary:active { background: var(--color-surface-3); }
+.st-details summary svg { transition: transform 220ms var(--ease-spring); }
+.st-details[open] summary svg { transform: rotate(90deg); }
+.st-copy { width: 30px; height: 30px; }
+.st-copy.done { color: var(--color-accent); }
+.st-copy svg { animation: pop-in 260ms var(--ease-spring); }
+@keyframes pop-in { from { transform: scale(0.5); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---------- prototype controls (not product UI) */
 .proto { position: fixed; right: 16px; bottom: 16px; z-index: 40; width: 280px; font-size: 12px; background: #F3F1EA; color: #1B1B1B; border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); font-family: var(--font-mono); }

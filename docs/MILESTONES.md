@@ -15,8 +15,10 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M6 Integration: MVP release | integration | MVP | CAP-01–17, 35 | U-3 dropped, U-4 done, U-5 (parallel, D32) | done 21 Oct 2026 (code 20 Oct; installed-build run + fixes 21 Oct) |
 | M7 Integration: R2 and R3 | integration | R2, R3 | CAP-18–34, 36 | U-10 done | done 22 Oct 2026 (build + 8 review rounds 21 Oct; live runs 21–22 Oct) |
 | M8 Stabilization & UI Polish | stabilization | all | — | — | per plan (taste skill UI + gap fixes) |
+| M9 Interactive UI refinement | UI | all | — | — | per screen (Settings done 24 Oct 2026) |
 
 ### Status (24 Oct 2026)
+- **M9 started 24 Oct 2026** (user: refine the UI with taste + modern UI skills, highly interactive elements with animation, Settings first). DESIGN §2 motion dial 5 → 7. WI 1 Settings done: tabs (one section at a time, spring underline, panel slides in, `?tab=` deep links), toggle switches with rollback, pointer spotlight, count-up metrics, animated disclosure, copy pairing code. WI 2 done: switches for every on/off setting app-wide, spring check-mark checkboxes, spring segment indicators; new `check.py` "hover keeps selected". Native CSS/JS only, no new dependency. check.py green, journeys 31/31; unrelated screens' screenshots differ by timing noise only. Next: WI 3 (Home / Now playing) per [plan](plans/M9-motion-ui.md).
 - **M8 build installed 24 Oct 2026** (`ebf9c02`, user-approved): data backed up first to `%LOCALAPPDATA%\Runout-preM8-backup-20261024` (164 files, 207 MB), NSIS `/S` over the 22 Oct install, launched; real DB migrated to `user_version` 7 (`backlog_history` present), `quick_check` ok, 180,302 listening events and 7 records intact. U-5 daily use now runs on the M8 build. M8 waits only on U-5 and G-40.
 - **M8 23 Oct 2026**: WI 1–4 done on `dev` (`68b23e3`, `2b8de12`). WI 2: Rust hardening audit, 3 defects fixed with tests. WI 3: five drawn states, sliding segment, row enter. WI 4: BRD §4.4 candidates evaluated in the plan; the user picks (recommendation: listening analytics first, then Markdown/CSV export). External audits (spec + UI taste): 16 findings, all fixed except the G-44 low items. A re-audit found 3 more (corrupt deflate stream mapped to `io`, `awake_since` on a tick that doesn't observe, empty-page paging cycles), fixed with tests. Acceptance 2/5 ticked. The other three wait on U-5 daily use and G-40 (live sign-in). G-38 closed by a side-by-side netwatch run (no WebView2 calls). New gaps: G-42, G-43, G-44.
 - **M8 gap re-check 22 Oct 2026**: of the 10 gaps closed in `e0b93be`, G-6 (by design), G-16, G-31, G-34, G-39, G-41 are closed; G-16 had a bug (every new backlog item counted as moved) and G-39/G-41 were re-fixed in code; G-33, G-37 accepted; G-38 (switches unverified) and G-40 (never run live) reopened. Still open: G-21, G-27, G-28, G-32, G-38, G-40 (daily use, U-5).
@@ -256,3 +258,19 @@ Acceptance
 - [ ] Full functionality verified end-to-end: Backlog, Logger, Importer, Insights, Playlists/Studio, Runout Inbox, and Settings. *(open: waiting on U-5 for the live remainder: G-28 autostart/tray, G-32 `bulk_add_album_tracks`, G-40 Inbox options, G-21 repeat-one. Everything else ran live in M6/M7 installed-build runs; journeys A–H 31/31; cargo test 247 passed)*
 - [x] UI passes design audit against taste skill criteria: tactile elevation tokens (`--elev-0`, `--elev-1`, `--elev-1-hover`), 5 states on every interactive control, contrast ratios >= 7:1 for text/muted, and purposeful micro-interactions. *(23 Oct 2026: WI 3 added hover/pressed/disabled to icon buttons, segments, chips, menu, rating, selbar, inputs, cards, tiles, plus the sliding segment indicator and row enter (`68b23e3`). An external UI taste audit gave 12 findings, all fixed in `2b8de12` (list-link states, 8% Now-playing tint, stat lift only when linked, off-token colors moved into tokens/recipes, mono dates/counts) except the low items in G-44. Re-audit clean. Contrast: the final re-audit found the old ≥ 4.5 test didn't back the 7:1 claim (muted reached only 6.2:1 on hover fills). Muted is now `#B6BBC3`, and `tokens.test.ts` "body text contrast ≥ 7:1" checks text, text-2 and muted on every bg/rail/surface token. Journey M4 guards selected-segment legibility on hover.)*
 - [x] `python scripts/check.py` and `node scripts/journeys.mjs` pass clean with 0 warnings or errors. *(23 Oct 2026: ALL CHECKS PASS; journeys 31/31 steps, 66 keyboard stops with focus rings)*
+
+## M9 — Interactive UI refinement (taste skill, motion)
+
+**Goal:** refine every screen with purposeful, highly interactive motion at `MOTION_INTENSITY 7` (DESIGN §2–3), screen by screen, without changing the contract, Rust or scope. Plan: [plans/M9-motion-ui.md](plans/M9-motion-ui.md).
+
+### Work items
+1. **Settings (SC-13):** tabs (one section at a time, `?tab=`), toggle switches (optimistic, roll back on failure), pointer spotlight, count-up metrics, animated Wi-Fi disclosure, copy pairing code. *(done 24 Oct 2026)*
+2. **App-wide controls:** switches for on/off settings, spring check-mark checkboxes, spring segment indicators. *(done 24 Oct 2026)*
+3. **Home / Now playing, Backlog, Insights, Playlist Studio, Item:** one screen per step, scoped recipes, before/after screenshot diff.
+4. **Review:** `spec-reviewer` against DESIGN §2–3 and accessibility; findings fixed.
+
+### Acceptance
+- [ ] Every screen refined; each new motion listed in DESIGN §3 with its reason. *(Settings done 24 Oct 2026)*
+- [ ] Everything instant under `prefers-reduced-motion` (journey M1), focus rings and accessible names intact (M2, M3).
+- [ ] No side effects: unrelated screens' journey screenshots differ by timing noise only. *(Settings: checked 24 Oct 2026)*
+- [ ] `python scripts/check.py` and `node scripts/journeys.mjs` pass.

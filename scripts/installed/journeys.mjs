@@ -92,6 +92,13 @@ const byName = (s) => `nm(el) === ${JSON.stringify(s)}`;
 const nameStarts = (s) => `nm(el).startsWith(${JSON.stringify(s)})`;
 /** Tab to a control and activate it with Enter. */
 const activate = async (pred, opts) => { await tabTo(pred, opts); await key("Enter"); await sleep(250); };
+/** Settings tabs (M9): Tab to the selected tab, then arrow keys until `name` is selected (roving tablist). */
+async function pickTab(name) {
+  await tabTo(`el.getAttribute("role") === "tab" && el.getAttribute("aria-selected") === "true"`, { what: "Settings tabs" });
+  for (let i = 0; i < 10 && !(await js(`document.activeElement.textContent === ${JSON.stringify(name)}`)); i++) await key("ArrowRight");
+  if (!(await js(`document.activeElement.getAttribute("aria-selected") === "true" && document.activeElement.textContent === ${JSON.stringify(name)}`))) throw new Error(`no Settings tab ${name}`);
+  await sleep(400);
+}
 /** Move via a rail link (keyboard) to a route. */
 async function go(label, hash) {
   await activate(`el.matches(".rail a") && ${byName(label)}`, { what: `rail link ${label}` });
@@ -239,6 +246,7 @@ if (J.has("B") && INBOX && !POST) await step("B1 Settings → Runout Inbox → C
   await go("Backlog", "#/backlog");
   needBefore = await js(`$$(".badge.need").length`);
   await go("Settings", "#/settings");
+  await pickTab("Inbox");
   await waitFor(`txt().includes("Runout Inbox · ready")`, 8000);
   await activate(byName("Check now"), { what: "Inbox Check now" });
   const t = await waitFor(`(() => { const t = document.querySelector(".toast")?.textContent ?? ""; return /from your Inbox saved|Nothing new in your Inbox/.test(t) && t; })()`, 60000);
@@ -400,6 +408,7 @@ if (J.has("F")) {
 await step("F1 import: Settings → Import an export → choose → check → import", async () => {
   if (!EXPORT) throw new Skip("RUNOUT_EXPORT unset");
   await go("Settings", "#/settings");
+  await pickTab("History");
   await activate(`el.tagName === "A" && ${byName("Import an export")}`, { what: "Import an export" });
   await waitFor(`location.hash === "#/import/1"`);
   await waitFor(`!!document.querySelector("main") && txt().includes("Choose folder or .zip")`);
@@ -637,7 +646,9 @@ await step("O3 Recent plays and Rediscover load", async () => {
 });
 await step("O4 Settings loads; Spotify card and Inbox say offline/connect", async () => {
   await go("Settings", "#/settings");
+  await pickTab("Spotify");
   await waitFor(`txt().includes("Settings and data") && (txt().includes("Connected, but you’re offline") || txt().includes("Not connected") || txt().includes("Connect when you’re back online"))`, 15000);
+  await pickTab("Inbox");
   await waitFor(`!$$("button").some((b) => nm(b) === "Check now" && !b.disabled)`); // Inbox: no Check now offline
   await shot("O3-offline-settings");
 });

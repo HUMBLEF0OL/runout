@@ -86,6 +86,13 @@ const byName = (s) => `nm(el) === ${JSON.stringify(s)}`;
 const nameStarts = (s) => `nm(el).startsWith(${JSON.stringify(s)})`;
 /** Tab to a control and activate it with Enter. */
 const activate = async (pred, opts) => { await tabTo(pred, opts); await key("Enter"); await sleep(250); };
+/** Settings tabs (M9): Tab to the selected tab, then arrow keys until `name` is selected (roving tablist). */
+async function pickTab(name) {
+  await tabTo(`el.getAttribute("role") === "tab" && el.getAttribute("aria-selected") === "true"`, { what: "Settings tabs" });
+  for (let i = 0; i < 10 && !(await js(`document.activeElement.textContent === ${JSON.stringify(name)}`)); i++) await key("ArrowRight");
+  if (!(await js(`document.activeElement.getAttribute("aria-selected") === "true" && document.activeElement.textContent === ${JSON.stringify(name)}`))) throw new Error(`no Settings tab ${name}`);
+  await sleep(400);
+}
 /** Move via a rail link (keyboard) to a route. */
 async function go(label, hash) {
   await activate(`el.matches(".rail a") && ${byName(label)}`, { what: `rail link ${label}` });
@@ -205,6 +212,7 @@ await step("B1 Settings → Runout Inbox → Check now → backlog shows it as N
   await go("Backlog", "#/backlog");
   needBefore = await js(`$$(".badge.need").length`);
   await go("Settings", "#/settings");
+  await pickTab("Inbox");
   await waitFor(`txt().includes("Runout Inbox · ready")`);
   await activate(byName("Check now"), { what: "Inbox Check now" });
   await toast(/1 item from your Inbox saved to the backlog as Name needed/);

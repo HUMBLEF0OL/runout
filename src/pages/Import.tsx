@@ -29,7 +29,7 @@ function Choose() {
       title={err.code === "import_unrecognized" ? UNRECOGNIZED : "Couldn't open that."} />}
     {!online && <span className="text-muted text-xs">Importing works offline. The files are read from your PC.</span>}
     <div className="flex flex-wrap gap-2 items-center justify-end">
-      <Link className="btn btn-secondary" to="/settings">Cancel</Link>
+      <Link className="btn btn-secondary" to="/settings?tab=import">Cancel</Link>
       <button className="btn btn-primary" disabled={!path} onClick={() => nav("/import/2", { state: { path } })}>Next</button>
     </div>
   </>;
@@ -101,7 +101,7 @@ export default function Import() {
   return (
     <>
       <Topbar />
-      <Link to="/settings" className="text-sm font-semibold">Back to settings</Link>
+      <Link to="/settings?tab=import" className="text-sm font-semibold">Back to settings</Link>
       <div className="flex flex-col gap-1.5">
         <h1 className="page-title">Import your Spotify history</h1>
         <span className="text-muted">Uses the files Spotify emails you after you request your data.</span>

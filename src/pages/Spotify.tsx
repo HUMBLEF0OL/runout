@@ -57,12 +57,12 @@ export default function Spotify() {
   if (status.loading) body = <SkelRows n={10} />;
   else if (state === "disconnected" || top.error?.code === "spotify_auth") body = (
     <Empty h="Spotify isn't connected" line="Connect to see your Spotify Top items and recent plays from every device. Everything else in Runout keeps working without it.">
-      <Link className="btn btn-primary" to="/settings">Connect Spotify in Settings</Link>
+      <Link className="btn btn-primary" to="/settings?tab=spotify">Connect Spotify in Settings</Link>
     </Empty>);
   else if (state === "reconnect") body = (
     <div className="banner warn">
       <span><b className="text-accent">Spotify needs you to sign in again.</b> <span className="text-text-2">Spotify asks every 6 months. Your data in Runout is unaffected.</span></span>
-      <Link className="btn btn-primary s" to="/settings">Reconnect in Settings</Link>
+      <Link className="btn btn-primary s" to="/settings?tab=spotify">Reconnect in Settings</Link>
     </div>);
   else if (!online || top.error?.code === "offline") body = <Empty h="You're offline" line="Top items and recent plays come straight from Spotify, so they aren't stored on this PC. They return when you reconnect." />;
   else if (top.loading) body = <SkelRows n={10} />;
