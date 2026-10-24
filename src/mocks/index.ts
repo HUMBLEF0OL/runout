@@ -194,6 +194,13 @@ function play(e: any, n: number): Play {
     artist_name: e.artist, album_name: e.album, source: e.source, spotify_uri: e.spotify_uri ?? null, item: it ? summary(it) : null, album_rating: al?.rating ?? null,
   };
 }
+/** Dev state "heavy": ~26k plays over 400 days, the mock plays repeated a day further back each cycle (paging, long days). */
+let heavy: Play[] | undefined;
+const heavyPlays = (): Play[] => (heavy ??= Array.from({ length: 400 }, (_, k) => allPlays().map((p) => {
+  const d = new Date(p.ended_at_local); d.setDate(d.getDate() - k);
+  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}${p.ended_at_local.slice(10)}`;
+  return { ...p, id: p.id + k * 1_000_000, ended_at_local: iso };
+})).flat().sort((a, b) => b.ended_at_local.localeCompare(a.ended_at_local)));
 const allPlays = (): Play[] => [...L.recent, ...L.export_sample].sort((a: any, b: any) => b.ended_at.localeCompare(a.ended_at)).map(play);
 function loggerStatus(): LoggerStatus {
   const np = L.recent.find((e: any) => e.now_playing);
@@ -384,7 +391,7 @@ const H: Record<string, Handler> = {
   resume_logger: () => { logger.paused = false; logger.paused_until = null; return loggerStatus(); },
   list_plays: ({ q }) => {
     const days = RANGE_DAYS[q.range as Range] ?? 1e6;
-    let rows = allPlays().filter((p) => daysBetween(p.ended_at_local, TODAY) < days);
+    let rows = (dev.view === "heavy" ? heavyPlays() : allPlays()).filter((p) => daysBetween(p.ended_at_local, TODAY) < days);
     if (q.tab === "unrated") rows = rows.filter((p) => p.counts_as_play && p.item && p.item.rating == null);
     if (q.tab === "missing") rows = rows.filter((p) => !p.item);
     return { rows: rows.slice(q.offset, q.offset + q.limit), total: rows.length, offset: q.offset };

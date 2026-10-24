@@ -313,6 +313,29 @@ a.hm-lead-name:hover { color: var(--color-link-hover); }
 .hm-ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
 .hm-ring circle { fill: none; stroke-width: 5; }
 .hm-ring .track { stroke: var(--color-line-2); }
+/* ---------- Recent plays (M9): days as sections with a sticky head and a 24-hour strip; rows are whole-row targets.
+   Off-screen days skip layout and paint, so years of plays stay cheap to scroll. Motion for React drives row arrival. */
+.pl-day { display: flex; flex-direction: column; gap: 8px; content-visibility: auto; contain-intrinsic-size: auto 520px; }
+.pl-day-head { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; padding: 10px 2px 8px; background: linear-gradient(var(--color-bg) 78%, transparent); }
+/* 24 hourly bars: grey data; the hour of the play under the pointer lights in accent (the "active bar") */
+.pl-clock { flex: 0 1 216px; display: flex; flex-direction: column; gap: 3px; }
+.pl-ticks { display: grid; grid-template-columns: repeat(4, 1fr); font-family: var(--font-mono); font-size: 10px; color: var(--color-faint); }
+.pl-hours { height: 28px; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; align-items: end; }
+.pl-hours i { display: block; border-radius: var(--radius-bar) var(--radius-bar) 0 0; background: var(--color-bar); transition: background 150ms, transform 200ms var(--ease-out); transform-origin: bottom; }
+.pl-hours i.zero { background: var(--color-line-2); }
+.pl-hours i.on { background: var(--color-accent); transform: scaleY(1.12); }
+.pl-day .list > .row { animation: none; } /* rows arrive through Motion here */
+.pl-row { position: relative; grid-template-columns: 44px minmax(0, 1fr) 24px 46px 140px; transition: background 150ms, transform 100ms var(--ease-out); }
+.pl-row:has(.pl-stretch:active) { transform: scale(0.995); background: var(--color-surface-3); }
+.pl-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; } /* the whole row opens the record */
+.pl-act { position: relative; z-index: 1; }
+.pl-dev { display: inline-flex; color: var(--color-faint); transition: color 150ms; }
+.pl-row:hover .pl-dev { color: var(--color-text-2); }
+.pl-more { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-height: 44px; padding: 8px 4px; }
+.pl-side { position: sticky; top: 20px; }
+.pl-state { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border-radius: var(--radius-thumb); background: var(--color-surface-2); color: var(--color-text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pl-state.on { color: var(--color-text); }
+
 .hm-ring .fill { stroke: var(--color-text); stroke-linecap: round; }
 .hm-ring span { font-family: var(--font-mono); font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
 /* Ranks 2–10 flow down two columns when there is room, one when not; the whole row is the target */

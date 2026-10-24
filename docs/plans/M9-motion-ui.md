@@ -29,8 +29,13 @@ Agents: `react-ui` (screens), `spec-reviewer` (design + a11y review). UI only: n
    - Your take labels each row (Loved, then quiet; Played, not rated; Waiting, never played). Now playing swaps the track with a slide. A single 4+1 album grid and five repeated source tags are gone.
    - **Scale:** Rust aggregates in SQL, so Home renders a fixed DOM (top 10 ×1 panel, 12 months, 6 plays) whatever the history size. Motion moves transform/opacity/clip-path only. Scrubbing re-renders the chart card only, at most once per month crossed. Dev state **heavy** (`src/mocks`) scales the listening mocks ~37× (180k-play range, long names) for checking this.
    - Responsiveness: screenshots at 900, 1100, 1280, 1440, 1600 and 1920 (normal and heavy) show no horizontal overflow, and the wrap points are deliberate (chart under Now playing below ~1080, lead above the ranks, ranks one column below ~620 of card width).
-4. **Next screens (WI 4+)**, one per step, same rules: Backlog, Insights (bars grow in, rank bars), Playlist Studio (keep/cut), Item. Each gets its own scoped recipes and a before/after journeys screenshot diff.
-5. **Review** — `spec-reviewer` against DESIGN §2–3 and accessibility; findings fixed.
+4. **Recent plays (WI 4)**, done 24 Oct 2026 (user: "refactor the recent play feature using taste + motion"):
+   - **Scale:** the old page asked for 500 plays of 30 days, then 12 months, so a long history never reached earlier days (and "Show earlier days" claimed totals it couldn't show). Now one query pages newest first, 150 at a time, as you scroll (IntersectionObserver 600 px ahead, plus a "Load earlier plays" button for the keyboard), back to the first play; each day is a `content-visibility: auto` section, and a long day shows 12 plays with "Show N more" (opens on a Motion height animation). Heavy dev state: 26,400 plays; 600 loaded = 133 rows in the DOM.
+   - **Each day:** a sticky head with the day, plays and listening time, and a 24-hour strip of bars (ticks 00/06/12/18). Pointing at a play lights its hour in accent (a DOM class, no React state).
+   - **Rows:** whole-row link to the record, hover fill and press, device as an icon (this PC / phone), duration, and your stars or Rate/Save; rows arrive with a short Motion fade-rise.
+   - **Side:** the logger card shows its state (Logging with the live dot / Paused / Off) and what's playing, and stays in view while you scroll.
+5. **Next screens (WI 5+)**, one per step, same rules: Backlog, Insights (bars grow in, rank bars), Playlist Studio (keep/cut), Item. Each gets its own scoped recipes and a before/after journeys screenshot diff.
+6. **Review** — `spec-reviewer` against DESIGN §2–3 and accessibility; findings fixed.
 
 ## Done when
 - Every screen refined under the rules above; DESIGN §3 motion table lists each new motion.
