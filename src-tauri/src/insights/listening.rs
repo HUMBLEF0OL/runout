@@ -1,9 +1,10 @@
 //! `get_listening_insights` (FR-031) and `get_year_review` (FR-034) over the base view.
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, NaiveDate, TimeDelta, TimeZone, Utc};
 use rusqlite::{Connection, OptionalExtension, ToSql};
 use serde::Serialize;
 
-use super::{Range, Sourced, base, hours, last_months, pct, rollup, since, sourced};
+use super::coverage::{self, Model};
+use super::{Covered, Range, Sourced, base, hours, last_months, pct, rollup, since, sourced};
 use crate::error::Result;
 use crate::library::Status;
 
@@ -32,6 +33,8 @@ pub struct Totals {
     pub plays_prev: i64,
     pub ms: i64,
     pub ms_prev: i64,
+    pub plays_cmp: i64,
+    pub ms_cmp: i64,
     pub new_artists: i64,
     pub rated_this_period: i64,
     pub unrated_plays: i64,
@@ -132,12 +135,29 @@ fn rank(
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
+/// Today and the range's start / previous start as local dates (TSD §4.14: periods are by local
+/// date); `None` for `all`'s empty bounds.
+fn local_days<Tz: TimeZone>(
+    tz: &Tz,
+    now: DateTime<Utc>,
+    start: &str,
+    prev: &str,
+) -> (NaiveDate, Option<NaiveDate>, Option<NaiveDate>) {
+    let day = |t: DateTime<Utc>| t.with_timezone(tz).date_naive();
+    let parse = |s: &str| {
+        DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|t| day(t.to_utc()))
+    };
+    (day(now), parse(start), parse(prev))
+}
+
 pub fn listening(
     conn: &Connection,
     range: Range,
     include_private: bool,
     now: DateTime<Utc>,
-) -> Result<Sourced<ListeningInsights>> {
+) -> Result<Covered<ListeningInsights>> {
     let (start, prev) = range.bounds(now).unwrap_or_default();
     let b = base(include_private);
     // Range `all` reads the rollup (G-17): every event is in range, there is no period before.
@@ -149,9 +169,7 @@ pub fn listening(
     };
     let top = |k| rank(conn, &src, k, &in_range, &start, TOP);
 
-    let (plays, plays_prev, ms, ms_prev, skipped, events, phone, exported, artists_total): (
-        i64,
-        i64,
+    let (plays, ms, skipped, flagged, phone, exported, artists_total): (
         i64,
         i64,
         i64,
@@ -162,30 +180,25 @@ pub fn listening(
     ) = conn.query_row(
         &if all {
             format!(
-                "{src} SELECT COALESCE(SUM(counts_as_play), 0), 0, COALESCE(SUM(ms_played), 0), 0,
-                   COALESCE(SUM(skips), 0), COALESCE(SUM(events), 0), COALESCE(SUM(phone), 0),
+                "{src} SELECT COALESCE(SUM(counts_as_play), 0), COALESCE(SUM(ms_played), 0),
+                   0, 0, COALESCE(SUM(phone), 0),
                    COALESCE(SUM(exported), 0),
                    COUNT(DISTINCT CASE WHEN artist_name <> '' THEN lower(artist_name) END)
-                 FROM base WHERE ?1 = ?2"
+                 FROM base WHERE ?1 = ''"
             )
         } else {
             format!(
-            "{b} SELECT
-               COALESCE(SUM(CASE WHEN ended_at_utc >= ?1 THEN counts_as_play END), 0),
-               COALESCE(SUM(CASE WHEN ended_at_utc >= ?2 AND ended_at_utc < ?1 THEN counts_as_play END), 0),
-               COALESCE(SUM(CASE WHEN ended_at_utc >= ?1 THEN ms_played END), 0),
-               COALESCE(SUM(CASE WHEN ended_at_utc >= ?2 AND ended_at_utc < ?1 THEN ms_played END), 0),
-               COUNT(CASE WHEN ended_at_utc >= ?1 AND skipped = 1 THEN 1 END),
-               COUNT(CASE WHEN ended_at_utc >= ?1 THEN 1 END),
-               COUNT(CASE WHEN ended_at_utc >= ?1 AND source = 'export' AND counts_as_play
+            "{b} SELECT COALESCE(SUM(counts_as_play), 0), COALESCE(SUM(ms_played), 0),
+               COUNT(CASE WHEN skipped = 1 THEN 1 END),
+               COUNT(CASE WHEN skipped IS NOT NULL THEN 1 END),
+               COUNT(CASE WHEN source = 'export' AND counts_as_play
                            AND (lower(platform) LIKE '%ios%' OR lower(platform) LIKE '%android%') THEN 1 END),
-               COUNT(CASE WHEN ended_at_utc >= ?1 AND source = 'export' AND counts_as_play THEN 1 END),
-               COUNT(DISTINCT CASE WHEN ended_at_utc >= ?1 AND artist_name <> '' THEN lower(artist_name) END)
-             FROM base WHERE {}",
-            since(&prev, "ended_at_utc", "?2")
+               COUNT(CASE WHEN source = 'export' AND counts_as_play THEN 1 END),
+               COUNT(DISTINCT CASE WHEN artist_name <> '' THEN lower(artist_name) END)
+             FROM base WHERE {in_range}"
         )
         },
-        [&start, &prev],
+        [&start],
         |r| {
             Ok((
                 r.get(0)?,
@@ -195,11 +208,53 @@ pub fn listening(
                 r.get(4)?,
                 r.get(5)?,
                 r.get(6)?,
-                r.get(7)?,
-                r.get(8)?,
             ))
         },
     )?;
+    // G-45: skip rate = skipped ÷ events with a skip flag. For `all`, the 0005 rollup's `events`
+    // counts desktop rows too, so count on 0008's partial index instead.
+    let (skipped, flagged): (i64, i64) = if all {
+        let private = if include_private {
+            ""
+        } else {
+            " AND private_session = 0"
+        };
+        conn.query_row(
+            // unfiltered: base's filters by hand (reconciled out, private per setting), on the index
+            &format!(
+                "SELECT COALESCE(SUM(skipped), 0), COUNT(*) FROM listening_event
+                      WHERE skipped IS NOT NULL AND reconciled_with IS NULL{private}"
+            ),
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?
+    } else {
+        (skipped, flagged)
+    };
+    // FR-048 (G-46): "vs the period before" counts like for like, over the sources that cover both
+    // periods (`coverage::Model::compare`); `*_prev` / `*_cmp` stay 0 when the delta is hidden.
+    let (today, start_day, prev_day) = local_days(&Local, now, &start, &prev);
+    let model = Model::load(conn, &Local, prev_day.unwrap_or(NaiveDate::MIN), today, now)?;
+    let (cur, vs) = match (start_day, prev_day) {
+        (Some(a), Some(p)) => ((a, today), Some([(p, a - TimeDelta::days(1))])),
+        _ => ((model.first.unwrap_or(today), today), None),
+    };
+    let cov = model.compare(cur, vs.as_ref().map(|v| &v[..]), today);
+    let (plays_cmp, ms_cmp, plays_prev, ms_prev): (i64, i64, i64, i64) =
+        match coverage::compared(&cov, include_private) {
+            Some(cmp) => conn.query_row(
+                &format!(
+                    "{cmp} SELECT COALESCE(SUM(CASE WHEN ended_at_utc >= ?1 THEN counts_as_play END), 0),
+                       COALESCE(SUM(CASE WHEN ended_at_utc >= ?1 THEN ms_played END), 0),
+                       COALESCE(SUM(CASE WHEN ended_at_utc < ?1 THEN counts_as_play END), 0),
+                       COALESCE(SUM(CASE WHEN ended_at_utc < ?1 THEN ms_played END), 0)
+                     FROM cmp WHERE ended_at_utc >= ?2"
+                ),
+                [&start, &prev],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )?,
+            None => (0, 0, 0, 0),
+        };
     let count = |sql: &str| -> Result<i64> { Ok(conn.query_row(sql, [&start], |r| r.get(0))?) };
     // Artists heard in the range and never before it; for `all` that is every artist.
     let new_artists = if start.is_empty() {
@@ -298,7 +353,7 @@ pub fn listening(
         top_tracks: top(Kind::Track)?,
         monthly,
         heatmap,
-        skip_rate: pct(skipped, events),
+        skip_rate: pct(skipped, flagged),
         // ponytail: phone = export `platform` naming iOS or Android; recheck the values with WI 4 (T1).
         phone_share: pct(phone, exported),
         totals: Totals {
@@ -306,6 +361,8 @@ pub fn listening(
             plays_prev,
             ms,
             ms_prev,
+            plays_cmp,
+            ms_cmp,
             new_artists,
             rated_this_period,
             unrated_plays,
@@ -313,7 +370,10 @@ pub fn listening(
             artists_total,
         },
     };
-    sourced(conn, include_private, data)
+    Ok(Covered {
+        sourced: sourced(conn, include_private, data)?,
+        coverage: cov,
+    })
 }
 
 pub fn year_review(
@@ -378,20 +438,40 @@ mod tests {
     use super::super::fixture::{self, ALBUM, ARTIST, T1};
     use super::*;
 
+    /// TSD §4.14: 00:30 on 20 Oct in UTC+5:30 is still 19 Oct in UTC; today is the local 20 Oct.
+    #[test]
+    fn periods_are_by_local_date() {
+        let ist = chrono::FixedOffset::east_opt(5 * 3600 + 1800).unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-10-19T19:00:00Z")
+            .unwrap()
+            .to_utc();
+        let (start, prev) = Range::Week.bounds(now).unwrap();
+        let d = |s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+        assert_eq!(
+            local_days(&ist, now, &start, &prev),
+            (d("2026-10-20").unwrap(), d("2026-10-13"), d("2026-10-06"))
+        );
+        assert_eq!(local_days(&ist, now, "", "").1, None);
+    }
+
     #[test]
     fn listening_week_matches_hand_totals() {
         let (c, _) = fixture::build();
         let s = listening(&c, Range::Week, false, fixture::now()).unwrap();
-        let d = &s.data;
+        let d = &s.sourced.data;
         // in range: e1 (200 s, phone), e2 (100 s, skipped), e3 (20 s, skipped, not a play);
         // e4 reconciled, e5 private, e7 in the week before.
         assert_eq!(
             d.totals,
             Totals {
                 plays: 2,
-                plays_prev: 1,
                 ms: 320_000,
-                ms_prev: 90_000,
+                // FR-048: the week runs past the export (18 Oct) and the desktop log (e4) starts on
+                // 18 Oct, after the week before began: no like-for-like delta (e7 isn't compared)
+                plays_prev: 0,
+                ms_prev: 0,
+                plays_cmp: 0,
+                ms_cmp: 0,
                 new_artists: 1, // Quuxley; Zorblax was first heard in 2025
                 rated_this_period: 0,
                 unrated_plays: 2, // e1, e2 on Song One (unrated)
@@ -429,7 +509,75 @@ mod tests {
             d.monthly[11].hours,
             hours(200_000 + 100_000 + 20_000 + 90_000)
         );
-        assert_eq!(s.sources, vec!["U", "E"]);
+        assert_eq!(s.sourced.sources, vec!["U", "E"]);
+        assert_eq!(s.coverage.desktop_only_since.as_deref(), Some("2026-10-19"));
+        assert_eq!(
+            s.coverage.no_compare_reason.as_deref(),
+            Some(
+                "Plays on this PC are only logged from 18 Oct 2026, so there's nothing like for like to compare with."
+            )
+        );
+    }
+
+    /// G-46: once the week runs past the export's end, both weeks count desktop plays only (reconciled
+    /// twins included); the totals still count everything.
+    #[test]
+    fn home_delta_is_desktop_only_past_the_export() {
+        use super::super::fixture::{Ev, ev, put};
+        use crate::importer::events::Source;
+        let c = crate::db::open_in_memory().unwrap();
+        let pc = |utc| Ev {
+            source: Source::Logger,
+            ..ev(utc, 0, "Song One", None)
+        };
+        let twin = |utc: &'static str, ms: i64, desk: &'static str| {
+            let x = put(&c, ev(utc, ms, "Song One", None));
+            let l = put(&c, Ev { ms, ..pc(desk) });
+            c.execute(
+                "UPDATE listening_event SET reconciled_with = ?1 WHERE id = ?2",
+                [x, l],
+            )
+            .unwrap();
+        };
+        twin("2026-10-01T10:00:00Z", 60_000, "2026-10-01T10:00:30Z"); // the log ran before both weeks
+        twin("2026-10-08T10:00:00Z", 120_000, "2026-10-08T10:00:30Z"); // week before
+        twin("2026-10-13T10:00:00Z", 100_000, "2026-10-13T10:00:30Z"); // this week, in the export
+        put(
+            &c,
+            Ev {
+                platform: "android",
+                ..ev("2026-10-09T10:00:00Z", 60_000, "Song One", None)
+            },
+        );
+        put(&c, ev("2026-10-14T10:00:00Z", 50_000, "Song One", None)); // the export's last play
+        put(
+            &c,
+            Ev {
+                ms: 200_000,
+                ..pc("2026-10-16T10:00:00Z")
+            },
+        );
+        put(
+            &c,
+            Ev {
+                ms: 40_000,
+                ..pc("2026-10-17T10:00:00Z")
+            },
+        );
+        let s = listening(&c, Range::Week, false, fixture::now()).unwrap();
+        let t = &s.sourced.data.totals;
+        // everything this week: export 13, 14 Oct + desktop 16, 17 Oct
+        assert_eq!((t.plays, t.ms), (4, 390_000));
+        // like for like on this PC: 13 (twin), 16, 17 Oct vs 8 Oct (twin); the phone play on 9 Oct is out
+        assert_eq!((t.plays_cmp, t.ms_cmp), (3, 340_000));
+        assert_eq!((t.plays_prev, t.ms_prev), (1, 120_000));
+        assert_eq!(s.coverage.compared_sources, ["S"]);
+        assert_eq!(s.coverage.desktop_only_since.as_deref(), Some("2026-10-15"));
+        assert_eq!(s.coverage.no_compare_reason, None);
+        // all time has nothing before it
+        let all = listening(&c, Range::All, false, fixture::now()).unwrap();
+        assert!(all.coverage.no_compare_reason.is_some());
+        assert_eq!(all.sourced.data.totals.plays_prev, 0);
     }
 
     /// G-29: a local time SQLite can't parse is left out of the heatmap, not an error.
@@ -449,7 +597,32 @@ mod tests {
             listening(&c, range, false, fixture::now()).unwrap();
         }
         let after = listening(&c, Range::Week, false, fixture::now()).unwrap();
-        assert_eq!(after.data.heatmap, before.data.heatmap);
+        assert_eq!(after.sourced.data.heatmap, before.sourced.data.heatmap);
+    }
+
+    /// G-45: the skip rate divides by events with a skip flag only; desktop rows have none.
+    #[test]
+    fn skip_rate_counts_only_flagged_events() {
+        let (c, _) = fixture::build();
+        c.execute(
+            "INSERT INTO listening_event(source, ended_at_utc, ended_at_local, ms_played, track_name,
+               artist_name, album_name, norm_key, dedupe_hash)
+             VALUES ('logger', '2026-10-17T12:00:00Z', '2026-10-17T12:00:00', 60000, 'Song One',
+                     'Zorblax', 'Album One', 'zorblax|song one', 'g45-desktop')",
+            [],
+        )
+        .unwrap();
+        let rate = |r| {
+            listening(&c, r, false, fixture::now())
+                .unwrap()
+                .sourced
+                .data
+                .skip_rate
+        };
+        // week: e2, e3 skipped of e1–e3 (not 2 of 4 with the desktop row)
+        assert_eq!(rate(Range::Week), 66.7);
+        // all: e2, e3 of e1, e2, e3, e6, e7, e8, e9 (e4 reconciled, e5 private, desktop unflagged)
+        assert_eq!(rate(Range::All), 28.6);
     }
 
     #[test]
@@ -457,6 +630,7 @@ mod tests {
         let (c, _) = fixture::build();
         let t = listening(&c, Range::Week, true, fixture::now())
             .unwrap()
+            .sourced
             .data
             .totals;
         assert_eq!((t.plays, t.private_excluded), (3, 0));

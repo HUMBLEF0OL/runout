@@ -10,8 +10,15 @@ export const monthLong = (ym: string) => new Date(`${ym}-01T00:00`).toLocaleStri
 
 /** One bar per month. Point at a month or use the keys (`role="slider"`): it turns accent (DESIGN §3 "active bar") and a
  *  value tip springs above it; at rest the latest month is active, or `hot` if given. `avg` draws the dashed average. */
-export function MonthBars({ months, fmt, label, avg, hot, caption, valuetext }: {
+export function MonthBars({ months, fmt, label, avg, hot, caption, valuetext, tick, ghost, gap }: {
+  /** `month` is the bar's key: 'YYYY-MM' by default; with `tick`, any key (days, hours: M10 Report). */
   months: { month: string; value: number }[]; fmt: (v: number) => string; label: string; avg?: boolean; hot?: number;
+  /** Axis label for bar `i` ("" hides it; `on` = the bar in focus, label it); default the short month name. */
+  tick?: (i: number, on: boolean) => string;
+  /** The compared period as a faint line over the bars (M10: "the faint line is August"); null = no value there. */
+  ghost?: (number | null)[];
+  /** Bars with no data (M10 coverage "no data"): hatched full height, never drawn as silence. */
+  gap?: (i: number) => boolean;
   /** Line under the bars: `i` is the picked month, null at rest. */
   caption?: (i: number | null) => ReactNode;
   /** What a screen reader hears for month `i` (the caption is visual only); default "<Month year>: <value>". */
@@ -26,7 +33,9 @@ export function MonthBars({ months, fmt, label, avg, hot, caption, valuetext }: 
   const x = useTransform(sx, [0, 1], ["0%", "100%"]);
   useEffect(() => { if (n) { const k = (rest + 0.5) / n; tx.jump(k); sx.jump(k); } }, [n, rest, tx, sx]); // rest without a glide
   if (n < 2) return null;
-  const max = Math.max(1e-9, ...months.map((x_) => x_.value));
+  const max = Math.max(1e-9, ...months.map((x_) => x_.value), ...(ghost ?? []).map((g) => g ?? 0));
+  const dense = n > 48 ? " dense xs" : n > 16 ? " dense" : ""; // days of a month, years of months: tighter gaps
+  const line = ghost?.map((g, i) => (g == null ? null : `${((i + 0.5) / n) * 100},${100 - (g / max) * 100}`)).filter(Boolean).join(" ");
   const mean = months.reduce((a, x_) => a + x_.value, 0) / n;
   const cur = at ?? rest;
   const pick = (i: number | null) => {
@@ -50,17 +59,18 @@ export function MonthBars({ months, fmt, label, avg, hot, caption, valuetext }: 
         onPointerMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left) / r.width) * n))); if (i !== at) pick(i); }}
         onPointerLeave={() => pick(null)} onKeyDown={keys} onBlur={() => pick(null)}>
         <m.div className="hm-tip-track" style={{ x }} aria-hidden><span className={`hm-tip${at === null ? "" : " on"}`}>{fmt(mo.value)}</span></m.div>
-        <div className="hm-cols" style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }} aria-hidden>
+        <div className={`hm-cols${dense}`} style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }} aria-hidden>
           {avg && <span className="hm-avg" style={{ bottom: `${(mean / max) * 100}%` }} />}
+          {line && <svg className="hm-ghost" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={line} vectorEffect="non-scaling-stroke" /></svg>}
           {months.map((x_, i) => (
-            <span key={x_.month} className={`hm-col${i === cur ? " on" : ""}`}>
-              <m.i style={{ height: `${Math.max(2, (x_.value / max) * 100)}%`, originY: 1 }}
+            <span key={x_.month} className={`hm-col${i === cur ? " on" : ""}${gap?.(i) ? " gap" : ""}`}>
+              <m.i style={{ height: gap?.(i) ? "100%" : `${Math.max(2, (x_.value / max) * 100)}%`, originY: 1 }}
                 initial={reduce ? false : { scaleY: 0 }} animate={{ scaleY: 1 }} transition={{ ...SPRING, delay: 0.15 + i * 0.03 }} />
             </span>))}
         </div>
       </div>
-      <div className="hm-months" style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }} aria-hidden>
-        {months.map((x_, i) => <span key={x_.month} className={i === cur ? "on" : undefined}>{monthName(x_.month)}</span>)}
+      <div className={`hm-months${dense}`} style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }} aria-hidden>
+        {months.map((x_, i) => <span key={x_.month} className={i === cur ? "on" : undefined}>{tick ? tick(i, i === cur) : monthName(x_.month)}</span>)}
       </div>
       {caption && <span className="text-muted text-xs min-h-[17px]" aria-hidden>{caption(at)}</span>}
     </>

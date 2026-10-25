@@ -22,7 +22,7 @@ use crate::insights::collection::{self, CollectionInsights};
 use crate::insights::listening::{self, ListeningInsights, YearReview};
 use crate::insights::plays::{self, ItemListening, Play, PlayQuery, Unmatched};
 use crate::insights::take::{self, TakeInsights};
-use crate::insights::{self, Freshness, Range, Sourced};
+use crate::insights::{self, Covered, Freshness, Range, Sourced};
 use crate::library::dashboard::{self, Counts, Dashboard};
 use crate::library::filters::{self, ItemFilter, SavedFilter};
 use crate::library::items::{self, ItemDetail, ItemPatch, ItemSummary, NewItem};
@@ -456,11 +456,14 @@ pub fn check_backup(st: St<'_>, path: String) -> Result<RestoreCheck> {
 }
 
 #[tauri::command(async)]
-pub fn restore_backup(st: St<'_>, path: String) -> Result<RestoreCheck> {
+pub fn restore_backup(st: St<'_>, lg: Lg<'_>, path: String) -> Result<RestoreCheck> {
     let zip = zip_arg(&path)?;
-    let mut conn = st.db.lock().unwrap(); // db → settings, as move_library
+    let mut lg = lg.lock().unwrap(); // logger → db → settings: the logger run can't straddle the swap
+    let mut conn = st.db.lock().unwrap();
     let lib = settings_now(&st).library_path;
-    backup::restore_locked(&mut conn, Path::new(&lib), &zip)
+    lg.swap_db(&mut conn, chrono::Utc::now(), |c| {
+        backup::restore_locked(c, Path::new(&lib), &zip)
+    })
 }
 
 #[tauri::command(async)]
@@ -489,10 +492,13 @@ pub fn move_library<R: Runtime>(app: AppHandle<R>, st: St<'_>) -> Result<Option<
 }
 
 #[tauri::command(async)]
-pub fn delete_library(st: St<'_>, confirm: String) -> Result<()> {
-    let mut conn = st.db.lock().unwrap(); // db → settings, as move_library
+pub fn delete_library(st: St<'_>, lg: Lg<'_>, confirm: String) -> Result<()> {
+    let mut lg = lg.lock().unwrap(); // logger → db → settings, as restore_backup
+    let mut conn = st.db.lock().unwrap();
     let lib = settings_now(&st).library_path;
-    cleanup::delete_library(&mut conn, Path::new(&lib), &confirm)
+    lg.swap_db(&mut conn, chrono::Utc::now(), |c| {
+        cleanup::delete_library(c, Path::new(&lib), &confirm)
+    })
 }
 
 /* ------------------------------------------------------------------ usage */
@@ -540,6 +546,7 @@ pub(crate) fn change_logger<R: Runtime>(
             lg.close(&db, now)?
         })
     })?;
+    lg.sync_run(&db, &s, now)?;
     if let Some(id) = logged {
         let _ = app.emit("play-logged", logger::play(&db, id)?);
     }
@@ -683,7 +690,7 @@ pub fn get_freshness(st: St<'_>) -> Result<Freshness> {
 }
 
 #[tauri::command(async)]
-pub fn get_listening_insights(st: St<'_>, range: Range) -> Result<Sourced<ListeningInsights>> {
+pub fn get_listening_insights(st: St<'_>, range: Range) -> Result<Covered<ListeningInsights>> {
     listening::listening(
         &st.db.lock().unwrap(),
         range,

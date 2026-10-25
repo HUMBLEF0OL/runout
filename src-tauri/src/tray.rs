@@ -165,7 +165,7 @@ fn flush<R: Runtime>(app: &AppHandle<R>) {
     };
     let mut lg = lg.lock().unwrap(); // lock order logger → db
     let db = st.db.lock().unwrap();
-    let _ = lg.close(&db, chrono::Utc::now());
+    let _ = lg.exit(&db, chrono::Utc::now());
 }
 
 /// `RunEvent::Exit` (lib.rs): runs on the main thread, also on Windows shutdown / sign-out (tao
@@ -308,6 +308,7 @@ mod tests {
             artist: "Fixture Artist".into(),
             album: "Fixture Album".into(),
             duration_ms: 200_000,
+            shuffle: None,
             position_ms: 0,
         };
         {

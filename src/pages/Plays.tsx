@@ -3,7 +3,7 @@
 // newest first, a page at a time as you scroll (offset pages appended), each day is a section with its own numbers and a
 // 24-hour strip, and off-screen days skip layout and paint (`content-visibility`). Motion: rows arrive, a day opens.
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { DesktopIcon, DeviceMobileIcon } from "@phosphor-icons/react";
 import * as api from "../api";
@@ -194,10 +194,12 @@ function UnmatchedCard() {
 
 /* ------------------------------------------------------------------ page */
 /** Newest page live (refetched on every write and new play); earlier pages appended once by offset. A new play shifts
- *  offsets by one, so pages are merged by play id. */
-function usePlayPages(tab: Tab) {
-  const first = useApi(() => api.listPlays({ tab, range: "all", offset: 0, limit: PAGE }).then((page) => ({ tab, page })), [tab]);
-  const [older, setOlder] = useState<{ tab: Tab; rows: Play[]; end: boolean }>({ tab, rows: [], end: false });
+ *  offsets by one, so pages are merged by play id. `date` (M10 Trends calendar) keeps one local day. */
+function usePlayPages(which: Tab, date: string | undefined) {
+  const tab = which + (date ? `@${date}` : ""); // pages belong to a tab and a day
+  const q = { tab: which, range: "all" as const, ...(date && { date }) };
+  const first = useApi(() => api.listPlays({ ...q, offset: 0, limit: PAGE }).then((page) => ({ tab, page })), [tab]);
+  const [older, setOlder] = useState<{ tab: string; rows: Play[]; end: boolean }>({ tab, rows: [], end: false });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<api.AppError>();
   const cur = first.data?.tab === tab ? first.data.page : undefined; // never show the previous tab's rows
@@ -209,18 +211,20 @@ function usePlayPages(tab: Tab) {
   const more = useCallback(() => {
     if (busy || end) return;
     setBusy(true); setError(undefined);
-    api.listPlays({ tab, range: "all", offset: rows.length, limit: PAGE }).then(
+    api.listPlays({ ...q, offset: rows.length, limit: PAGE }).then(
       (pg) => setOlder((o) => ({ tab, rows: [...(o.tab === tab ? o.rows : []), ...pg.rows], end: pg.rows.length < PAGE })),
       (e) => setError(api.toAppError(e)),
     ).finally(() => setBusy(false));
-  }, [busy, end, tab, rows.length]);
+  }, [busy, end, tab, rows.length]); // eslint-disable-line react-hooks/exhaustive-deps -- q follows tab
   return { loading: !cur && !first.error, error: first.error, reload: first.reload, rows, total: cur?.total ?? 0, end, busy, more, moreError: error };
 }
 
 export default function Plays() {
   const tab = (useParams().tab ?? "all") as Tab;
   const nav = useNavigate();
-  const plays = usePlayPages(tab);
+  const rawDate = useSearchParams()[0].get("date"); // #/plays/all?date=YYYY-MM-DD from the Trends calendar
+  const date = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : undefined; // a hand-edited link falls back to every day
+  const plays = usePlayPages(tab, date);
   const unrated = useApi(() => api.listPlays({ tab: "unrated", range: "all", offset: 0, limit: 1 }));
   const missing = useApi(() => api.listPlays({ tab: "missing", range: "all", offset: 0, limit: 1 }));
   const fresh = useApi(api.getFreshness);
@@ -244,6 +248,7 @@ export default function Plays() {
   let content;
   if (plays.loading) content = <SkelRows n={10} />;
   else if (plays.error) content = <ErrorBanner error={plays.error} title="Couldn't load your plays." onRetry={plays.reload} />;
+  else if (!rows.length && date) content = <Empty h="No plays that day" line="Nothing was counted on this day."><Link className="btn btn-secondary" to={`/plays/${tab}`}>Show every day</Link></Empty>;
   else if (!rows.length) content = tab === "all"
     ? <Empty h="No plays yet" line="Turn on the desktop logger, or import your Spotify history to see plays from every device.">
         <div className="flex flex-wrap gap-2 items-center"><Link className="btn btn-primary" to="/import/1">Import history</Link><button className="btn btn-secondary" onClick={() => api.setLogger({ on: true })}>Turn on the desktop logger</button></div>
@@ -273,6 +278,7 @@ export default function Plays() {
           </PageHead>
           <TabPanel key={tab} dir={dir} label={tab === "all" ? "All plays" : tab === "unrated" ? "Not rated" : "Not in library"} className="flex flex-col gap-5">
             <span className="flex flex-wrap gap-1.5 items-center">{rows.length > 0 && <SourceTag sources={sources} />}<FreshnessNote freshness={fresh.data} loggerState={logger.data?.state} /></span>
+            {date && <span className="flex flex-wrap gap-3 items-center text-sm"><b>Plays on {day(date + "T00:00")} {date.slice(0, 4)}</b><Link to={`/plays/${tab}`}>Show every day</Link></span>}
             {content}
           </TabPanel>
         </section>

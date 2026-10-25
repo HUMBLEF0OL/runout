@@ -131,6 +131,7 @@ fn perf_listening() {
                 reason_start: Some("trackdone".into()),
                 reason_end: Some("trackdone".into()),
                 shuffle: Some(rng.random_range(0..2) == 0),
+                duration_ms: None,
                 skipped: Some(false),
                 offline: Some(false),
                 private_session: rng.random_range(0..50) == 0,

@@ -116,6 +116,12 @@ pub struct Logger {
     acc: Accumulator,
     /// SMTC unavailable (TSD §6).
     pub error: bool,
+    /// The open `logger_run` row while logging (design/M10-insights-v3.md §4.3.3).
+    run: Option<i64>,
+    /// A previous process's open run has been closed (first `sync_run` of this process).
+    recovered: bool,
+    /// The exit flush ran: no run opens and no play is written after it.
+    exiting: bool,
 }
 
 impl Logger {
@@ -129,11 +135,89 @@ impl Logger {
         at: DateTime<Utc>,
     ) -> Result<Option<i64>> {
         self.error = false;
-        if !active(s, at) {
+        self.sync_run(conn, s, at)?;
+        if self.exiting || !active(s, at) {
             self.acc = Accumulator::default();
             return Ok(None);
         }
         write(conn, self.acc.observe(snap, at))
+    }
+
+    /// Open or close the `logger_run` interval so it matches `active(s, at)`: on start, resume and
+    /// turning on it opens; on pause and off it closes. Covers a timed pause running out (the poll
+    /// tick sees it). Writes only on a change. The first call also closes a run a previous process
+    /// left open (it died without an exit), at its last desktop play or its start.
+    pub fn sync_run(&mut self, conn: &Connection, s: &Settings, at: DateTime<Utc>) -> Result<()> {
+        if self.exiting {
+            return Ok(());
+        }
+        if !self.recovered {
+            conn.execute(
+                // unfiltered: the logger's own last write, as `status`
+                "UPDATE logger_run SET reason = 'crash', end_utc = max(start_utc, IFNULL(
+                   (SELECT max(ended_at_utc) FROM listening_event
+                     WHERE source = 'logger' AND ended_at_utc >= logger_run.start_utc), start_utc))
+                 WHERE end_utc IS NULL",
+                [],
+            )?;
+            self.recovered = true;
+        }
+        match (active(s, at), self.run) {
+            (true, None) => {
+                self.run = Some(conn.query_row(
+                    "INSERT INTO logger_run(start_utc) VALUES (?1) RETURNING id",
+                    [iso(at)],
+                    |r| r.get(0),
+                )?);
+            }
+            (false, Some(_)) => {
+                self.end_run(conn, at, if s.logger_on { "pause" } else { "off" })?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// SMTC unavailable (TSD §6): the outage isn't running time, so the run closes ('error'); the
+    /// next snapshot's `observe` reopens it.
+    pub fn unavailable(&mut self, conn: &Connection, at: DateTime<Utc>) -> Result<()> {
+        self.error = true;
+        self.end_run(conn, at, "error")
+    }
+
+    /// Exit flush: write the play in progress (≥ 1 s), close the run ('exit'), and stop for good, so
+    /// a poll tick after it doesn't open a run the next start would close as 'crash'.
+    pub fn exit(&mut self, conn: &Connection, at: DateTime<Utc>) -> Result<Option<i64>> {
+        let logged = self.close(conn, at);
+        self.end_run(conn, at, "exit")?;
+        self.exiting = true;
+        logged
+    }
+
+    /// Restore / Delete library replace the database's rows: close the run first ('exit'), run
+    /// `f`, then start over as at process start (an open run carried in closes as 'crash', a fresh
+    /// one opens on the next tick). Lock order logger → db.
+    pub fn swap_db<T>(
+        &mut self,
+        conn: &mut Connection,
+        at: DateTime<Utc>,
+        f: impl FnOnce(&mut Connection) -> Result<T>,
+    ) -> Result<T> {
+        self.end_run(conn, at, "exit")?;
+        let out = f(conn);
+        self.recovered = false;
+        out
+    }
+
+    /// Close the open `logger_run` row at `at` (`reason`: pause, off, exit, error). No open run: nothing.
+    pub fn end_run(&mut self, conn: &Connection, at: DateTime<Utc>, reason: &str) -> Result<()> {
+        if let Some(id) = self.run.take() {
+            conn.execute(
+                "UPDATE logger_run SET end_utc = max(start_utc, ?2), reason = ?3 WHERE id = ?1",
+                rusqlite::params![id, iso(at), reason],
+            )?;
+        }
+        Ok(())
     }
 
     /// See `Accumulator::awake_since`.
@@ -222,7 +306,8 @@ fn write(conn: &Connection, c: Option<Closed>) -> Result<Option<i64>> {
             platform: None,
             reason_start: None,
             reason_end: None,
-            shuffle: None,
+            shuffle: c.track.shuffle,
+            duration_ms: Some(c.track.duration_ms), // 0 (not reported) stores NULL
             skipped: None,
             offline: None,
             private_session: false, // SMTC can't see private sessions (TSD §4.5)
@@ -287,6 +372,7 @@ mod tests {
                 artist: "Fixture Artist".into(),
                 album: "Fixture Album".into(),
                 duration_ms: 180_000,
+                shuffle: Some(true),
                 position_ms: 0,
             },
             st,
@@ -339,6 +425,154 @@ mod tests {
         let st = lg.status(&c, &s, t(131)).unwrap();
         assert_eq!(st.state, "idle");
         assert_eq!(st.last_event_at.as_deref(), Some("2026-02-02T02:42:10Z"));
+    }
+
+    /// M10 WI 2: a desktop play stores the session's track length and shuffle state.
+    #[test]
+    fn plays_store_duration_and_shuffle() {
+        let c = db::open_in_memory().unwrap();
+        let (mut lg, s) = (Logger::default(), settings());
+        lg.observe(&c, &s, snap("A", PlayState::Playing), t(0))
+            .unwrap();
+        let mut no_length = snap("B", PlayState::Playing);
+        if let Some((tr, _)) = &mut no_length {
+            (tr.duration_ms, tr.shuffle) = (0, None);
+        }
+        lg.observe(&c, &s, no_length, t(40)).unwrap();
+        lg.observe(&c, &s, None, t(80)).unwrap();
+        let got: Vec<(Option<i64>, Option<bool>)> = c
+            // unfiltered: test reads every row the logger wrote
+            .prepare("SELECT duration_ms, shuffle FROM listening_event ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(got, vec![(Some(180_000), Some(true)), (None, None)]);
+    }
+
+    fn runs(c: &Connection) -> Vec<(String, Option<String>, Option<String>)> {
+        c.prepare("SELECT start_utc, end_utc, reason FROM logger_run ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    }
+
+    /// M10 WI 2: `logger_run` holds the intervals the logger was running: opened on start and
+    /// resume, closed on pause, off and exit; a timed pause running out reopens it on the next
+    /// tick; a run a crashed process left open is closed at its last desktop play.
+    #[test]
+    fn logger_run_records_running_intervals() {
+        let c = db::open_in_memory().unwrap();
+        let (mut lg, mut s) = (Logger::default(), settings());
+        let iso_t = |n: i64| iso(t(n));
+        let run = |a: i64, b: Option<i64>, why: Option<&str>| {
+            (iso_t(a), b.map(iso_t), why.map(str::to_string))
+        };
+        lg.observe(&c, &s, None, t(0)).unwrap(); // start
+        lg.observe(&c, &s, None, t(5)).unwrap(); // later ticks write nothing
+        assert_eq!(runs(&c), vec![run(0, None, None)]);
+        pause(&mut s, Some(1), t(100)).unwrap();
+        lg.sync_run(&c, &s, t(100)).unwrap(); // change_logger's call
+        lg.observe(&c, &s, None, t(130)).unwrap(); // still paused
+        lg.observe(&c, &s, None, t(165)).unwrap(); // timed pause ran out
+        s.logger_on = false;
+        lg.sync_run(&c, &s, t(200)).unwrap();
+        s.logger_on = true;
+        resume(&mut s);
+        lg.sync_run(&c, &s, t(300)).unwrap();
+        lg.end_run(&c, t(400), "exit").unwrap();
+        lg.end_run(&c, t(401), "exit").unwrap(); // second flush: nothing
+        assert_eq!(
+            runs(&c),
+            vec![
+                run(0, Some(100), Some("pause")),
+                run(165, Some(200), Some("off")),
+                run(300, Some(400), Some("exit")),
+            ]
+        );
+        // a process dies mid-run; the next one closes it at its last desktop play
+        let mut gone = Logger::default();
+        gone.observe(&c, &s, snap("A", PlayState::Playing), t(1000))
+            .unwrap();
+        gone.observe(&c, &s, None, t(1060)).unwrap();
+        drop(gone);
+        let mut next = Logger::default();
+        next.observe(&c, &s, None, t(5000)).unwrap();
+        assert_eq!(
+            runs(&c)[3..],
+            [run(1000, Some(1060), Some("crash")), run(5000, None, None)]
+        );
+    }
+
+    /// Review fix: restore / Delete library swap the database under a running logger. The run is
+    /// closed first and the next tick starts fresh: no stale run id touches the new database.
+    #[test]
+    fn swapping_the_database_leaves_its_runs_alone() {
+        let mut c = db::open_in_memory().unwrap();
+        let (mut lg, mut s) = (Logger::default(), settings());
+        lg.observe(&c, &s, None, t(0)).unwrap(); // run 1 open
+        lg.swap_db(&mut c, t(50), |c| {
+            // the backup: run 1 is an old closed run, run 2 was open when it was taken
+            c.execute_batch(&format!(
+                "DELETE FROM logger_run;
+                 INSERT INTO logger_run VALUES (1, '{a}', '{b}', 'exit'), (2, '{b}', NULL, NULL);",
+                a = iso(t(-900)),
+                b = iso(t(-500)),
+            ))?;
+            Ok(())
+        })
+        .unwrap();
+        pause(&mut s, None, t(60)).unwrap();
+        lg.sync_run(&c, &s, t(60)).unwrap();
+        resume(&mut s);
+        lg.sync_run(&c, &s, t(70)).unwrap();
+        let r = |a: i64, b: Option<i64>, why: Option<&str>| {
+            (iso(t(a)), b.map(|b| iso(t(b))), why.map(str::to_string))
+        };
+        assert_eq!(
+            runs(&c),
+            vec![
+                r(-900, Some(-500), Some("exit")), // untouched
+                r(-500, Some(-500), Some("crash")),
+                r(70, None, None),
+            ]
+        );
+    }
+
+    /// Review fix: SMTC unavailable closes the run ('error'); it reopens when snapshots return.
+    #[test]
+    fn smtc_outage_is_not_running_time() {
+        let c = db::open_in_memory().unwrap();
+        let (mut lg, s) = (Logger::default(), settings());
+        lg.observe(&c, &s, None, t(0)).unwrap();
+        lg.unavailable(&c, t(10)).unwrap();
+        lg.unavailable(&c, t(15)).unwrap();
+        assert_eq!(lg.status(&c, &s, t(15)).unwrap().state, "error");
+        lg.observe(&c, &s, None, t(20)).unwrap();
+        let got: Vec<_> = runs(&c).into_iter().map(|r| r.2).collect();
+        assert_eq!(got, vec![Some("error".to_string()), None]);
+    }
+
+    /// Review fix: after the exit flush the poll thread neither reopens a run nor writes a play.
+    #[test]
+    fn nothing_runs_after_exit() {
+        let c = db::open_in_memory().unwrap();
+        let (mut lg, s) = (Logger::default(), settings());
+        lg.observe(&c, &s, snap("A", PlayState::Playing), t(0))
+            .unwrap();
+        assert!(lg.exit(&c, t(40)).unwrap().is_some()); // play in progress written
+        lg.observe(&c, &s, snap("B", PlayState::Playing), t(45))
+            .unwrap();
+        assert_eq!(lg.observe(&c, &s, None, t(90)).unwrap(), None);
+        lg.sync_run(&c, &s, t(95)).unwrap();
+        assert_eq!(
+            runs(&c),
+            vec![(iso(t(0)), Some(iso(t(40))), Some("exit".into()))]
+        );
+        assert_eq!(rows(&c).len(), 1);
     }
 
     #[test]

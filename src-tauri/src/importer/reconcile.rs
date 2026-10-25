@@ -89,6 +89,7 @@ mod tests {
             reason_start: None,
             reason_end: None,
             shuffle: None,
+            duration_ms: None,
             skipped: None,
             offline: None,
             private_session: false,

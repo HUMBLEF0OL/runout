@@ -129,7 +129,7 @@ async function devPanel(open) {
   await waitFor(`document.querySelector("details.proto").open === ${open}`);
 }
 async function devState(view) {
-  const order = ["normal", "empty", "loading", "offline", "error"];
+  const order = ["normal", "empty", "loading", "offline", "error", "conflict", "partial", "busy", "heavy"]; // devState.ts VIEWS
   await devPanel(true);
   await tabTo(`el.matches("details.proto select") && el.closest("label").textContent.startsWith("State")`, { what: "dev State select" });
   const now = await js(`document.activeElement.value`);
@@ -358,6 +358,164 @@ await step("F2 Insights shows freshness per source", async () => {
   await waitFor(`/Desktop plays: live\\. All devices: up to your export of /.test(document.querySelector("main .freshness")?.textContent ?? "")`);
   await waitFor(`$$("main *").some((e) => e.children.length === 0 && /^From: .*Desktop log.*Spotify export/.test(e.textContent))`);
   await shot("F4-insights-freshness");
+});
+
+/* I — Insights v3 (M10 WI 6): the period header and the Report, keyboard only */
+const reportReady = () => waitFor(`!!document.querySelector('[aria-label$=" in numbers"]') && !document.querySelector('[aria-busy="true"]')`, 8000);
+const periodRadio = `el.getAttribute("role") === "radio" && el.getAttribute("aria-checked") === "true" && !!el.closest('[aria-label="Period length"]')`;
+await step("I1 Report: ‹ steps back a month; the deep link and label follow", async () => {
+  await reportReady();
+  await waitFor(`location.hash.startsWith("#/insights") && document.querySelector(".in3-step output")?.textContent === "Oct 2026"`);
+  await activate(byName("Previous month"), { what: "Previous month" });
+  await waitFor(`location.hash === "#/insights/report?grain=month&at=2026-09&vs=prev" && document.querySelector(".in3-step output").textContent === "Sep 2026"`);
+  await reportReady();
+  await waitFor(`/^Every day of September$/.test($$("main h2").map((h) => h.textContent).find((t) => t.startsWith("Every day")) ?? "")`);
+  if (!(await js(`document.activeElement.getAttribute("aria-label") === "Previous month"`))) throw new Error("focus left the stepper");
+  await js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`); // evidence only: show the top
+  await sleep(1000); // let arrivals settle
+  await shot("I1-report-month");
+});
+await step("I2 compare with the same month last year, then switch the grain to Year", async () => {
+  await tabTo(`el.matches("select") && ${byName("Compare with")}`, { what: "Compare with" });
+  await key("ArrowDown");
+  await waitFor(`location.hash.endsWith("vs=last_year") && txt().includes("September 2025")`);
+  await tabTo(periodRadio, { back: true, what: "Period length" });
+  await key("ArrowRight");
+  await waitFor(`location.hash === "#/insights/report?grain=year&vs=prev"`); // the current year links as "now"; a year has no separate "same period last year"
+  await reportReady();
+  await waitFor(`$$("main h2").some((h) => h.textContent === "Every month of 2026")`);
+});
+await step("I3 the day chart and Most played answer the keyboard; the fingerprint can't be selected", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/report?grain=month&at=2026-09&vs=prev` });
+  await reportReady();
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el).startsWith("Listening time per day")`, { what: "day chart" });
+  await key("Home");
+  await waitFor(`/^Tue 1 Sep: /.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await tabTo(`el.getAttribute("role") === "tab" && el.getAttribute("aria-selected") === "true" && !!el.closest('[aria-label="Most played"]')`, { what: "Most played tabs" });
+  await key("ArrowRight");
+  await waitFor(`document.querySelector('[role="tabpanel"][aria-label="Albums"]')?.querySelectorAll(".in3-rank").length === 10`);
+  const sel = await js(`getComputedStyle(document.querySelector(".in3-radar")).userSelect`);
+  if (sel !== "none") throw new Error(`fingerprint user-select ${sel}`);
+  await scanButtons();
+  await sleep(1000); // let arrivals settle
+  await shot("I2-report-most-played");
+});
+await step("I4 deep link to a week vs your usual; coverage banner past the export's end", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/report?grain=week&at=2026-10-14&vs=usual` });
+  await reportReady();
+  await waitFor(`document.querySelector(".in3-step output")?.textContent === "Week of 12 Oct 2026" && document.querySelector('[aria-label="Compare with"]').value === "usual"`);
+  await waitFor(`/From 3 Oct, only plays on this PC are counted/.test(document.querySelector(".banner.warn")?.textContent ?? "")`);
+  await waitFor(`txt().includes("Days listened on this PC")`);
+  if (!(await js(`document.querySelector('[aria-label="Next week"]').getAttribute("aria-disabled") === "true"`))) throw new Error("Next week should be inert: no future periods");
+  await js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`); // evidence only: show the top
+  await sleep(1000); // let arrivals settle
+  await shot("I3-report-week-coverage");
+});
+await step("I5 Report states: loading, error, heavy, empty", async () => {
+  await devState("loading"); // a live read keeps its data while it refetches: open the Report afresh to see it load
+  await send("Page.navigate", { url: `${APP}/#/insights/report?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load the report\./.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`); // evidence only: show the top
+  await sleep(1000); // let arrivals settle
+  await shot("I4-report-error");
+  await devState("heavy");
+  await reportReady();
+  await waitFor(`$$(".in3-rank").length === 10`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("long names push the page sideways");
+  await js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`); // evidence only: show the top
+  await sleep(1000); // let arrivals settle
+  await shot("I5-report-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await reportReady();
+});
+
+/* T — Insights v3 Trends (M10 WI 7): brush a stretch into the Report, arcs, a calendar day into Recent plays */
+const trendsReady = () => waitFor(`!!document.querySelector(".in3-life") && !document.querySelector('main [aria-busy="true"]')`, 8000);
+const top = () => js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`);
+await step("T1 Trends: Shift+arrows brush three months; the Report opens on that custom period", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/trends?grain=month&vs=prev` });
+  await trendsReady();
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el).startsWith("Hours per month since")`, { what: "lifetime months" });
+  await press("Shift+ArrowLeft", 2);
+  await waitFor(`/^Aug 2026 to Oct 2026: /.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await top(); await sleep(1000); // let arrivals settle
+  await shot("T1-trends-brush");
+  await activate(byName("Report on Aug 2026 to Oct 2026"), { what: "Report on the stretch" });
+  await waitFor(`location.hash.startsWith("#/insights/report?grain=custom&from=2026-08-01&to=2026-10-") && location.hash.endsWith("&vs=prev")`);
+  await reportReady();
+});
+await step("T2 arcs by keyboard; a calendar day opens Recent plays for that date", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/trends?grain=month&vs=prev` });
+  await trendsReady();
+  await tabTo(`el.getAttribute("role") === "tab" && el.getAttribute("aria-selected") === "true" && !!el.closest('[aria-label="Artist arcs"]')`, { what: "Artist arcs tabs" });
+  await key("ArrowRight");
+  await waitFor(`$$(".in3-arc").some((r) => r.textContent.startsWith("Massive Attack"))`);
+  await tabTo(`!!el.closest(".in3-cal")`, { what: "calendar day" });
+  await key("ArrowUp"); // the day before
+  const d = await js(`document.activeElement.getAttribute("aria-label")`);
+  if (!/^\w{3} \d+ \w{3} 2026: \d/.test(d)) throw new Error(`calendar focus on ${d}`);
+  await js(`(document.querySelector(".in3-cal").scrollIntoView({ block: "center" }), true)`);
+  await sleep(600);
+  await shot("T2-trends-calendar");
+  await key("Enter");
+  await waitFor(`location.hash.startsWith("#/plays/all?date=2026-") && txt().includes("Plays on")`);
+});
+await step("T3 Trends states: loading, error, heavy, empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/trends?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load your trends/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await trendsReady();
+  await waitFor(`$$(".in3-era").length === 6 && $$(".in3-life .hm-col").length > 120`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Trends pushes the page sideways");
+  await top(); await sleep(1000);
+  await shot("T3-trends-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await trendsReady();
+});
+
+/* N — Insights v3 Discovery (M10 WI 7): the per-month split by keyboard, the period stepper, the log; states */
+const discoveryReady = (label) => waitFor(`!!document.querySelector('[aria-label="Discovery in ${label}"]') && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("N1 Discovery: the per-month chart answers the keyboard; ‹ steps the period; the log and starts show", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/discovery?grain=month&at=2026-09&vs=prev` });
+  await discoveryReady("Sep 2026");
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el).startsWith("New artists per month")`, { what: "new artists per month" });
+  await key("Home");
+  await waitFor(`/^\\w+ \\d{4}: (\\d+ new artists?|no data)/.test(document.activeElement.getAttribute("aria-valuetext")) && document.activeElement.getAttribute("aria-valuenow") === "0"`);
+  await waitFor(`$$(".in3-log tbody tr").length >= 4 && !!document.querySelector('.in3-split[role="img"]') && txt().includes("An estimate")`);
+  await activate(byName("Previous month"), { what: "Previous month", back: true });
+  await waitFor(`location.hash === "#/insights/discovery?grain=month&at=2026-08&vs=prev"`);
+  await discoveryReady("Aug 2026");
+  await top(); await sleep(1000); // let arrivals settle
+  await shot("N1-discovery");
+});
+await step("N2 Discovery states: loading, error, heavy, empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/discovery?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load your discoveries/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await discoveryReady("Oct 2026");
+  await waitFor(`$$(".in3-log tbody tr").some((r) => r.textContent.includes("Back again"))`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Discovery pushes the page sideways");
+  await top(); await sleep(1000);
+  await shot("N2-discovery-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await discoveryReady("Oct 2026");
 });
 
 /* G — clean up a playlist */

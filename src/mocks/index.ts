@@ -11,6 +11,7 @@ import { invalidate, MOCK } from "../api";
 import { dev, onDevChange } from "./devState";
 import { parseLink } from "../lib/link";
 import { setToday } from "../lib/format";
+import { insightsV3, rangeCoverage } from "./insightsV3";
 
 const D: any = raw;
 const L = D.listening;
@@ -61,7 +62,7 @@ for (const c of D.captures) {
 const tags: Tag[] = [...new Set(items.flatMap((i) => i.tags))].sort().map((name, n) => ({ id: n + 1, name, description: null, item_count: 0 }));
 let savedFilters: SavedFilter[] = D.saved_filters.map((f: any) => ({ id: f.id, name: f.name, definition: f.definition }));
 const settings = {
-  library_path: D.settings.library_path, backup_dir: D.settings.backup_dir, backup_weekly: true, size_warn_mb: 100, artwork_default: false,
+  library_path: D.settings.library_path, backup_dir: D.settings.backup_dir, backup_weekly: true, size_warn_mb: 100, artwork_default: false, export_reminder: false,
 };
 const capture = { on: D.settings.capture.on, address: D.settings.capture.address.split(":")[0], port: Number(D.settings.capture.address.split(":")[1]), code: D.settings.capture.code };
 let backups: Backup[] = D.settings.backups.map((b: any) => ({
@@ -406,7 +407,8 @@ const H: Record<string, Handler> = {
   resume_logger: () => { logger.paused = false; logger.paused_until = null; return loggerStatus(); },
   list_plays: ({ q }) => {
     const days = RANGE_DAYS[q.range as Range] ?? 1e6;
-    let rows = (dev.view === "heavy" ? heavyPlays() : allPlays()).filter((p) => daysBetween(p.ended_at_local, TODAY) < days);
+    if (q.date != null && !/^\d{4}-\d{2}-\d{2}$/.test(q.date)) fail("validation", "Pick a day as YYYY-MM-DD.");
+    let rows = (dev.view === "heavy" ? heavyPlays() : allPlays()).filter((p) => (q.date ? p.ended_at_local.startsWith(q.date) : daysBetween(p.ended_at_local, TODAY) < days));
     if (q.tab === "unrated") rows = rows.filter((p) => p.counts_as_play && p.item && p.item.rating == null);
     if (q.tab === "missing") rows = rows.filter((p) => !p.item);
     const limit = Math.min(Math.max(q.limit, 1), PLAYS_MAX_PAGE); // as Rust clamps it (insights/plays.rs MAX_PAGE)
@@ -431,12 +433,16 @@ const H: Record<string, Handler> = {
     const k = dev.view === "heavy" ? 37 : 1; // a long-time listener: same shape, ~37x the volume
     const row = (r: any, i: number) => ({ name: k > 1 && i === 1 ? `${r.name} and the Orchestra of the Long Name Society` : r.name, by: r.by, plays: r.plays * k, hours: Math.round(r.hours * k * 10) / 10, item_id: r.item_id ?? null, rating: r.rating ?? null, status: r.status ?? null });
     const st = L.stats[range];
-    return sourced({
+    // FR-048: like for like over coverage.compared_sources; desktop-only past the export's end (insightsV3.ts).
+    const coverage = rangeCoverage(range), hidden = coverage.no_compare_reason != null, like = coverage.compared_sources.includes("E") ? 1 : 0.4;
+    const cmp = (now: number, prev: number) => (hidden ? [now * k, 0] : [Math.round(now * k * like), Math.round(prev * k * like)]);
+    const [plays_cmp, plays_prev] = cmp(st.plays, st.plays_prev), [ms_cmp, ms_prev] = cmp(st.ms, st.ms_prev);
+    return { coverage, ...sourced({
       top_artists: ch.artists.map(row), top_albums: ch.albums.map(row), top_tracks: ch.tracks.map(row), heatmap: L.heatmap,
       monthly: L.monthly.map((m: { month: string; hours: number }) => ({ ...m, hours: Math.round(m.hours * (k > 1 ? 4.2 : 1) * 10) / 10 })),
       skip_rate: L.skip_rate, phone_share: L.phone_share,
-      totals: { ...st, plays: st.plays * k, plays_prev: st.plays_prev * k, ms: st.ms * k, ms_prev: st.ms_prev * k, unrated_plays: st.unrated_plays * k, private_excluded: L.private_excluded, artists_total: L.artists_total * (k > 1 ? 9 : 1) },
-    }, ["U", "S", "E"]);
+      totals: { ...st, plays: st.plays * k, plays_prev, ms: st.ms * k, ms_prev, plays_cmp, ms_cmp, unrated_plays: st.unrated_plays * k, private_excluded: L.private_excluded, artists_total: L.artists_total * (k > 1 ? 9 : 1) },
+    }, ["U", "S", "E"]) };
   },
   get_collection_insights: () => {
     const ms = months(12);
@@ -464,6 +470,7 @@ const H: Record<string, Handler> = {
     const row = (r: any, type: MItem["type"]) => ({ ...r, item_id: sumByName(type, r.name, r.by)?.id ?? null, rating: null, status: null });
     return sourced({ ...y, top_artist: row(y.top_artist, "artist"), top_album: row(y.top_album, "album") }, ["U", "S", "E"]);
   },
+  ...insightsV3((type, name) => items.find((i) => i.type === type && i.display_name === name), freshness),
   list_exported_playlists: () => D.playlists.map((p: any, n: number) => ({ id: n + 1, name: p.name, tracks: p.tracks.length, dupes: p.dupes, low: p.low })),
   get_playlist_checkup: ({ id }) => {
     const p = D.playlists[id - 1] ?? fail("not_found", "Playlist not found.");
@@ -565,7 +572,7 @@ const NETWORK = new Set(["connect_spotify", "list_spotify_playlists", "load_stud
   "find_cross_playlist_dupes", "create_inbox", "check_inbox"]);
 /** Empty state: same shape, no rows (arrays → [], counts → 0). */
 const emptied = (v: unknown): unknown =>
-  Array.isArray(v) ? [] : typeof v === "number" ? 0 : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "freshness" || k === "sources" ? x : emptied(x)])) : v;
+  Array.isArray(v) ? [] : typeof v === "number" ? 0 : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "freshness" || k === "sources" || k === "coverage" ? x : emptied(x)])) : v;
 const until = (cond: () => boolean) => new Promise<void>((res) => { if (cond()) return res(); const off = onDevChange(() => { if (cond()) { off(); res(); } }); });
 
 /** API.md §5 commands that answer `conflict`, with the "conflict" dev state's message (check.py). */

@@ -101,6 +101,9 @@ pub fn apply(tx: &Transaction, l: &Loaded) -> Result<ImportResult> {
             }
         }
         r.reconciled = reconcile(tx)?;
+        // ponytail: the triggers already kept them; one recount pass guards against drift (design
+        // §4.3.4). Drop the triggers during import instead if perf_listening's import time needs it.
+        crate::db::rebuild_rollups(tx)?;
         tx.execute(
             "UPDATE import_batch SET
                record_count = (SELECT count(*) FROM listening_event WHERE import_batch_id = ?1),
@@ -285,6 +288,144 @@ mod tests {
         assert!(checked > 50, "walked every column ({checked})");
     }
 
+    /// M10 WI 2: the 0008 rollups equal a full recount after inserts, reconcile, import, deletes
+    /// (incl. an artist's first play and an export partner, which un-reconciles its logger twin)
+    /// and edits of counted columns. Synthetic rows.
+    #[test]
+    fn rollups_equal_a_recount_after_every_write() {
+        let mut c = db::open_in_memory().unwrap();
+        let check = |c: &Connection, step: &str| {
+            let (kept, recount) = db::rollups_vs_recount(c);
+            assert_eq!(kept, recount, "{step}");
+            assert!(!kept.is_empty() || step == "empty", "{step}");
+        };
+        let ev = |ts: &str, local: Option<&str>, track: &str, artist: &str, private: bool| Event {
+            source: Source::Logger,
+            ended_at_utc: ts.into(),
+            ended_at_local: local.map(str::to_string),
+            ms_played: 45_000,
+            track_name: track.into(),
+            artist_name: artist.into(),
+            album_name: String::new(),
+            spotify_track_uri: None,
+            platform: None,
+            reason_start: None,
+            reason_end: None,
+            shuffle: Some(true),
+            duration_ms: Some(200_000),
+            skipped: None,
+            offline: None,
+            private_session: private,
+            item_id: None,
+            import_batch_id: None,
+        };
+        let mut ids = vec![];
+        for e in [
+            ev(
+                "2026-03-01T10:00:30Z",
+                Some("2026-03-01T11:00:30"),
+                "Glass Harbor",
+                "Fixture Lanterns",
+                false,
+            ),
+            ev(
+                "2020-01-01T23:30:00Z",
+                Some("2020-01-02T00:30:00"),
+                "Early One",
+                "FIXTURE LANTERNS",
+                false,
+            ),
+            ev(
+                "2026-05-01T20:01:05Z",
+                None,
+                "Loop Song",
+                "Fixture Lanterns",
+                true,
+            ),
+            ev("2026-06-01T08:00:00Z", None, "No Artist", "", false),
+        ] {
+            ids.push(insert(&c, &e).unwrap().unwrap());
+        }
+        check(&c, "insert");
+        // a 5 s event before the artist's first play: not a play (D25), so not its first play
+        let short = Event {
+            ms_played: 5_000,
+            ..ev(
+                "2019-06-01T10:00:00Z",
+                None,
+                "Skipped",
+                "Fixture Lanterns",
+                false,
+            )
+        };
+        let short_id = insert(&c, &short).unwrap().unwrap();
+        check(&c, "earlier non-play");
+        let first: i64 = c
+            .query_row(
+                "SELECT event_id FROM artist_first_play WHERE artist = 'fixture lanterns' AND private_session = 0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(first, ids[1], "first play skips the 5 s event {short_id}");
+        run(&mut c, &load(&fixture()).unwrap()).unwrap();
+        check(&c, "import");
+        let reconciled = count(
+            &c,
+            "SELECT count(*) FROM listening_event WHERE reconciled_with IS NOT NULL",
+        );
+        assert!(reconciled > 0, "the fixture reconciles a logger play");
+        c.execute("UPDATE listening_event SET reconciled_with = NULL", [])
+            .unwrap();
+        check(&c, "unreconcile");
+        reconcile(&c).unwrap();
+        check(&c, "reconcile");
+        // unfiltered: deletes and edits, testing the rollup triggers
+        c.execute("DELETE FROM listening_event WHERE id = ?1", [ids[1]])
+            .unwrap();
+        check(&c, "first play of an artist deleted");
+        c.execute(
+            "DELETE FROM listening_event WHERE id = (SELECT reconciled_with FROM listening_event
+               WHERE reconciled_with IS NOT NULL LIMIT 1)",
+            [],
+        )
+        .unwrap();
+        check(&c, "export partner deleted (logger twin counts again)");
+        c.execute(
+            "UPDATE listening_event SET private_session = 1 - private_session WHERE id = ?1",
+            [ids[0]],
+        )
+        .unwrap();
+        check(&c, "private flip");
+        // ids[0] is now the private partition's first play; under 30 s it stops being one
+        c.execute(
+            "UPDATE listening_event SET ms_played = 5000 WHERE id = ?1",
+            [ids[0]],
+        )
+        .unwrap();
+        check(&c, "first play shortened");
+        c.execute(
+            "UPDATE listening_event SET ended_at_utc = '2019-12-31T00:00:00Z', ended_at_local = NULL,
+               ms_played = 10, artist_name = 'Renamed Duo' WHERE id = ?1",
+            [ids[2]],
+        )
+        .unwrap();
+        check(&c, "time, length and artist edited");
+        c.execute("UPDATE listening_event SET item_id = NULL", [])
+            .unwrap();
+        check(&c, "link change");
+        c.execute("DELETE FROM listening_event", []).unwrap();
+        check(&c, "empty");
+        assert_eq!(count(&c, "SELECT count(*) FROM artist_first_play"), 0);
+        assert_eq!(
+            count(
+                &c,
+                "SELECT count(*) FROM listening_day WHERE events <> 0 OR ms_played <> 0"
+            ),
+            0
+        );
+    }
+
     /// Acceptance (M4): logger plays already in the library are reconciled, never double counted —
     /// featured artist, compilation and back-to-back repeat included.
     #[test]
@@ -303,6 +444,7 @@ mod tests {
             reason_start: None,
             reason_end: None,
             shuffle: None,
+            duration_ms: None,
             skipped: None,
             offline: None,
             private_session: false,

@@ -103,7 +103,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `list_saved_filters` / `save_filter` / `delete_saved_filter` | — / `name, definition` / `id` | `SavedFilter[]` / `SavedFilter` / `void` | FR-013. `save_filter` trims `definition.tags` and drops empties and case-insensitive duplicates; `rename_tag`/`merge_tags` rewrite saved filters' tags |
 | `get_rediscover` | — | `{revisit, top_rated, stale_backlog, incomplete_reviews: ItemSummary[]}` | SC-07, FR-013 |
 | `get_online` | — | `boolean` | `net::online()`, cached 30 s (TSD §4.3) |
-| `get_settings` / `update_settings` | — / `patch` | `Settings` | `{library_path, backup_dir, backup_weekly, size_warn_mb, artwork_default}` |
+| `get_settings` / `update_settings` | — / `patch` | `Settings` | `{library_path, backup_dir, backup_weekly, size_warn_mb, artwork_default, export_reminder}` (`export_reminder` M10, §4.1) |
 | `get_capture` / `set_capture_enabled` / `new_pairing_code` | — / `on` / — | `{on, address, port, code}` | SC-13e; TSD §5.1 |
 | `export_library` | — | `{path, count} \| null` | Save picker; JSON with provenance (FR-020) |
 | `list_backups` / `backup_now` | — | `Backup[]` / `Backup` | `Backup = {path, created_at, size_bytes, item_count, size_warning}` |
@@ -119,7 +119,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `get_logger_status` | — | `{state: 'listening' \| 'idle' \| 'paused' \| 'off' \| 'error', now_playing: NowPlaying \| null, last_event_at, paused_until, autostart, include_private}` | Tray + SC-08; `NowPlaying = {track_name, artist_name, album_name, spotify_uri, ms_played, duration_ms, item}` |
 | `set_logger` | `patch: {on?, autostart?, include_private?}` | same as above | FR-026 |
 | `pause_logger` / `resume_logger` | `minutes: number \| null` / — | same | null = until resumed |
-| `list_plays` | `q: {tab: 'all' \| 'unrated' \| 'missing', range, offset, limit}` | `Page<Play>` | `Play = {id, ended_at_local, ms_played, counts_as_play, skipped, track_name, artist_name, album_name, source: 'logger' \| 'export', spotify_uri, item: ItemSummary \| null, album_rating: number \| null}`; `item` is the track record, `album_rating` the rating of the play's album record (null if none or unrated) |
+| `list_plays` | `q: {tab: 'all' \| 'unrated' \| 'missing', range, offset, limit, date?}` | `Page<Play>` | `Play = {id, ended_at_local, ms_played, counts_as_play, skipped, track_name, artist_name, album_name, source: 'logger' \| 'export', spotify_uri, item: ItemSummary \| null, album_rating: number \| null}`; `date?: 'YYYY-MM-DD'` (local, M10: Trends calendar day → Recent plays) keeps that day's plays only and replaces `range`; Rust in M10 WI 5. `item` is the track record, `album_rating` the rating of the play's album record (null if none or unrated) |
 | `list_unmatched` / `link_play` | — / `event_id, item_id` | `Unmatched[]` / `void` | Grouped by `norm_key` with play count (FR-030); `Unmatched = {norm_key, track_name, artist_name, plays, detail, suggestion, event_id, candidates: ItemSummary[]}`; `candidates[0]` is the suggested record, the rest are the other records it could be (for "Choose another") |
 | `get_item_listening` | `id` | `Sourced<{plays, ms_total, last_played_local, by_month}>` | SC-05 listening panel |
 | `pick_import_source` | — | `string \| null` | Folder or .zip |
@@ -127,7 +127,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `run_import` | `path` | `{batch_id, added, duplicates, reconciled, playlists, took_ms}` | One transaction; `import_unrecognized` on bad file (TSD §6) |
 | `list_imports` | — | `{id, kind, imported_at, record_count, latest_event_utc: string \| null}[]` | Settings; `latest_event_utc` is null for `account` batches (no plays) |
 | `get_freshness` | — | `Freshness` | Rail freshness box |
-| `get_listening_insights` | `range` | `Sourced<{top_artists, top_albums, top_tracks, monthly, heatmap, skip_rate, phone_share, totals}>` | FR-031; no source A |
+| `get_listening_insights` | `range` | `Covered<{top_artists, top_albums, top_tracks, monthly, heatmap, skip_rate, phone_share, totals}>` | FR-031; no source A. `coverage` and `totals.plays_cmp`/`ms_cmp`: §4.1 (M10, G-46) |
 | `get_collection_insights` | `range` | `Sourced<{backlog_growth, completion, rating_spread, tag_trends}>` | |
 | `get_take_insights` | — | `Sourced<{rated_vs_played, never_played_backlog, loved_but_forgotten, unfinished_albums, unfinished_unknown}>` | Unfinished: only albums with a track list (TSD §4.9); `unfinished_unknown` = albums without one ("N other albums can't be checked") |
 | `get_year_review` | `year` | `Sourced<{plays, hours, top_artist, top_album, explored, reviews, busiest_month}>` | FR-034 |
@@ -136,7 +136,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 R2 payload shapes (insights, check-up):
 ```ts
 interface RankRow { name: string; by: string; plays: number; hours: number; item_id: number | null; rating: number | null; status: Status | null }
-interface PeriodStats { plays: number; plays_prev: number; ms: number; ms_prev: number; new_artists: number; rated_this_period: number; unrated_plays: number }
+interface PeriodStats { plays: number; plays_prev: number; ms: number; ms_prev: number; plays_cmp: number; ms_cmp: number; new_artists: number; rated_this_period: number; unrated_plays: number }   // *_cmp / *_prev: like for like over coverage.compared_sources (§4.1); a delta is cmp − prev
 interface ListeningInsights {
   top_artists: RankRow[]; top_albums: RankRow[]; top_tracks: RankRow[];
   monthly: { month: string; hours: number }[]; heatmap: number[][];
@@ -162,6 +162,147 @@ interface YearReview {
 interface ExportedPlaylist { id: number; name: string; tracks: number; dupes: number; low: number }
 interface PlaylistCheckup { tracks: { position: number; name: string; artist: string; dupe: boolean; rating: number | null; never_played: boolean; tags: string[] }[] }
 ```
+
+### 4.1 Insights v3 (M10 · D35, FR-047, FR-048)
+Every definition and threshold: [design/M10-insights-v3.md](design/M10-insights-v3.md) §4.2 (TSD §4.14). Sources U, S, E only, private sessions excluded per the logger setting, like §4.9. The listening tabs of Insights take a `PeriodQuery` (the page header); Home, Recent plays and the Collection tab keep `Range`.
+
+| Command | Args | Returns | Notes / spec |
+|---|---|---|---|
+| `get_period_report` | `period: PeriodQuery` | `Covered<PeriodReport>` | Report tab (design §5) and Year in review's year cards (`grain: 'year'`). `validation` for a malformed `at`/`from`/`to` or `custom` without both dates |
+| `get_trends` | `measure: 'hours' \| 'plays' \| 'artists'` | `Covered<Trends>` | Trends tab, whole history; `measure` changes `months` only |
+| `get_discovery` | `period: PeriodQuery` | `Covered<Discovery>` | Discovery tab |
+| `get_listening_habits` | `period: PeriodQuery` | `Covered<Habits>` | How you listen. Export plays only, except `devices` (desktop plays are "This PC") and sessions (all plays) |
+| `get_records` | — | `Covered<Records>` | Records tab; all-time figures use all-device dates only (design §4.4) |
+| `explore` | `query: ExploreQuery` | `Covered<ExploreResult>` | Explore, < 200 ms (NFR-04). `validation` for 0 or more than 3 series, `from` after `to`, or an hour/weekday out of range. A name with no plays gives a series of zeros, not an error |
+| `get_data_coverage` | — | `Covered<DataCoverage>` | Your data tab; `coverage.gaps` = every no-data stretch in the whole history |
+
+`get_listening_insights` (above) returns `Covered<ListeningInsights>` from M10: its `coverage` is computed for `range` vs the period before, and `PeriodStats` gains `plays_cmp`/`ms_cmp` so Home's strip and the Insights stat tiles compare like for like (G-46).
+
+**Coverage rule (FR-048, design §4.1/§4.4).** One Rust function decides every comparison:
+- `compared_sources` = the sources that cover the current **and** the comparison period (the export each date from its first to its last; the desktop log when it ran by the period's first date and on at least one of its dates, the dates it was off being `gaps`): `['S','E']` or `['E']` while the period ends on or before the last export's end; `['S']` once it reaches past it (`desktop_only_since` = the day after the export's last date, which drives the banner "From 3 Oct, only plays on this PC are counted"); `[]` when nothing is compared.
+- `no_compare_reason` is set (and every `Compared.now`/`before`, `before_ms`, `move`, `plays_prev`/`ms_prev` is null or unused) when no source covers both periods: the desktop log wasn't running in the earlier period, there is no listening before it, or the grain is `all`.
+- `gaps` = "no data" stretches (design §4.4) touching the periods shown: hatched in charts, skipped by streaks and Regularity, never silence.
+- Totals that aren't comparisons (`Compared.value`, timeline `ms`) count every source there is, except for a period that reaches past the last export: while `coverage.desktop_only_since` is set, `tiles.days_listened` (its `value` too), `tiles.streak`, `fingerprint.now` and the `streak` sentence count source S for the whole period, so both halves count the same way, and the UI labels them "on this PC" (the sentence says it itself; design §4.4).
+
+**Estimates** (labelled in the UI as estimates, design §4.2): `eras`, `arcs` (and their `related`), sessions and their start times, `deep_dives`, stick rate, `start_to_finish`, `next_milestone.eta_days`. Fingerprint scores are on screen only: never exported, copied or put in Explore's CSV.
+
+```ts
+type Grain = 'week' | 'month' | 'year' | 'all' | 'custom';
+type Compare = 'prev' | 'last_year' | 'usual';          // usual = median of the last 12 periods of that length
+type CoverageClass = 'all_devices' | 'this_pc' | 'no_data';
+type DeviceClass = 'phone' | 'computer' | 'web' | 'this_pc' | 'other';
+interface PeriodQuery {
+  grain: Grain; vs: Compare;
+  at: string | null;   // local date prefix inside the period: 'YYYY' (year), 'YYYY-MM' (month), 'YYYY-MM-DD' (week: any day; Monday-based); null = the current one
+  from?: string; to?: string;   // custom only: local dates 'YYYY-MM-DD', inclusive
+}
+interface CoverageGap { from: string; to: string }      // local dates, inclusive
+interface Coverage { compared_sources: Source[]; desktop_only_since: string | null; gaps: CoverageGap[]; no_compare_reason: string | null }
+interface Covered<T> extends Sourced<T> { coverage: Coverage }
+interface Compared { value: number; now: number | null; before: number | null }   // value = everything in the period; now/before = like for like over coverage.compared_sources (null = hidden)
+interface Fingerprint { regularity: number; discovery: number; focus: number; variety: number; repeat: number }   // 0–100 each
+interface Phrase { text: string; em: boolean }           // em = drawn bold (numbers, names)
+interface Sentence { rule: 'time_change' | 'new_in_top5' | 'left_top10' | 'busiest_hour' | 'streak' | 'record'; parts: Phrase[] }   // design §5.1, ≤ 4, in rule order
+interface TopRow extends RankRow { move: number | null; is_new: boolean; spark: number[] }   // move: places up (+) / down (−) vs the comparison period; is_new = not in its top 50; spark = hours per month, last 12
+
+interface PeriodInfo {
+  grain: Grain; vs: Compare; from: string; to: string;   // local dates, inclusive (to may be after today)
+  vs_from: string | null; vs_to: string | null;          // null for 'usual' and 'all'
+  prev_at: string | null; next_at: string | null;        // stepper `at` values; null before the first play / after the current period / custom
+  days: number;                                          // covered days (no-data days left out): the "28 / 30" denominator
+}
+interface PeriodReport {
+  period: PeriodInfo; private_excluded: number;
+  tiles: { ms: Compared; plays: Compared; artists: Compared; new_artists: Compared; days_listened: Compared; streak: number; finished_pct: Compared | null };   // finished: export plays only, null when the period has none
+  timeline: { key: string; ms: number; before_ms: number | null; coverage: CoverageClass }[];   // key = local date up to today (week, month, custom ≤ 92 days), else 'YYYY-MM'; before_ms = the aligned day/month of the comparison (mean of the 12 for 'usual'); while a comparison is shown, ms and before_ms are both like for like over compared_sources
+  lines: Sentence[];
+  clock: { hours: number[]; baseline: number[]; weekdays: number[] };   // % of time per hour 0–23 (baseline = last 6 months) and per weekday Mon–Sun
+  top_new: { name: string; item_id: number | null; status: Status | null; first_played_local: string; first_track: string; ms: number; plays: number; rank: number; share_pct: number } | null;
+  also_new: string[]; also_new_more: number;            // up to 3 more new artists, then how many others
+  ratio: { tracks: Compared; albums: Compared; artists: Compared; tracks_per_artist: Compared; albums_per_artist: Compared };
+  fingerprint: { now: Fingerprint; average: Fingerprint | null };       // average = your own 12-month average
+  tags: { rows: { tag: string; share_pct: number }[]; covered_pct: number };   // top 6 tags by tagged listening time; covered = tagged ÷ total time
+  most_played: { artists: TopRow[]; albums: TopRow[]; tracks: TopRow[] };      // 10 each
+}
+
+interface Arc {
+  artist: string; item_id: number | null; kind: 'rising' | 'fading' | 'back_again' | 'constant';
+  shares: number[];             // % of each month's time, 36 months ending this month
+  change_pct: number | null;    // share change over the arc's window (fading −74, rising +210)
+  since: string | null;         // 'YYYY-MM' the arc began (rising: first month up; back again: back since)
+  quiet_from: string | null;    // back again: when the quiet stretch began
+  related: string[];            // rising: may have taken time from; fading: may have given time to
+}
+interface Trends {
+  months: { month: string; value: number; coverage: CoverageClass }[];   // every month of the history; class of most of its days
+  eras: { from: string; to: string; artists: string[] }[];               // 'YYYY-MM', named after 1–2 artists
+  arcs: Arc[];
+  fingerprint_by_year: { year: number; fingerprint: Fingerprint }[];
+  tag_months: { months: string[]; rows: { tag: string; shares: number[] }[] };   // last 12 months, % of tagged listening
+  calendar: { year: number; minutes: (number | null)[]; biggest_day: { date: string; ms: number } | null; longest_streak: { days: number; from: string; to: string } | null; days_without_music: number }[];   // minutes[0] = 1 Jan; null = not an all-device date
+}
+
+interface DiscoveryRow { artist: string; item_id: number | null; first_played_local: string; first_track: string; plays_since: number; now: 'in_rotation' | 'dropped' | 'back_again' }
+interface Discovery {
+  new_artists: Compared; days_per_new: number | null;
+  stick_rate: { pct: number | null; best_pct: number | null; best_year: number | null };   // pct null until the window has passed
+  new_time_pct: number; artists_known: number; known_since: string | null;
+  per_month: { month: string; stuck: number; dropped: number; open: number; coverage: CoverageClass }[];   // months of the period (≥ the last 24); open = window not over yet; coverage = class of most of its days, no_data months are 0 and hatched
+  starts: { kind: 'picked' | 'followed' | 'back' | 'other'; pct: number }[];      // export only; [] when none
+  log: DiscoveryRow[];                                                            // the period's new artists, newest first, ≤ 100; `now` per design §4.2
+}
+
+interface Habits {
+  export_plays: number;                                              // the banner's "this tab covers your export plays"
+  ends: { kind: 'finished' | 'skipped' | 'back' | 'stopped'; pct: number }[];   // reason_end trackdone / fwdbtn / backbtn / the rest
+  skip_rate: number; skips_by_hour: number[];                        // % (G-45 denominator); 24 values
+  most_skipped: { name: string; item_id: number | null; skip_pct: number } | null;   // the most skipped of the period's top 20 artists
+  quick_bails: { track: string; artist: string; item_id: number | null; times: number }[];   // ≥ 3 times, ≤ 10
+  shuffle: { pct: number | null; by_year: { year: number; pct: number }[] };
+  devices: { kind: DeviceClass; pct: number }[]; offline: { pct: number; peak_month: string | null };
+  finished: { pct: number; how_far_pct: number | null; how_far_coverage_pct: number };   // how far = mean ms_played ÷ duration where a duration is known
+  sessions: { count: number; typical_ms: number; longest: { ms: number; start_local: string } | null; spread: number[] };   // spread: counts per length bucket, edges 5, 15, 30, 45, 60, 90, 120, 180, 240 min (10 buckets)
+  deep_dives: { kind: 'artist' | 'album' | 'repeat'; name: string; by: string; start_local: string; end_local: string; tracks: number; ms: number; times: number | null }[];   // times: album passes, or plays of the track that day (on repeat); ≤ 10
+  start_to_finish: { item_id: number; name: string; by: string; times: number }[];   // library albums with a track list only
+}
+
+interface Records {
+  since: string | null; plays_total: number;
+  first_play: { track: string; artist: string; at_local: string } | null;
+  top_track: RankRow | null; top_artist: RankRow | null; top_album: RankRow | null;
+  longest_streak: { days: number; from: string; to: string } | null;
+  biggest_day: { date: string; ms: number } | null;
+  biggest_year: { year: number; ms: number } | null;
+  most_artists_month: { month: string; artists: number } | null;
+  most_loyal: { name: string; item_id: number | null; years_in_top20: number; years: number } | null;
+  next_milestone: { plays: number; eta_days: number | null };       // next multiple of 5,000; ETA at the last-90-day pace
+  on_this_day: { year: number; plays: number; ms: number; top: { kind: 'artist' | 'album' | 'track'; name: string; by: string } | null; first_artists: string[] }[];   // today's date in earlier years, newest first
+  forgotten: { name: string; item_id: number | null; top10_year: number; last_played_local: string; play_uri: string | null }[];   // play_uri: their most played track (export URI) for "Play again"
+}
+
+interface ExploreQuery {
+  series: { kind: 'artist' | 'album' | 'track'; name: string; by?: string }[];   // 1–3; names matched case-insensitively
+  from: string; to: string;                      // local dates 'YYYY-MM-DD', inclusive
+  grain: 'week' | 'month' | 'year'; measure: 'hours' | 'share' | 'plays';
+  hours?: number[]; weekdays?: number[];         // 0–23; 1 = Monday … 7 = Sunday
+  devices?: DeviceClass[]; shuffle?: boolean;    // export only: desktop plays are left out when either is set
+}
+interface ExploreResult {
+  buckets: string[];                             // week: its Monday 'YYYY-MM-DD'; month 'YYYY-MM'; year 'YYYY'
+  series: { kind: 'artist' | 'album' | 'track'; name: string; by: string; values: number[]; total: number; peak: { bucket: string; value: number } | null; first_played_local: string | null }[];
+  export_only: boolean;
+}
+
+interface DataCoverage {
+  export: { from: string; to: string; plays: number } | null;
+  desktop: { from: string; to: string; plays: number; matched: number } | null;   // matched = desktop plays an export twin covers (counted once)
+  logger_runs_since: string | null;              // logger_run recording began; earlier desktop coverage is inferred from plays
+  imports: { id: number; imported_at: string; from: string | null; to: string | null; added: number; already_had: number }[];
+  private_excluded: number;
+}
+```
+
+`Settings` gains `export_reminder: boolean` (off by default): a local reminder on app open, monthly from the last export's end, never network (design §5, Your data).
 
 ## 5. R3 commands (backend M5 · switched in M7)
 | Command | Args | Returns | Notes / spec |

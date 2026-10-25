@@ -30,7 +30,10 @@ pub struct Track {
     pub title: String,
     pub artist: String,
     pub album: String,
+    /// Track length (SMTC timeline `EndTime`; 0 when the app doesn't report it).
     pub duration_ms: i64,
+    /// Shuffle on (SMTC `IsShuffleActive`; `None` when the app doesn't report it).
+    pub shuffle: Option<bool>,
     /// Timeline position when the snapshot was taken (0 when the app doesn't report it).
     pub position_ms: i64,
 }
@@ -89,6 +92,7 @@ impl Accumulator {
             self.track = Some(track);
         } else if let Some(cur) = &mut self.track {
             cur.duration_ms = track.duration_ms; // can arrive after the title
+            cur.shuffle = track.shuffle; // the state when the play ends
         }
         match (state, self.playing_since) {
             (PlayState::Playing, None) => self.playing_since = Some(at),
@@ -164,6 +168,7 @@ mod tests {
             artist: "Fixture Artist".into(),
             album: "Fixture Album".into(),
             duration_ms: 200_000,
+            shuffle: None,
             position_ms: 0,
         }
     }
@@ -324,6 +329,34 @@ mod tests {
         b.observe(Some((song("A"), Playing)), t(0.0));
         b.awake_since(t(3_600.0));
         assert_eq!(b.observe(None, t(3_605.0)), None); // 0 ms played, nothing written
+    }
+
+    /// M10 WI 2: the closed play carries the track length and shuffle state the session showed,
+    /// the latest values seen (both can arrive or change after the title).
+    #[test]
+    fn closed_play_carries_duration_and_shuffle() {
+        let snap = |dur: i64, shuffle: Option<bool>| {
+            Some((
+                Track {
+                    duration_ms: dur,
+                    shuffle,
+                    ..song("A")
+                },
+                Playing,
+            ))
+        };
+        let mut a = Accumulator::default();
+        a.observe(snap(0, None), t(0.0));
+        a.observe(snap(215_000, Some(false)), t(5.0));
+        a.observe(snap(215_000, Some(true)), t(10.0));
+        let c = a.observe(Some((song("B"), Playing)), t(40.0)).unwrap();
+        assert_eq!(
+            (c.track.title.as_str(), c.track.duration_ms, c.track.shuffle),
+            ("A", 215_000, Some(true))
+        );
+        // the next track starts with its own values, not the last one's
+        let c = a.close(t(50.0)).unwrap();
+        assert_eq!((c.track.duration_ms, c.track.shuffle), (200_000, None));
     }
 
     #[test]

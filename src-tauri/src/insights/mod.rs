@@ -8,9 +8,12 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
 pub mod collection;
+pub mod coverage;
+pub mod heuristics;
 pub mod listening;
 pub mod plays;
 pub mod take;
+pub mod terms;
 
 /// API.md §2 `Range`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -56,6 +59,14 @@ pub struct Sourced<T> {
     pub data: T,
     pub sources: Vec<&'static str>,
     pub freshness: Freshness,
+}
+
+/// API.md §4.1 `Covered<T>`: `Sourced<T>` plus the FR-048 `coverage` block.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Covered<T> {
+    #[serde(flatten)]
+    pub sourced: Sourced<T>,
+    pub coverage: coverage::Coverage,
 }
 
 /// The stored UTC format (`ended_at_utc`, column defaults).
@@ -249,6 +260,7 @@ pub(crate) mod fixture {
                 reason_start: None,
                 reason_end: None,
                 shuffle: None,
+                duration_ms: None,
                 skipped: Some(e.skipped),
                 offline: None,
                 private_session: e.private,

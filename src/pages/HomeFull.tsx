@@ -11,7 +11,7 @@ import {
   type AppError, type ItemSummary, type ItemType, type ListeningInsights, type LoggerStatus, type Play, type Range, type RankRow as Rank, type Source,
 } from "../api";
 import { Topbar } from "../components/Shell";
-import { playSources } from "../components/logic";
+import { compareNote, likeForLike, playSources } from "../components/logic";
 import { useQuickAdd } from "../components/QuickAddContext";
 import { MonthBars, monthLong, SPRING, Versus } from "../components/charts";
 import {
@@ -27,10 +27,11 @@ const PERIOD: Record<Range, string> = { "7d": "The last 7 days", "30d": "The las
 const EASE = [0.16, 1, 0.3, 1] as const; // DESIGN §3 --ease-out
 
 /** Change against the period before; nothing to compare for All time or a first period. */
-function Delta({ now, prev, fmt, more, less }: { now: number; prev: number; fmt: (n: number) => string; more: string; less: string }) {
-  if (now === prev) return <span>Same as the period before</span>;
+function Delta({ now, prev, fmt, more, less, pc }: { now: number; prev: number; fmt: (n: number) => string; more: string; less: string; pc: boolean }) {
+  const on = pc ? " on this PC" : ""; // FR-048: past the export's end both sides count this PC only
+  if (now === prev) return <span>Same{on} as the period before</span>;
   const Icon = now > prev ? ArrowUpRightIcon : ArrowDownRightIcon;
-  return <span className="hm-delta"><Icon size={12} weight="bold" aria-hidden />{fmt(Math.abs(now - prev))} {now > prev ? more : less} than the period before</span>;
+  return <span className="hm-delta"><Icon size={12} weight="bold" aria-hidden />{fmt(Math.abs(now - prev))} {now > prev ? more : less}{on} than the period before</span>;
 }
 
 /** Arrival (DESIGN §2.4 "arrival of data"): the page's sections rise in once, 70 ms apart. */
@@ -55,7 +56,8 @@ export default function HomeFull() {
 
   const t = ins.data?.data.totals;
   const src = ins.data?.sources ?? []; // no tag until the response says which sources it used (FR-032)
-  const compare = range !== "all" && !!t?.plays_prev;
+  const vs = ins.data ? likeForLike(ins.data) : null; // FR-048: like for like, none when coverage says so
+  const note = ins.data ? compareNote(ins.data, range) : null; // reads coverage.desktop_only_since / no_compare_reason
   return (
     <>
       <Topbar>{seg}</Topbar>
@@ -77,14 +79,15 @@ export default function HomeFull() {
         </div>
         {!t ? <StatSkel />
           : <div className="stats">
-              <Stat k="Plays" v={num(t.plays)} d={compare ? <Versus now={t.plays} prev={t.plays_prev}><Delta now={t.plays} prev={t.plays_prev} fmt={num} more="more" less="fewer" /></Versus> : "Played 30 seconds or more"} />
-              <Stat k="Listening time" v={hmBig(t.ms)} d={compare ? <Versus now={t.ms} prev={t.ms_prev}><Delta now={t.ms} prev={t.ms_prev} fmt={hmBig} more="more" less="less" /></Versus>
+              <Stat k="Plays" v={num(t.plays)} d={vs ? <Versus now={vs.plays[0]} prev={vs.plays[1]}><Delta now={vs.plays[0]} prev={vs.plays[1]} fmt={num} more="more" less="fewer" pc={vs.pc} /></Versus> : "Played 30 seconds or more"} />
+              <Stat k="Listening time" v={hmBig(t.ms)} d={vs ? <Versus now={vs.ms[0]} prev={vs.ms[1]}><Delta now={vs.ms[0]} prev={vs.ms[1]} fmt={hmBig} more="more" less="less" pc={vs.pc} /></Versus>
                 : t.ms >= 172_800_000 ? `About ${pl(Math.round(t.ms / 86_400_000), "day")} of music` : "In this period"} />
               <Stat k="New artists" v={num(t.new_artists)} d={range === "all" ? `${pl(t.artists_total, "artist")} in your history` : "First heard in this period"} />
               <Link to="/plays/unrated" className="text-inherit grid" aria-label={`${num(t.unrated_plays)} plays you haven’t rated. Rate what you keep coming back to`}>
                 <Stat k="Plays you haven’t rated" v={num(t.unrated_plays)} d="Rate what you keep coming back to" act />
               </Link>
             </div>}
+        {t && note && <p className="text-muted text-sm">{note}</p>}
       </m.section>
 
       <m.div variants={RISE}><Charts range={range} loading={ins.loading} data={ins.data?.data} sources={src} /></m.div>

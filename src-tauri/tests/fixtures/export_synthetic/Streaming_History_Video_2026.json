@@ -16,7 +16,7 @@
   "audiobook_uri": null,
   "audiobook_chapter_uri": null,
   "audiobook_chapter_title": null,
-  "reason_start": "trackdone",
+  "reason_start": "switched-to-video",
   "reason_end": "trackdone",
   "shuffle": false,
   "skipped": false,

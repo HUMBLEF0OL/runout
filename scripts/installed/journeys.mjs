@@ -447,9 +447,9 @@ await step("F2 Insights: all four tabs, every card shows its sources and real fr
     return tags.every((t) => (!t.includes("Desktop log") || t.includes("Desktop log " + ${JSON.stringify(S)}))
       && (!t.includes("Spotify export") || t.includes("Spotify export " + ${JSON.stringify(E)})));
   })()`;
-  for (const [hash, label] of [["listening", "Listening"], ["collection", "Collection"], ["take", "Your take"], ["year", "Year in review"]]) {
+  for (const [hash, label] of [["report", "Report"], ["collection", "Collection"], ["take", "Your take"], ["year", "Year in review"]]) {
     await segTo("Insight group", label);
-    await waitFor(`location.hash === "#/insights/${hash}" || (${JSON.stringify(hash)} === "listening" && location.hash === "#/insights")`);
+    await waitFor(`location.hash.startsWith("#/insights/${hash}") || (${JSON.stringify(hash)} === "report" && location.hash === "#/insights")`); // M10: tab links carry ?grain=&at=&vs=
     if (hash === "year" && await waitFor(`txt().includes("No listening in") || !!document.querySelector("main section.card")`, 15000) && await js(`txt().includes("No listening in")`)) continue;
     await waitFor(cardsOk, 20000);
     await shot(`F3-insights-${hash}`);

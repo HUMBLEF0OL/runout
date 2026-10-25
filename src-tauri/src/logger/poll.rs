@@ -34,7 +34,9 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>) {
             let s = st.settings.lock().unwrap().clone();
             let now = chrono::Utc::now();
             match snap {
-                None => lg.error = true,
+                None => {
+                    let _ = lg.unavailable(&db, now);
+                }
                 Some(Ok(snap)) => {
                     // A long import held the locks; that wait isn't sleep. Only here: a tick that
                     // doesn't observe must leave `last_seen` set, or the next gap goes unclamped.

@@ -476,4 +476,118 @@ a.card { display: flex; }
 .rail.mini .logo { padding: 0; }
 .rail.mini .nav-item, .rail.mini .rail-add { justify-content: center; padding: 0; }
 .rail.mini .nav-group { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--color-line); }
+
+/* ---------- Insights v3 (M10): page header (grain, ‹ period ›, compare), Report cards. Reuses Home's bars (.hm-plot),
+   lead (.hm-lead), ranks (.hm-rank) and Insights' .grow; only what those lack is here. No new colours (DESIGN §3). */
+.in3-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.in3-step { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: var(--radius-control); background: var(--color-surface); border: var(--hair); }
+.in3-step output { min-width: 128px; padding: 0 8px; text-align: center; font-family: var(--font-mono); font-size: 13px; color: var(--color-text); word-spacing: -0.3em; }
+.in3-step .icon-btn { width: 34px; height: 34px; }
+.in3-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } /* six tiles: 6, 3 or 2 across, never 5 + 1 */
+@media (min-width: 1400px) { .in3-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .in3-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Day bars: 28–31 columns need tighter gaps; the compared period is a faint line; a no-data day is hatched, never silence */
+.hm-cols.dense, .hm-months.dense { gap: 3px; }
+.hm-cols.xs, .hm-months.xs { gap: 1px; }
+.hm-months.dense span { white-space: nowrap; overflow: visible; }
+.hm-col.gap i { background: repeating-linear-gradient(45deg, var(--color-line-2) 0 3px, transparent 3px 6px); }
+.hm-col.on.gap i { box-shadow: 0 0 0 1px var(--color-line-strong); }
+.hm-ghost { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 1; }
+.hm-ghost polyline { fill: none; stroke: var(--color-text-2); stroke-width: 1.5; stroke-dasharray: 4 3; opacity: 0.7; }
+/* "The period in a few lines": one accent mark per rule that fired */
+.in3-line { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-control); background: var(--color-surface-2); font-size: 13px; line-height: 1.45; transition: background 150ms; }
+.in3-line:hover { background: var(--color-surface-hover); }
+.in3-line::before { content: ""; flex: none; width: 6px; height: 6px; margin-top: 6px; border-radius: 3px; background: var(--color-accent); }
+.in3-line b { font-weight: 700; color: var(--color-text); }
+.in3-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; font-size: 11px; color: var(--color-faint); }
+.in3-week span { display: flex; flex-direction: column; gap: 4px; }
+.in3-week .on { color: var(--color-text); font-weight: 700; }
+/* Ratio rows, tags: label, track-less bar, mono value */
+.in3-tag { display: grid; grid-template-columns: minmax(0, 130px) minmax(0, 1fr) 40px; gap: 10px; align-items: center; margin-inline: -6px; padding: 3px 6px; border-radius: var(--radius-thumb); transition: background 150ms; }
+.in3-tag:hover { background: var(--color-surface-2); }
+.in3-tag:hover .grow:not(.hot) { background: var(--color-text-2); }
+/* Fingerprint radar: yours in accent, your own average dashed; never selectable (scores are never copied, design §2) */
+.in3-radar { width: 100%; max-width: 360px; height: auto; align-self: center; user-select: none; }
+.in3-radar .web { fill: none; stroke: var(--color-line-2); }
+.in3-radar .avg { fill: none; stroke: var(--color-text-2); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.in3-radar .now { fill: rgba(245,181,68,0.16); stroke: var(--color-accent); stroke-width: 2; stroke-linejoin: round; transform-box: fill-box; transform-origin: center; }
+.in3-radar text { fill: var(--color-text-2); font-size: 12px; }
+.in3-radar text b, .in3-radar tspan { fill: var(--color-text); font-family: var(--font-mono); font-weight: 600; }
+.in3-key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--color-text-2); }
+.in3-key i { display: inline-block; width: 10px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: var(--radius-bar); background: var(--color-accent); }
+.in3-key i.avg { background: var(--color-text-2); }
+/* Most played: Home's rank rows plus a 12-month sparkline and the move since the period compared */
+.in3-ranks { columns: 2 400px; }
+.hm-rank.in3-rank { grid-template-columns: 22px minmax(0, 1fr) 64px auto 40px; }
+.in3-spark { width: 64px; height: 20px; overflow: visible; }
+.in3-spark polyline { fill: none; stroke: var(--color-text-2); stroke-width: 1.5; stroke-linejoin: round; transition: stroke 150ms; }
+.hm-rank:hover .in3-spark polyline { stroke: var(--color-text); }
+.in3-move { font-family: var(--font-mono); font-size: 12px; text-align: right; color: var(--color-faint); }
+.in3-move.up { color: var(--color-text); }
+.in3-move.new { color: var(--color-accent); font-family: var(--font-sans); font-weight: 600; }
+/* ---------- Insights v3 Trends (M10 WI 7): lifetime brush (.hm-plot taller, no tip), eras under the bars, arc lines,
+   fingerprint small multiples, tag heat table, a calendar of day buttons. Accent tints only (DESIGN §3 "active bar"). */
+.in3-life { height: 180px; padding-top: 8px; touch-action: none; }
+.in3-eras { display: grid; gap: 1px; margin-top: 6px; }
+.in3-era { min-width: 0; height: 30px; padding: 0 8px; border: var(--hair); border-radius: var(--radius-thumb); background: var(--color-surface-2); color: var(--color-text-2); font: inherit; font-size: 12px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: background 150ms, border-color 150ms; }
+.in3-era b { color: var(--color-text); font-weight: 700; }
+.in3-era:hover { background: var(--color-surface-hover); border-color: var(--color-line-hover); }
+.in3-arc { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 1fr) minmax(0, 240px); gap: 16px; align-items: center; padding: 10px 6px; margin-inline: -6px; border-bottom: 1px solid var(--color-line); border-radius: var(--radius-thumb); transition: background 150ms; }
+.in3-arc:hover { background: var(--color-surface-2); }
+.in3-arc svg { width: 100%; height: 32px; overflow: visible; }
+.in3-arc polyline { fill: none; stroke: var(--color-accent); stroke-width: 1.5; stroke-linejoin: round; }
+.in3-arc svg.fade polyline { stroke: var(--color-text-2); }
+@media (max-width: 760px) { .in3-arc { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+.in3-years { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; user-select: none; }
+.in3-year { display: flex; flex-direction: column; gap: 4px; padding: 14px; transition: background 150ms, border-color 150ms; }
+.in3-year:hover { background: var(--color-surface-2); }
+.in3-year svg { width: 100%; height: 44px; overflow: visible; }
+.in3-year polyline { fill: none; stroke: var(--color-text-2); stroke-width: 1.5; stroke-linejoin: round; }
+.in3-year circle { fill: var(--color-accent); }
+.in3-heat { width: 100%; min-width: 520px; table-layout: fixed; border-collapse: separate; border-spacing: 3px; font-size: 12px; }
+.in3-heat th { font-weight: 400; color: var(--color-faint); text-align: center; }
+.in3-heat thead th:first-child { width: 120px; }
+.in3-heat th[scope="row"] { width: 120px; color: var(--color-text-2); text-align: left; white-space: nowrap; }
+.in3-heat td { padding: 0; }
+.in3-heat td i, .in3-cal > * { display: block; border-radius: var(--radius-bar); background: var(--color-surface-2); }
+.in3-heat td i { height: 16px; }
+.in3-heat tr:hover th[scope="row"] { color: var(--color-text); }
+.in3-heat .l1, .in3-cal .l1 { background: color-mix(in srgb, var(--color-accent) 25%, var(--color-surface-2)); }
+.in3-heat .l2, .in3-cal .l2 { background: color-mix(in srgb, var(--color-accent) 50%, var(--color-surface-2)); }
+.in3-heat .l3, .in3-cal .l3 { background: color-mix(in srgb, var(--color-accent) 75%, var(--color-surface-2)); }
+.in3-heat .l4, .in3-cal .l4 { background: var(--color-accent); }
+.in3-cal { display: grid; grid-template-rows: repeat(7, auto); grid-auto-flow: column; grid-template-columns: repeat(53, minmax(0, 1fr)); gap: 3px; max-width: 920px; }
+.in3-cal > * { aspect-ratio: 1; min-width: 0; padding: 0; border: 0; }
+.in3-cal > span { background: transparent; }
+.in3-cal button { cursor: pointer; transition: box-shadow 120ms; }
+.in3-cal button:hover { box-shadow: 0 0 0 1px var(--color-text); }
+.in3-cal .fut { cursor: default; opacity: 0.5; }
+.in3-cal .nd { cursor: default; background: repeating-linear-gradient(45deg, var(--color-line-2) 0 2px, transparent 2px 4px); }
+/* ---------- Insights v3 Discovery (M10 WI 7): new artists per month as stacked columns (still playing = accent, dropped =
+   bar grey, too soon to tell = outline, never hatched: hatching means no data), how tracks started as one split bar, the log. */
+.in3-stack { height: 150px; padding-top: 8px; }
+.in3-stack .hm-cols > span { height: 100%; display: flex; flex-direction: column-reverse; gap: 1px; border-radius: var(--radius-bar); transform-origin: 50% 100%; transition: background 150ms; }
+.in3-stack .hm-cols > span.on { background: rgba(255,255,255,0.035); }
+.in3-stack .hm-cols > span.gap { background: repeating-linear-gradient(45deg, var(--color-line-2) 0 3px, transparent 3px 6px); }
+.in3-stack .hm-cols > span.on.gap { box-shadow: 0 0 0 1px var(--color-line-strong); }
+.in3-stack i, .in3-split i { display: block; flex: none; border-radius: var(--radius-bar); background: var(--color-bar); transition: background 150ms; }
+.in3-stack .kept, .in3-split .picked, .in3-key i.picked { background: var(--color-accent); }
+.in3-stack .open, .in3-key i.open { background: transparent; box-shadow: inset 0 0 0 1px var(--color-line-strong); }
+.in3-stack:hover .hm-cols > span:not(.on) .drop { background: var(--color-line-strong); }
+.in3-stack .on .drop { background: var(--color-text-2); }
+.in3-key i.drop, .in3-key i.followed, .in3-split .followed { background: var(--color-bar); }
+.in3-key i.back, .in3-split .back { background: var(--color-text-2); }
+.in3-key i.other, .in3-split .other { background: var(--color-line-strong); }
+.in3-key i.open { height: 8px; }
+.in3-split { display: flex; gap: 3px; height: 12px; }
+.in3-split i { height: 100%; }
+.in3-log { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px; }
+.in3-log th, .in3-log td { padding: 9px 8px; text-align: left; border-bottom: 1px solid var(--color-line); }
+.in3-log thead th { font-size: 12px; font-weight: 600; color: var(--color-muted); }
+.in3-log tbody th { font-weight: 700; }
+.in3-log td { color: var(--color-text-2); }
+.in3-log .num { text-align: right; }
+.in3-log tbody tr { transition: background 150ms; }
+.in3-log tbody tr:hover { background: var(--color-surface-2); }
+.in3-log tbody tr:last-child > * { border-bottom: 0; }
 }

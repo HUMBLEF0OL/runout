@@ -11,22 +11,25 @@ Agents: `rust-core` (WI 2–5), `react-ui` (WI 6–8), `spec-reviewer` (each ste
 
 ## Steps
 1. **Contract (WI 1).** API.md §4 first:
-   - `get_period_report(grain, at, vs, custom?)`, `get_trends(measure)`, `get_discovery(range)`, `get_listening_habits(range)`, `get_records()`, `explore(query)`, `get_data_coverage()`;
-   - every payload is `Sourced<T>` plus a `coverage {compared_sources, desktop_only_since?, gaps[]}` block;
+   - `get_period_report(period)`, `get_trends(measure)`, `get_discovery(period)`, `get_listening_habits(period)`, `get_records()`, `explore(query)`, `get_data_coverage()`; `period` = `PeriodQuery {grain, vs, at, from?, to?}` (the page header);
+   - every payload is `Covered<T>` = `Sourced<T>` plus a `coverage {compared_sources, desktop_only_since, gaps[], no_compare_reason}` block;
    - `get_listening_insights` keeps `range` for Home and gains the same `coverage` block. Its `plays_prev` / `ms_prev` become like-for-like (design §4.4), and Home's period strip shows the short coverage note (G-46).
 
    Then `src/api.ts` types, the `src/mocks/` implementation (shaped from the mockup's data, "heavy" state = 180k plays), and the contract check in `check.py`.
-2. **Schema + logger (WI 2).** Migration `0006`:
+   - **Done 24 Oct 2026:** API.md §4.1, `api.ts`, `mocks/insightsV3.ts` (+ `insightsV3.test.ts`). The seven commands sit in `check.py` `PENDING_RUST` until WI 5 registers them (the check then asks for their removal); Rust's `PeriodStats` gains `plays_cmp`/`ms_cmp` and `Settings` `export_reminder` in WI 4/5. Saved Explore views (stored like saved filters) get their contract in WI 8.
+2. **Schema + logger (WI 2).** Migration `0008` (0006 and 0007 are taken):
    - `listening_event.duration_ms`, `listening_event.shuffle` (nullable);
    - `logger_run`;
    - rollups `listening_day`, `listening_month_artist`, `artist_first_play` with triggers (pattern: `0005`), rebuilt after import.
 
    Logger: keep SMTC `EndTime` (already read in `logger/session.rs`) and shuffle state; write `logger_run` on start/stop/pause/resume.
    - Tests: accumulator carries duration and shuffle; triggers keep the rollups equal to a full recount after insert, delete and reconcile; migration from a v7 DB with data.
+   - **Done 24 Oct 2026:** `migrations/0008_listening_v3.sql` (`shuffle` already existed from 0003, so only `duration_ms` is added), `db::rebuild_rollups` after each import, `Logger::sync_run`/`end_run`. Tests: `closed_play_carries_duration_and_shuffle`, `plays_store_duration_and_shuffle`, `logger_run_records_running_intervals`, `rollups_equal_a_recount_after_every_write` (goes red with any 0008 trigger dropped), `v7_with_plays_upgrades_to_v8`. perf_listening import 32.5 s.
 3. **Definitions (WI 3).** One Rust function per design §4.2 term in `insights/`, each with a fixture test against hand-computed values:
    - the base terms: play, streaks across gaps, stick rate, the skip rate fix (G-45), quick bail, started-by-you, device classes over the KB's seen `platform` values;
    - sessions, deep dives, eras, arcs, "took time from";
    - the fingerprint, music ratio, records and top tags.
+   - **Done 24 Oct 2026:** `insights/terms.rs` + `insights/heuristics.rs` (one fn + constant per term, choices the design left open in TSD §4.14), each with hand-computed tests; G-45 fixed in `listening.rs` (bounded: flag filter; `all`: 0008 partial index `listening_event_skip_flag`, test `skip_rate_counts_only_flagged_events`); the synthetic export now holds every kb-seen `reason_start`/`reason_end` (`every_seen_reason_has_a_kind_and_is_in_the_fixture`). Proven on synthetic data only; thresholds get tuned on the real history in WI 10.
 4. **Coverage engine (WI 4).** Per-source ranges, gaps, and the FR-048 rule as one function used by every comparison (G-46).
    - Tests: the current period crosses the export end → desktop-only on both sides; no logger run in the earlier period → delta hidden with a reason; a gap day doesn't break a streak.
 5. **Commands + performance (WI 5).**

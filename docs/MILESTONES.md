@@ -286,7 +286,7 @@ Acceptance
 
 ### Work items
 1. **Contract:** API.md §4 period report, trends, discovery, habits, records, explore, data coverage; `coverage` block on every listening payload (incl. `get_listening_insights` for Home); `api.ts` + mocks.
-2. **Schema + logger:** `0006`: `duration_ms`, `shuffle` on desktop events, `logger_run`, rollups `listening_day` / `listening_month_artist` / `artist_first_play` with triggers.
+2. **Schema + logger:** `0008`: `duration_ms`, `shuffle` on desktop events, `logger_run`, rollups `listening_day` / `listening_month_artist` / `artist_first_play` with triggers.
 3. **Definitions:** every design §4.2 term in Rust with hand-computed fixture tests; skip-rate fix (G-45).
 4. **Coverage engine:** coverage classes and the FR-048 comparison rule used by every comparison, Home included (G-46).
 5. **Commands + performance:** each listening tab < 500 ms, Explore < 200 ms on 500k events; import 10 years < 60 s.

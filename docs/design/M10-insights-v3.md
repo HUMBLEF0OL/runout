@@ -62,7 +62,7 @@ All plays are in `listening_event`.
 - **Identity:** artist and album identity is the **name**; there are no IDs. Collaborations count for the listed artist only.
 - **Coverage:** the export covers every device up to its last date. After that, only desktop plays exist until the next export.
 
-**Coverage rule (FR-048, new).** A comparison between two periods uses only sources that cover *both* periods completely.
+**Coverage rule (FR-048, new).** A comparison between two periods uses only sources that cover *both* periods (the export each date from its first to its last; the desktop log when it ran by the period's first date and on at least one of its dates, the dates it was off being `gaps`).
 - If the current period runs past the last export's end, both sides are restricted to desktop plays, and a banner says so ("From 3 Oct, only plays on this PC are counted …").
 - If even that is impossible, because the logger wasn't running in the earlier period, the delta is hidden with the reason.
 - Totals that aren't comparisons (for example, "41 h this month") show everything there is, with the freshness line.
@@ -88,6 +88,7 @@ All plays are in `listening_event`.
 | New artist | An artist whose first play in all stored data falls in the period |
 | First heard | That first play's time and track |
 | Stick rate | Share of new artists with ≥ 3 plays in the 90 days that start 30 days after their first play (estimate; labelled) |
+| Now (discovery log) | **Back again** if the artist's arc is Back again; **Dropped** if no play in the last 90 days; else **In rotation** |
 
 **Behaviour (export plays only)**
 
@@ -133,7 +134,7 @@ All plays are in `listening_event`.
 Each change is a migration plus a logger change, with tests.
 1. **Store track duration from the desktop logger:** `listening_event.duration_ms`, nullable. The logger already reads it (`logger/session.rs`) and drops it. It's source S, so allowed. It enables "how far into each track you got" for desktop plays. A per-`norm_key` duration (max seen) lets export plays of tracks also heard on the desktop use it. Coverage is shown; there's no guessing for tracks never heard on the desktop.
 2. **Store shuffle from the desktop logger:** `listening_event.shuffle`, which SMTC exposes (kb/spotify.md, verified 18 Oct 2026). Desktop plays then join the shuffle card. Repeat and track number aren't needed.
-3. **Logger running intervals:** a `logger_run(start_utc, end_utc, reason)` table written on start, stop, pause and resume. It lets the coverage view tell "no data" apart from "logger was off", and keeps streaks honest.
+3. **Logger running intervals:** a `logger_run(start_utc, end_utc, reason)` table written on start, stop, pause and resume; SMTC being unavailable, a restore or Delete library also close the run. It lets the coverage view tell "no data" apart from "logger was off", and keeps streaks honest.
 4. **Rollups for speed,** kept by triggers like 0005:
    - `listening_day` (local date × private flag → ms, events, plays);
    - `listening_month_artist` (month × artist name × private flag → ms, plays);

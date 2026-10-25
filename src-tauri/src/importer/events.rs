@@ -37,6 +37,8 @@ pub struct Event {
     pub reason_start: Option<String>,
     pub reason_end: Option<String>,
     pub shuffle: Option<bool>,
+    /// Track length from SMTC (logger rows only; `None` for the export or when the app didn't say).
+    pub duration_ms: Option<i64>,
     pub skipped: Option<bool>,
     pub offline: Option<bool>,
     pub private_session: bool,
@@ -71,8 +73,8 @@ pub fn insert(conn: &Connection, e: &Event) -> Result<Option<i64>> {
         .prepare_cached(
             "INSERT INTO listening_event(source, ended_at_utc, ended_at_local, ms_played, track_name,
                artist_name, album_name, norm_key, spotify_track_uri, platform, reason_start, reason_end,
-               shuffle, skipped, offline, private_session, item_id, import_batch_id, dedupe_hash)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+               shuffle, skipped, offline, private_session, item_id, import_batch_id, dedupe_hash, duration_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
              ON CONFLICT(dedupe_hash) DO NOTHING RETURNING id",
         )?
         .query_row(
@@ -96,6 +98,7 @@ pub fn insert(conn: &Connection, e: &Event) -> Result<Option<i64>> {
                 e.item_id,
                 e.import_batch_id,
                 e.dedupe_hash(),
+                e.duration_ms.filter(|&d| d > 0),
             ],
             |r| r.get(0),
         )
@@ -121,6 +124,7 @@ mod tests {
             reason_start: None,
             reason_end: None,
             shuffle: Some(false),
+            duration_ms: None,
             skipped: None,
             offline: None,
             private_session: false,

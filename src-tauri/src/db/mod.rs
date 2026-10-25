@@ -15,10 +15,64 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0005_listening_rollup.sql"),
     include_str!("../../migrations/0006_added_via_inbox.sql"),
     include_str!("../../migrations/0007_backlog_history.sql"),
+    include_str!("../../migrations/0008_listening_v3.sql"),
 ];
 
 /// Schema version a fully migrated library has.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
+
+/// Recount the 0008 rollups (`listening_day`, `listening_month_artist`, `artist_first_play`) from
+/// `listening_event` in one pass: the block between 0008's rebuild markers, so the migration's first
+/// fill and this are one definition. Run after an import (design/M10-insights-v3.md §4.3.4).
+pub fn rebuild_rollups(conn: &Connection) -> Result<(), AppError> {
+    let sql = MIGRATIONS[7];
+    let (a, b) = (
+        sql.find("-- rebuild:begin").expect("0008 rebuild marker"),
+        sql.find("-- rebuild:end").expect("0008 rebuild marker"),
+    );
+    conn.execute_batch(&sql[a..b])?;
+    Ok(())
+}
+
+/// Test helper: the 0008 rollups as text (rows with no events left out, as readers do), and the
+/// same after a full recount (rolled back). Equal = the triggers kept them right.
+#[cfg(test)]
+pub fn rollups_vs_recount(conn: &Connection) -> (String, String) {
+    let dump = |c: &Connection| -> String {
+        [
+            "SELECT day, private_session, events, plays, ms_played FROM listening_day WHERE events > 0 ORDER BY 1, 2",
+            "SELECT month, artist, private_session, events, plays, ms_played FROM listening_month_artist WHERE events > 0 ORDER BY 1, 2, 3",
+            "SELECT private_session, artist, event_id, ended_at_utc FROM artist_first_play ORDER BY 1, 2",
+        ]
+        .iter()
+        .map(|q| {
+            let mut st = c.prepare(q).unwrap();
+            let n = st.column_count();
+            st.query_map([], |r| {
+                Ok((0..n)
+                    .map(|i| format!("{:?}", r.get::<_, rusqlite::types::Value>(i).unwrap()))
+                    .collect::<Vec<_>>()
+                    .join("|"))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>()
+            .join("
+")
+        })
+        .collect::<Vec<_>>()
+        .join("
+--
+")
+    };
+    let kept = dump(conn);
+    conn.execute_batch("SAVEPOINT recount").unwrap();
+    rebuild_rollups(conn).unwrap();
+    let recount = dump(conn);
+    conn.execute_batch("ROLLBACK TO recount; RELEASE recount")
+        .unwrap();
+    (kept, recount)
+}
 
 /// Current time as the ISO-8601 UTC string every table stores (TSD §3).
 pub fn now() -> String {
@@ -223,6 +277,95 @@ mod tests {
             );
         }
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// v7 library with plays → v8 (M10 WI 2): plays untouched, `duration_ms` NULL on old rows, the
+    /// rollups filled from them (reconciled rows out, private apart, local date, first play per artist).
+    #[test]
+    fn v7_with_plays_upgrades_to_v8() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "legacy_alter_table", "ON").unwrap(); // as migrate() runs 0006
+        for m in &MIGRATIONS[..7] {
+            c.execute_batch(m).unwrap();
+        }
+        c.pragma_update(None, "legacy_alter_table", "OFF").unwrap();
+        c.pragma_update(None, "foreign_keys", "ON").unwrap();
+        c.pragma_update(None, "user_version", 7).unwrap();
+        // synthetic: two artists (one differing only in case), a reconciled logger twin, a private
+        // play, a play with no artist, one with no local time (UTC date used)
+        c.execute_batch(
+            "INSERT INTO listening_event(id, source, ended_at_utc, ended_at_local, ms_played, artist_name, private_session, dedupe_hash) VALUES
+               (1, 'export', '2026-03-01T23:30:00Z', '2026-03-02T00:30:00', 40000, 'Fixture Band', 0, 'a'),
+               (2, 'logger', '2026-03-01T23:30:10Z', '2026-03-02T00:30:10', 40000, 'Fixture Band', 0, 'b'),
+               (3, 'export', '2026-02-27T10:00:00Z', '2026-02-27T11:00:00', 10000, 'fixture band', 0, 'c'),
+               (4, 'export', '2026-01-05T10:00:00Z', '2026-01-05T11:00:00', 90000, 'Other Duo', 1, 'd'),
+               (5, 'export', '2026-03-02T08:00:00Z', NULL, 30000, NULL, 0, 'e');
+             UPDATE listening_event SET reconciled_with = 1 WHERE id = 2;",
+        )
+        .unwrap();
+        migrate(&mut c).unwrap();
+        assert_eq!(version(&c), 8);
+        let q = |sql: &str| -> String {
+            let mut st = c.prepare(sql).unwrap();
+            let n = st.column_count();
+            st.query_map([], |r| {
+                Ok((0..n)
+                    .map(|i| format!("{:?}", r.get::<_, rusqlite::types::Value>(i).unwrap()))
+                    .collect::<Vec<_>>()
+                    .join(" "))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>()
+            .join("; ")
+        };
+        assert_eq!(
+            q("SELECT count(*), count(duration_ms), sum(ms_played) FROM listening_event"),
+            "Integer(5) Integer(0) Integer(210000)"
+        );
+        let t = |s: &str| format!("Text(\"{s}\")");
+        let i = |n: i64| format!("Integer({n})");
+        assert_eq!(
+            q(
+                "SELECT day, private_session, events, plays, ms_played FROM listening_day ORDER BY 1"
+            ),
+            [
+                [t("2026-01-05"), i(1), i(1), i(1), i(90000)].join(" "),
+                [t("2026-02-27"), i(0), i(1), i(0), i(10000)].join(" "),
+                [t("2026-03-02"), i(0), i(2), i(2), i(70000)].join(" "),
+            ]
+            .join("; ")
+        );
+        assert_eq!(
+            q("SELECT month, artist, events, ms_played FROM listening_month_artist ORDER BY 1, 2"),
+            [
+                [t("2026-01"), t("other duo"), i(1), i(90000)].join(" "),
+                [t("2026-02"), t("fixture band"), i(1), i(10000)].join(" "),
+                [t("2026-03"), t(""), i(1), i(30000)].join(" "),
+                [t("2026-03"), t("fixture band"), i(1), i(40000)].join(" "),
+            ]
+            .join("; ")
+        );
+        assert_eq!(
+            q("SELECT private_session, artist, event_id FROM artist_first_play ORDER BY 1, 2"),
+            [
+                // e3 (10 s) is earlier but not a play (D25): first play is e1
+                [i(0), t("fixture band"), i(1)].join(" "),
+                [i(1), t("other duo"), i(4)].join(" "),
+            ]
+            .join("; ")
+        );
+        assert_eq!(q("SELECT count(*) FROM logger_run"), "Integer(0)");
+        let (kept, recount) = rollups_vs_recount(&c);
+        assert_eq!(kept, recount);
+        assert!(
+            c.execute(
+                "UPDATE listening_event SET duration_ms = 0 WHERE id = 1",
+                []
+            )
+            .is_err(),
+            "a track length is positive or NULL"
+        );
     }
 
     /// v2 library with data → v3: data intact, R2 tables usable, play rule and one-to-one link enforced.

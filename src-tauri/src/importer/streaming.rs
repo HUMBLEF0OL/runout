@@ -77,6 +77,7 @@ pub fn parse(files: &[File], tz: &mut LocalTime) -> Result<Parsed> {
                 reason_start: short(r.reason_start),
                 reason_end: short(r.reason_end),
                 shuffle: r.shuffle,
+                duration_ms: None,
                 skipped: r.skipped,
                 offline: r.offline,
                 private_session: r.incognito_mode.unwrap_or(false),

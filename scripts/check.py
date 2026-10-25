@@ -94,6 +94,22 @@ def check_settings_paths():
         print("--- settings paths: FAIL (settings::merge must refuse) " + ", ".join(missing))
 
 
+def check_db_swap_closes_logger_run():
+    # Review M10 WI 2: restore / Delete library replaced library.db under a running logger, and a stale
+    # logger_run id then stretched an old run to now. Every command that swaps the rows goes through
+    # Logger::swap_db (logger lock held). move_library keeps the same rows, so it isn't listed.
+    p = TAURI / "src" / "commands.rs"
+    bad = []
+    fn_re = r"\n(?:pub(?:\(crate\))? )?fn (\w+).*?(?=\n(?:#\[|(?:pub(?:\(crate\))? )?fn )|\Z)"
+    for m in re.finditer(fn_re, p.read_text(encoding="utf-8"), re.S):
+        body = m.group(0)
+        if re.search(r"restore_locked\(|cleanup::delete_library\(", body) and "swap_db(" not in body:
+            bad.append(f"commands.rs: {m.group(1)} must run inside Logger::swap_db")
+    if bad:
+        failures.append("db swap closes logger run")
+        print("--- db swap closes logger run: FAIL\n" + "\n".join(bad))
+
+
 def check_restore_marker_guards():
     # Review M3 close: while a failed restore's marker exists, pre-restore may be the real library
     # (TSD §4.10); each of these must check it (delete_library didn't, and wiped it).
@@ -442,6 +458,19 @@ def check_contract_and_attribution():
 
 # API.md sections whose commands must be registered in commands.rs.
 COMMAND_SECTIONS = ["3", "4", "5"]
+# Contract first (API.md §7): commands specified, wrapped in api.ts and mocked before their Rust exists.
+# Each still needs its api.ts export and a mock handler; remove a name once commands.rs registers it
+# (the check fails until you do, so nothing stays pending by accident).
+PENDING_RUST = {  # M10 WI 1 contract (API.md §4.1); Rust in M10 WI 5
+    "get_period_report", "get_trends", "get_discovery", "get_listening_habits", "get_records", "explore", "get_data_coverage",
+}
+
+# Same for new fields of existing commands (api.ts types + mocks first, Rust serde later). Each must be in
+# src/api.ts; the check fails once src-tauri/src mentions it, so the entry gets removed.
+PENDING_RUST_FIELDS = {  # M10 WI 1 contract; Rust in M10 WI 4/5
+    "Settings": ["export_reminder"],
+    "list_plays q": ["date"],                    # not detectable by name in Rust: remove by hand with WI 5
+}
 
 
 def check_commands():
@@ -460,7 +489,24 @@ def check_commands():
     registered = set(re.findall(r"\w+", reg))
     api = (ROOT / "src/api.ts").read_text(encoding="utf-8")
     camel = lambda n: re.sub(r"_(\w)", lambda m: m.group(1).upper(), n)
-    bad = [f"API.md command '{n}' not registered in commands.rs" for n in want if n not in registered]
+    bad = [f"API.md command '{n}' not registered in commands.rs" for n in want if n not in registered and n not in PENDING_RUST]
+    mocks = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "src/mocks").glob("*.ts"))
+    for n in sorted(PENDING_RUST):
+        if n in registered:
+            bad.append(f"commands.rs registers '{n}': remove it from PENDING_RUST in scripts/check.py")
+        if n not in want:
+            bad.append(f"PENDING_RUST '{n}' is not an API.md §3-5 command")
+        if not re.search(rf"\b{n}: ", mocks):
+            bad.append(f"PENDING_RUST '{n}' has no handler in src/mocks/")
+    rs_all = "".join(p.read_text(encoding="utf-8") for p in (TAURI / "src").rglob("*.rs"))
+    for owner, fields in PENDING_RUST_FIELDS.items():
+        for f in fields:
+            if not re.search(rf"\b{f}\??:", api):
+                bad.append(f"PENDING_RUST_FIELDS {owner}.{f} is not in src/api.ts")
+            if f != "date" and re.search(rf"\b{f}\b", rs_all):
+                bad.append(f"src-tauri has '{f}': remove {owner}.{f} from PENDING_RUST_FIELDS in scripts/check.py")
+    print("--- commands: pending Rust: " + ", ".join(sorted(PENDING_RUST)) + "; fields: "
+          + ", ".join(f"{o}.{f}" for o, fs in PENDING_RUST_FIELDS.items() for f in fs))
     bad += [f"API.md command '{n}' has no `export const {camel(n)}` in src/api.ts" for n in want
             if not re.search(rf"export const {camel(n)}\b", api)]
     if not want:
@@ -795,6 +841,32 @@ def check_reduced_motion_js():
         print("--- reduced motion (JS): ok")
 
 
+def check_compare_note():
+    # M10 WI 1 review (G-46): a like-for-like delta beside an all-device total misleads unless the page also shows
+    # the coverage note (desktop-only since / no-compare reason), so every page using likeForLike must use compareNote.
+    bad = [f.relative_to(ROOT).as_posix() for f in (ROOT / "src" / "pages").rglob("*.tsx")
+           if "likeForLike(" in (t := f.read_text(encoding="utf-8")) and "compareNote(" not in t]
+    if bad:
+        failures.append("compare note")
+        print("--- compare note: FAIL (likeForLike without compareNote: " + ", ".join(bad) + ")")
+    else:
+        print("--- compare note: ok")
+
+
+def check_series_coverage():
+    # M10 WI 7 review: a month/day series in API.md §4.1 without a `coverage` class draws a no-data month as an empty
+    # column, which reads as silence (API.md §4.1 "gaps ... never silence"). Every such series carries `coverage`.
+    api = (ROOT / "docs" / "API.md").read_text(encoding="utf-8")
+    sec = api.split("### 4.1", 1)[-1].split("
+## 5.", 1)[0]
+    bad = [m.group(0)[:60] for m in re.finditer(r"\{ *(?:month|key|date|day): string[^}]*\}\[\]", sec) if "coverage" not in m.group(0)]
+    if bad:
+        failures.append("series coverage")
+        print("--- series coverage: FAIL (API.md §4.1 month/day series without coverage: " + "; ".join(bad) + ")")
+    else:
+        print("--- series coverage: ok")
+
+
 def check_plays_page():
     # M9 WI 4 review: Rust clamps list_plays to MAX_PAGE rows; the mock didn't, so paging that asked for more passed
     # every UI check and stalled in the real app. The mock applies the same cap, and the Recent plays page asks for no more.
@@ -899,6 +971,7 @@ check_one_item_summary()
 check_events()
 check_settings_paths()
 check_restore_marker_guards()
+check_db_swap_closes_logger_run()
 check_insights_no_cache()
 check_spotify_rules()
 check_boundary_values_kept()
@@ -924,6 +997,8 @@ check_design()
 check_exit_flush()
 check_hover_keeps_selected()
 check_reduced_motion_js()
+check_compare_note()
+check_series_coverage()
 check_plays_page()
 check_control_consistency()
 check_doc_line_endings()

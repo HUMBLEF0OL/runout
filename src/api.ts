@@ -81,7 +81,7 @@ export interface Dashboard {
 export interface ParsedLink { state: "ok" | "short" | "unsupported" | "invalid"; uri?: string; type?: ItemType; existing_id?: number }
 export interface SearchHit { item: ItemSummary; snippet: string; field: string }
 export interface Rediscover { revisit: ItemSummary[]; top_rated: ItemSummary[]; stale_backlog: ItemSummary[]; incomplete_reviews: ItemSummary[] }
-export interface Settings { library_path: string; backup_dir: string; backup_weekly: boolean; size_warn_mb: number; artwork_default: boolean }
+export interface Settings { library_path: string; backup_dir: string; backup_weekly: boolean; size_warn_mb: number; artwork_default: boolean; export_reminder: boolean }
 export interface Capture { on: boolean; address: string; port: number; code: string }
 export interface Backup { path: string; created_at: string; size_bytes: number; item_count: number; size_warning: boolean }
 export interface RestoreCheck { ok: boolean; schema_version: number; counts: Partial<Counts>; error?: string }
@@ -104,7 +104,8 @@ export interface ImportPreview { music: number; podcasts_skipped: number; overla
 export interface ImportResult { batch_id: number; added: number; duplicates: number; reconciled: number; playlists: number; took_ms: number }
 export interface ImportRecord { id: number; kind: "account" | "extended"; imported_at: string; record_count: number; latest_event_utc: string | null }
 export interface RankRow { name: string; by: string; plays: number; hours: number; item_id: number | null; rating: number | null; status: Status | null }
-export interface PeriodStats { plays: number; plays_prev: number; ms: number; ms_prev: number; new_artists: number; rated_this_period: number; unrated_plays: number }
+/** `*_cmp` vs `*_prev`: like for like over `coverage.compared_sources` (FR-048); a delta is cmp - prev, none when `coverage.no_compare_reason`. */
+export interface PeriodStats { plays: number; plays_prev: number; ms: number; ms_prev: number; plays_cmp: number; ms_cmp: number; new_artists: number; rated_this_period: number; unrated_plays: number }
 export interface ListeningInsights {
   top_artists: RankRow[]; top_albums: RankRow[]; top_tracks: RankRow[];
   monthly: { month: string; hours: number }[]; heatmap: number[][];
@@ -129,6 +130,107 @@ export interface YearReview {
 }
 export interface ExportedPlaylist { id: number; name: string; tracks: number; dupes: number; low: number }
 export interface PlaylistCheckup { tracks: { position: number; name: string; artist: string; dupe: boolean; rating: number | null; never_played: boolean; tags: string[] }[] }
+
+/* ------------------------------------------------------------------ §4.1 Insights v3 types (M10; definitions: design/M10-insights-v3.md §4.2) */
+export type Grain = "week" | "month" | "year" | "all" | "custom";
+export type Compare = "prev" | "last_year" | "usual";
+export type CoverageClass = "all_devices" | "this_pc" | "no_data";
+export type DeviceClass = "phone" | "computer" | "web" | "this_pc" | "other";
+/** `at`: 'YYYY' | 'YYYY-MM' | 'YYYY-MM-DD' (week: any day) inside the period, null = current; custom uses from/to. */
+export interface PeriodQuery { grain: Grain; vs: Compare; at: string | null; from?: string; to?: string }
+export interface CoverageGap { from: string; to: string }
+export interface Coverage { compared_sources: Source[]; desktop_only_since: string | null; gaps: CoverageGap[]; no_compare_reason: string | null }
+export interface Covered<T> extends Sourced<T> { coverage: Coverage }
+/** value = everything in the period; now/before = like for like over coverage.compared_sources (null = hidden). */
+export interface Compared { value: number; now: number | null; before: number | null }
+export interface Fingerprint { regularity: number; discovery: number; focus: number; variety: number; repeat: number }
+export interface Phrase { text: string; em: boolean }
+export interface Sentence { rule: "time_change" | "new_in_top5" | "left_top10" | "busiest_hour" | "streak" | "record"; parts: Phrase[] }
+export interface TopRow extends RankRow { move: number | null; is_new: boolean; spark: number[] }
+export interface PeriodInfo {
+  grain: Grain; vs: Compare; from: string; to: string; vs_from: string | null; vs_to: string | null;
+  prev_at: string | null; next_at: string | null; days: number;
+}
+export interface PeriodReport {
+  period: PeriodInfo; private_excluded: number;
+  tiles: { ms: Compared; plays: Compared; artists: Compared; new_artists: Compared; days_listened: Compared; streak: number; finished_pct: Compared | null };
+  timeline: { key: string; ms: number; before_ms: number | null; coverage: CoverageClass }[];
+  lines: Sentence[];
+  clock: { hours: number[]; baseline: number[]; weekdays: number[] };
+  top_new: { name: string; item_id: number | null; status: Status | null; first_played_local: string; first_track: string; ms: number; plays: number; rank: number; share_pct: number } | null;
+  also_new: string[]; also_new_more: number;
+  ratio: { tracks: Compared; albums: Compared; artists: Compared; tracks_per_artist: Compared; albums_per_artist: Compared };
+  fingerprint: { now: Fingerprint; average: Fingerprint | null };
+  tags: { rows: { tag: string; share_pct: number }[]; covered_pct: number };
+  most_played: { artists: TopRow[]; albums: TopRow[]; tracks: TopRow[] };
+}
+export interface Arc {
+  artist: string; item_id: number | null; kind: "rising" | "fading" | "back_again" | "constant";
+  shares: number[]; change_pct: number | null; since: string | null; quiet_from: string | null; related: string[];
+}
+export interface Trends {
+  months: { month: string; value: number; coverage: CoverageClass }[];
+  eras: { from: string; to: string; artists: string[] }[];
+  arcs: Arc[];
+  fingerprint_by_year: { year: number; fingerprint: Fingerprint }[];
+  tag_months: { months: string[]; rows: { tag: string; shares: number[] }[] };
+  calendar: {
+    year: number; minutes: (number | null)[]; // [0] = 1 Jan; null = not an all-device date
+    biggest_day: { date: string; ms: number } | null; longest_streak: { days: number; from: string; to: string } | null; days_without_music: number;
+  }[];
+}
+export interface DiscoveryRow { artist: string; item_id: number | null; first_played_local: string; first_track: string; plays_since: number; now: "in_rotation" | "dropped" | "back_again" }
+export interface Discovery {
+  new_artists: Compared; days_per_new: number | null;
+  stick_rate: { pct: number | null; best_pct: number | null; best_year: number | null };
+  new_time_pct: number; artists_known: number; known_since: string | null;
+  per_month: { month: string; stuck: number; dropped: number; open: number; coverage: CoverageClass }[];
+  starts: { kind: "picked" | "followed" | "back" | "other"; pct: number }[];
+  log: DiscoveryRow[];
+}
+export interface Habits {
+  export_plays: number;
+  ends: { kind: "finished" | "skipped" | "back" | "stopped"; pct: number }[];
+  skip_rate: number; skips_by_hour: number[];
+  most_skipped: { name: string; item_id: number | null; skip_pct: number } | null;
+  quick_bails: { track: string; artist: string; item_id: number | null; times: number }[];
+  shuffle: { pct: number | null; by_year: { year: number; pct: number }[] };
+  devices: { kind: DeviceClass; pct: number }[]; offline: { pct: number; peak_month: string | null };
+  finished: { pct: number; how_far_pct: number | null; how_far_coverage_pct: number };
+  sessions: { count: number; typical_ms: number; longest: { ms: number; start_local: string } | null; spread: number[] };
+  deep_dives: { kind: "artist" | "album" | "repeat"; name: string; by: string; start_local: string; end_local: string; tracks: number; ms: number; times: number | null }[];
+  start_to_finish: { item_id: number; name: string; by: string; times: number }[];
+}
+export interface Records {
+  since: string | null; plays_total: number;
+  first_play: { track: string; artist: string; at_local: string } | null;
+  top_track: RankRow | null; top_artist: RankRow | null; top_album: RankRow | null;
+  longest_streak: { days: number; from: string; to: string } | null;
+  biggest_day: { date: string; ms: number } | null;
+  biggest_year: { year: number; ms: number } | null;
+  most_artists_month: { month: string; artists: number } | null;
+  most_loyal: { name: string; item_id: number | null; years_in_top20: number; years: number } | null;
+  next_milestone: { plays: number; eta_days: number | null };
+  on_this_day: { year: number; plays: number; ms: number; top: { kind: "artist" | "album" | "track"; name: string; by: string } | null; first_artists: string[] }[];
+  forgotten: { name: string; item_id: number | null; top10_year: number; last_played_local: string; play_uri: string | null }[];
+}
+export interface ExploreQuery {
+  series: { kind: "artist" | "album" | "track"; name: string; by?: string }[];
+  from: string; to: string; grain: "week" | "month" | "year"; measure: "hours" | "share" | "plays";
+  hours?: number[]; weekdays?: number[]; devices?: DeviceClass[]; shuffle?: boolean;
+}
+export interface ExploreResult {
+  buckets: string[];
+  series: { kind: "artist" | "album" | "track"; name: string; by: string; values: number[]; total: number; peak: { bucket: string; value: number } | null; first_played_local: string | null }[];
+  export_only: boolean;
+}
+export interface DataCoverage {
+  export: { from: string; to: string; plays: number } | null;
+  desktop: { from: string; to: string; plays: number; matched: number } | null;
+  logger_runs_since: string | null;
+  imports: { id: number; imported_at: string; from: string | null; to: string | null; added: number; already_had: number }[];
+  private_excluded: number;
+}
 
 /* ------------------------------------------------------------------ §5 R3 types */
 export interface SpotifyStatus { state: "disconnected" | "connected" | "reconnect"; display_name: string | null; renew_by: string | null }
@@ -169,7 +271,7 @@ export const __setTransportForTests = (transport: {
 /** Data may have changed (a write command ran, even one that failed, or the dev state switcher moved): readers refetch. */
 export const onInvalidate = (fn: Listener) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
 export const invalidate = () => listeners.forEach((fn) => fn());
-const READ = /^(get_|list_|search$|parse_link|preview_|check_backup|prefill_title|autofill|load_studio|library_contains|record_page_visit|pick_|find_cross_playlist_dupes$)/;
+const READ = /^(get_|list_|search$|explore$|parse_link|preview_|check_backup|prefill_title|autofill|load_studio|library_contains|record_page_visit|pick_|find_cross_playlist_dupes$)/;
 
 async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   // A failed write may still have changed data (a Spotify write that timed out keeps an undo, TSD §5.2).
@@ -273,7 +375,8 @@ export const getLoggerStatus = () => call<LoggerStatus>("get_logger_status");
 export const setLogger = (patch: { on?: boolean; autostart?: boolean; include_private?: boolean }) => call<LoggerStatus>("set_logger", { patch });
 export const pauseLogger = (minutes: number | null) => call<LoggerStatus>("pause_logger", { minutes });
 export const resumeLogger = () => call<LoggerStatus>("resume_logger");
-export const listPlays = (q: { tab: "all" | "unrated" | "missing"; range: Range; offset: number; limit: number }) => call<Page<Play>>("list_plays", { q });
+/** `date` (local YYYY-MM-DD, M10 Trends calendar) keeps that day only and replaces `range`. */
+export const listPlays = (q: { tab: "all" | "unrated" | "missing"; range: Range; offset: number; limit: number; date?: string }) => call<Page<Play>>("list_plays", { q });
 export const listUnmatched = () => call<Unmatched[]>("list_unmatched");
 export const linkPlay = (eventId: number, itemId: number) => call<void>("link_play", { eventId, itemId });
 export const getItemListening = (id: number) => call<Sourced<ItemListening>>("get_item_listening", { id });
@@ -282,10 +385,25 @@ export const previewImport = (path: string) => call<ImportPreview>("preview_impo
 export const runImport = (path: string) => call<ImportResult>("run_import", { path });
 export const listImports = () => call<ImportRecord[]>("list_imports");
 export const getFreshness = () => call<Freshness>("get_freshness");
-export const getListeningInsights = (range: Range) => call<Sourced<ListeningInsights>>("get_listening_insights", { range });
+export const getListeningInsights = (range: Range) => call<Covered<ListeningInsights>>("get_listening_insights", { range });
 export const getCollectionInsights = (range: Range) => call<Sourced<CollectionInsights>>("get_collection_insights", { range });
 export const getTakeInsights = () => call<Sourced<TakeInsights>>("get_take_insights");
 export const getYearReview = (year: number) => call<Sourced<YearReview>>("get_year_review", { year });
+/* §4.1 Insights v3 (M10). Dates and names are free text: cleaned here like every other input. */
+const cleanPeriod = (p: PeriodQuery): PeriodQuery => ({
+  grain: p.grain, vs: p.vs, at: p.at == null ? null : cleanLine(p.at, 10),
+  ...(p.from != null && { from: cleanLine(p.from, 10) }), ...(p.to != null && { to: cleanLine(p.to, 10) }),
+});
+export const getPeriodReport = (period: PeriodQuery) => call<Covered<PeriodReport>>("get_period_report", { period: cleanPeriod(period) });
+export const getTrends = (measure: "hours" | "plays" | "artists") => call<Covered<Trends>>("get_trends", { measure });
+export const getDiscovery = (period: PeriodQuery) => call<Covered<Discovery>>("get_discovery", { period: cleanPeriod(period) });
+export const getListeningHabits = (period: PeriodQuery) => call<Covered<Habits>>("get_listening_habits", { period: cleanPeriod(period) });
+export const getRecords = () => call<Covered<Records>>("get_records");
+export const explore = (query: ExploreQuery) => call<Covered<ExploreResult>>("explore", { query: {
+  ...query, from: cleanLine(query.from, 10), to: cleanLine(query.to, 10),
+  series: query.series.map((x) => ({ kind: x.kind, name: cleanLine(x.name, LIMITS.name), ...(x.by != null && { by: cleanLine(x.by, LIMITS.name) }) })),
+} });
+export const getDataCoverage = () => call<Covered<DataCoverage>>("get_data_coverage");
 export const listExportedPlaylists = () => call<ExportedPlaylist[]>("list_exported_playlists");
 export const getPlaylistCheckup = (id: number) => call<PlaylistCheckup>("get_playlist_checkup", { id });
 

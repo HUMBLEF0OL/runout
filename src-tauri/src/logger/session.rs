@@ -91,7 +91,8 @@ mod imp {
             let Some((_, s)) = found else {
                 return Ok(None);
             };
-            let state = match s.GetPlaybackInfo()?.PlaybackStatus()? {
+            let info = s.GetPlaybackInfo()?;
+            let state = match info.PlaybackStatus()? {
                 Status::Closed => return Ok(None),
                 Status::Playing => PlayState::Playing,
                 Status::Paused => PlayState::Paused,
@@ -109,6 +110,8 @@ mod imp {
                 album: p.AlbumTitle()?.to_string(),
                 // TimeSpan is in 100 ns units
                 duration_ms: tl.EndTime()?.Duration / 10_000,
+                // IReference<bool>: null when the app doesn't report shuffle
+                shuffle: info.IsShuffleActive().and_then(|r| r.Value()).ok(),
                 position_ms: tl.Position()?.Duration / 10_000,
             };
             Ok(Some((track, state)))

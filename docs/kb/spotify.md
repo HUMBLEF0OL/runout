@@ -88,7 +88,7 @@ Source: the user's real export, read in place with `python -I` + `zipfile` (stru
 - **Telling rows apart**: a music row has `spotify_track_uri` non-null. A podcast row has `spotify_episode_uri` non-null. An audiobook row has `audiobook_*` set (none in this export). A few rows (3 here, all `reason_start=unknown`, under 4 s) have no URI at all. Audio files also contain episodes. Video files contain music-track rows (706 here, no overlap with the Audio files) and video-podcast rows. The file kind does not tell you the content kind.
 - **Not present** in this export, though listed in the PDF example: `username`, `user_agent_decrypted`, `ip_addr_decrypted`. The allow-list must still drop them if they appear.
 - **Dedupe key** `ts|spotify_track_uri|ms_played`: 25 groups collide (~0.03%). 9 groups are byte-identical rows. In the other 16, the first two rows differ only in `offline_timestamp`, and 1 of those has a further member that differs. In every case it is the same play logged twice, so merging them is correct.
-- Synthetic fixture with this structure (fake values): `src-tauri/tests/fixtures/export_synthetic/`.
+- Synthetic fixture with this structure (fake values): `src-tauri/tests/fixtures/export_synthetic/`. Its music rows hold every seen `reason_start` / `reason_end` value above (24 Oct 2026, M10 WI 3; `insights::terms::SEEN_REASON_*` mirrors the lists and a test checks the fixture against them).
 
 ## Local client data (desktop)
 - Windows media session (SMTC) exposes title, artist, album, album artist, track #, position, duration, play state, shuffle/repeat, thumbnail; **no Spotify URI**, no private-session flag — **Verified**, 2026-10-18, Spotify Store build 1.305.
