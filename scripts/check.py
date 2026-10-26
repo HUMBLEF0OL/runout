@@ -461,16 +461,11 @@ COMMAND_SECTIONS = ["3", "4", "5"]
 # Contract first (API.md §7): commands specified, wrapped in api.ts and mocked before their Rust exists.
 # Each still needs its api.ts export and a mock handler; remove a name once commands.rs registers it
 # (the check fails until you do, so nothing stays pending by accident).
-PENDING_RUST = {  # M10 WI 1 contract (API.md §4.1); Rust in M10 WI 5
-    "get_period_report", "get_trends", "get_discovery", "get_listening_habits", "get_records", "explore", "get_data_coverage",
-}
+PENDING_RUST: set[str] = set()  # M10 saved Explore views: Rust built in WI 5
 
 # Same for new fields of existing commands (api.ts types + mocks first, Rust serde later). Each must be in
 # src/api.ts; the check fails once src-tauri/src mentions it, so the entry gets removed.
-PENDING_RUST_FIELDS = {  # M10 WI 1 contract; Rust in M10 WI 4/5
-    "Settings": ["export_reminder"],
-    "list_plays q": ["date"],                    # not detectable by name in Rust: remove by hand with WI 5
-}
+PENDING_RUST_FIELDS: dict[str, list[str]] = {}
 
 
 def check_commands():
@@ -857,8 +852,7 @@ def check_series_coverage():
     # M10 WI 7 review: a month/day series in API.md §4.1 without a `coverage` class draws a no-data month as an empty
     # column, which reads as silence (API.md §4.1 "gaps ... never silence"). Every such series carries `coverage`.
     api = (ROOT / "docs" / "API.md").read_text(encoding="utf-8")
-    sec = api.split("### 4.1", 1)[-1].split("
-## 5.", 1)[0]
+    sec = api.split("### 4.1", 1)[-1].split("\n## 5.", 1)[0]
     bad = [m.group(0)[:60] for m in re.finditer(r"\{ *(?:month|key|date|day): string[^}]*\}\[\]", sec) if "coverage" not in m.group(0)]
     if bad:
         failures.append("series coverage")

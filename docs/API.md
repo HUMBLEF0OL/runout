@@ -175,6 +175,7 @@ Every definition and threshold: [design/M10-insights-v3.md](design/M10-insights-
 | `get_records` | — | `Covered<Records>` | Records tab; all-time figures use all-device dates only (design §4.4) |
 | `explore` | `query: ExploreQuery` | `Covered<ExploreResult>` | Explore, < 200 ms (NFR-04). `validation` for 0 or more than 3 series, `from` after `to`, or an hour/weekday out of range. A name with no plays gives a series of zeros, not an error |
 | `get_data_coverage` | — | `Covered<DataCoverage>` | Your data tab; `coverage.gaps` = every no-data stretch in the whole history |
+| `list_explore_views` / `save_explore_view` / `delete_explore_view` | — / `name, query: ExploreQuery` / `id` | `ExploreView[]` / `ExploreView` / `void` | Explore's "Save this view" (M10 WI 8), stored in the library DB like saved filters (FR-013): local only, in backups. `save_explore_view` validates `query` like `explore` and the name like `save_filter`; a view holds the builder only, never a result or a fingerprint score |
 
 `get_listening_insights` (above) returns `Covered<ListeningInsights>` from M10: its `coverage` is computed for `range` vs the period before, and `PeriodStats` gains `plays_cmp`/`ms_cmp` so Home's strip and the Insights stat tiles compare like for like (G-46).
 
@@ -293,6 +294,7 @@ interface ExploreResult {
   export_only: boolean;
 }
 
+interface ExploreView { id: number; name: string; query: ExploreQuery }
 interface DataCoverage {
   export: { from: string; to: string; plays: number } | null;
   desktop: { from: string; to: string; plays: number; matched: number } | null;   // matched = desktop plays an export twin covers (counted once)

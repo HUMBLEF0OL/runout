@@ -334,21 +334,8 @@ pub fn is_constant(years_in_top: usize, years: usize) -> bool {
 /// - fading: the 6 months before ≥ 3%, the last 3 ≤ 0.5× that.
 pub fn arc(months: &[(i64, i64)], constant: bool) -> Option<ArcKind> {
     let n = months.len();
-    let share = |i: usize| window_share(&months[i..=i]);
-    let recent_from = n.saturating_sub(ARC_RECENT);
-    if let Some(back) = (recent_from..n).find(|&i| share(i) >= BACK_AGAIN) {
-        // step over recent non-quiet months before the comeback, then count the quiet run
-        let mut end = back;
-        while end > recent_from && share(end - 1) >= BACK_QUIET {
-            end -= 1;
-        }
-        let mut start = end;
-        while start > 0 && share(start - 1) < BACK_QUIET {
-            start -= 1;
-        }
-        if end - start >= BACK_QUIET_MONTHS && months[..start].iter().any(|m| m.0 > 0) {
-            return Some(ArcKind::BackAgain);
-        }
+    if back_again_at(months).is_some() {
+        return Some(ArcKind::BackAgain);
     }
     if n >= ARC_RECENT + ARC_BEFORE {
         let recent = window_share(&months[n - ARC_RECENT..]);
@@ -363,22 +350,53 @@ pub fn arc(months: &[(i64, i64)], constant: bool) -> Option<ArcKind> {
     constant.then_some(ArcKind::Constant)
 }
 
+/// Back again's months: `(first quiet month, comeback month)` as indexes into `months`, or `None`.
+pub fn back_again_at(months: &[(i64, i64)]) -> Option<(usize, usize)> {
+    let n = months.len();
+    let share = |i: usize| window_share(&months[i..=i]);
+    let recent_from = n.saturating_sub(ARC_RECENT);
+    let back = (recent_from..n).find(|&i| share(i) >= BACK_AGAIN)?;
+    // step over recent non-quiet months before the comeback, then count the quiet run
+    let mut end = back;
+    while end > recent_from && share(end - 1) >= BACK_QUIET {
+        end -= 1;
+    }
+    let mut start = end;
+    while start > 0 && share(start - 1) < BACK_QUIET {
+        start -= 1;
+    }
+    (end - start >= BACK_QUIET_MONTHS && months[..start].iter().any(|m| m.0 > 0))
+        .then_some((start, back))
+}
+
 /// "May have taken time from" (estimate): for a fading artist, the others whose share rose most
 /// over the same months (last 3 against the 6 before), up to 3, biggest rise first.
 pub fn took_time_from(fading: &str, artists: &HashMap<String, Vec<(i64, i64)>>) -> Vec<String> {
-    let mut rises: Vec<(f64, &str)> = artists
+    moved_most(fading, artists, true)
+}
+
+/// The others whose share moved most over the arc windows (last 3 months against the 6 before),
+/// up to 3: rose most (`up`: for a fading artist) or fell most (for a rising one, "may have taken
+/// time from").
+pub fn moved_most(
+    artist: &str,
+    artists: &HashMap<String, Vec<(i64, i64)>>,
+    up: bool,
+) -> Vec<String> {
+    let sign = if up { 1.0 } else { -1.0 };
+    let mut moves: Vec<(f64, &str)> = artists
         .iter()
-        .filter(|(a, m)| a.as_str() != fading && m.len() >= ARC_RECENT + ARC_BEFORE)
+        .filter(|(a, m)| a.as_str() != artist && m.len() >= ARC_RECENT + ARC_BEFORE)
         .map(|(a, m)| {
             let n = m.len();
             let rise = window_share(&m[n - ARC_RECENT..])
                 - window_share(&m[n - ARC_RECENT - ARC_BEFORE..n - ARC_RECENT]);
-            (rise, a.as_str())
+            (sign * rise, a.as_str())
         })
         .filter(|(r, _)| *r > 0.0)
         .collect();
-    rises.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(b.1)));
-    rises
+    moves.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(b.1)));
+    moves
         .into_iter()
         .take(TOOK_TIME_TOP)
         .map(|(_, a)| a.to_owned())
@@ -594,6 +612,7 @@ mod tests {
             _ => 0,
         });
         assert_eq!(arc(&back, false), Some(BackAgain));
+        assert_eq!(back_again_at(&back), Some((5, 34))); // quiet from month 5, back in 34
         // the same with nothing before the quiet run is new, not back: rising
         assert_eq!(
             arc(&months(|i| if i == 34 { 30 } else { 0 }), false),
@@ -622,6 +641,8 @@ mod tests {
         .map(|(a, m)| (a.to_owned(), m))
         .collect();
         assert_eq!(took_time_from("fader", &artists), vec!["big", "small"]);
+        // the other way round: who fell most (for a rising artist), the fader first
+        assert_eq!(moved_most("big", &artists, false)[0], "fader");
     }
 
     #[test]

@@ -518,6 +518,168 @@ await step("N2 Discovery states: loading, error, heavy, empty", async () => {
   await discoveryReady("Oct 2026");
 });
 
+/* L — Insights v3 How you listen (M10 WI 7): export-only banner, skips by hour by keyboard, estimates labelled; states */
+const habitsReady = (label) => waitFor(`!!document.querySelector('[aria-label="How you listen in ${label}"]') && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("L1 How you listen: skips by hour answer the keyboard; sessions and deep dives say they're estimates", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/habits?grain=month&at=2026-09&vs=prev` });
+  await habitsReady("Sep 2026");
+  await waitFor(`/cover your export plays/.test(document.querySelector('.banner[role="note"]')?.textContent ?? "")`);
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el) === "Share of plays skipped by hour of day"`, { what: "skips by hour" });
+  await key("Home");
+  await waitFor(`/^00:00: \\d+% of plays skipped$/.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el) === "Sessions by length"`, { what: "sessions by length" });
+  await key("End");
+  await waitFor(`/^4 hours or more: /.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await waitFor(`$$(".card").filter((c) => /An estimate/.test(c.textContent)).length === 2 && txt().includes("Mezzanine, 3 times through")`);
+  await top(); await sleep(1000); // let arrivals settle
+  await shot("L1-how-you-listen");
+});
+await step("L2 How you listen states: loading, error, heavy, empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/habits?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load how you listen/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await habitsReady("Oct 2026");
+  await waitFor(`$$('[aria-label="Share of plays on shuffle by year"] .hm-col').length > 10`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("How you listen pushes the page sideways");
+  await top(); await sleep(1000);
+  await shot("L2-how-you-listen-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await habitsReady("Oct 2026");
+});
+
+/* R — Insights v3 Records (M10 WI 7): record cards as links, a past "on this day" opens Recent plays; Play again; states */
+const recordsReady = () => waitFor(`!!document.querySelector('section[aria-labelledby="rec-h"] .in3-recs') && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("R1 Records: eight records, the estimate labelled; an earlier year on this day opens Recent plays for that date", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/records?grain=month&vs=prev` });
+  await recordsReady();
+  await waitFor(`$$(".in3-recs > *").length === 8 && /an estimate/.test(document.querySelector(".in3-recs").textContent)`);
+  await tabTo(nameStarts("Biggest day: "), { what: "Biggest day record" });
+  await top(); await sleep(1000); // let arrivals settle
+  await shot("R1-records");
+  await tabTo(`el.matches(".in3-otd a")`, { what: "on this day, an earlier year" });
+  const d = await js(`document.activeElement.getAttribute("href")`);
+  await key("Enter");
+  await waitFor(`location.hash === ${JSON.stringify(d)} && /Plays on|No plays that day/.test(txt())`);
+});
+await step("R2 Records states: loading, error, heavy (Play again opens Spotify), empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/records?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load your records/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await recordsReady();
+  await tabTo(`el.matches(".in3-fav a.btn") && /^Play .+ again in Spotify$/.test(nm(el))`, { what: "Play again" });
+  if (!(await js(`document.activeElement.href.startsWith("https://open.spotify.com/") && document.activeElement.target === "_blank"`))) throw new Error("Play again doesn't open Spotify");
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Records pushes the page sideways");
+  await js(`(document.querySelector(".in3-favs").scrollIntoView({ block: "center" }), true)`);
+  await sleep(1000);
+  await shot("R2-records-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await recordsReady();
+});
+
+/* X — Insights v3 Explore (M10 WI 8): scrub the chart, a ready-made question fills the builder, save the view, Copy as CSV */
+const exploreReady = (name = "Hours per month") => waitFor(`!!$$('[role="slider"]').find((e) => nm(e) === ${JSON.stringify(name)}) && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("X1 Explore: chart by arrow keys, a ready-made question fills the builder, Save this view, Copy as CSV", async () => {
+  await send("Browser.grantPermissions", { permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"], origin: APP }).catch(() => {});
+  await send("Page.navigate", { url: `${APP}/#/insights/explore` });
+  await exploreReady();
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el) === "Hours per month"`, { what: "Explore chart" });
+  await key("End");
+  await waitFor(`/^Oct 2026: /.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await key("ArrowLeft");
+  await waitFor(`/^Sep 2026: /.test(document.activeElement.getAttribute("aria-valuetext")) && !!document.querySelector(".in3-dot")`);
+  await tabTo(`el.matches(".in3-q") && /late at night\\?$/.test(nm(el))`, { what: "ready-made question" });
+  await key("Enter");
+  await waitFor(`document.querySelector('select[aria-label="Hours of day, from"]').value === "22" && document.querySelector('select[aria-label="Hours of day, until"]').value === "2"`);
+  await exploreReady();
+  await tabTo(byName("Save this view"), { what: "Save this view" }); await key("Enter");
+  await waitFor(`document.activeElement.getAttribute("aria-label") === "Name for this view"`);
+  await type(" late"); await key("Enter");
+  await toast(/^Saved “.+ late”/);
+  await waitFor(`$$("button").some((b) => /^Delete saved view .+ late$/.test(nm(b)))`);
+  await tabTo(byName("Copy as CSV"), { what: "Copy as CSV" }); await key("Enter");
+  await toast(/Copied \d+ rows as CSV: hours and plays\./);
+  await js(`(document.getElementById("ex-h").scrollIntoView({ block: "start" }), true)`); await sleep(1000);
+  await shot("X1-explore");
+});
+await step("X2 Explore states: loading, error, heavy (export-only note), empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/records?grain=month&vs=prev` }); await sleep(300); // another tab first: a mounted Explore keeps its data
+  await send("Page.navigate", { url: `${APP}/#/insights/explore?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load Explore/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await exploreReady();
+  await tabTo(`el.matches(".in3-q") && /come up on shuffle\\?$/.test(nm(el))`, { what: "shuffle question" }); await key("Enter");
+  await waitFor(`txt().includes("plays on this PC are left out") && txt().includes("Export plays only")`);
+  await exploreReady("Plays per year");
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Explore pushes the page sideways");
+  await js(`(document.getElementById("ex-h").scrollIntoView({ block: "start" }), true)`); await sleep(1000);
+  await shot("X2-explore-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await exploreReady();
+});
+
+/* Y — Insights v3 Your data (M10 WI 8): coverage strip, imports, the reminder and private-session switches (moved from Settings) */
+const dataReady = () => waitFor(`!!document.querySelector('.in3-cov[role="img"]') && !!$$('[role="switch"]').find((e) => nm(e) === "Leave out private-session plays")`, 8000);
+await step("Y1 Your data: sources and gaps, imports; switches by keyboard; the private-session switch left Settings; import entry", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/data?grain=month&vs=prev` });
+  await dataReady();
+  await waitFor(`/^Coverage: Spotify export from .+; desktop log from .+; no data for /.test(nm(document.querySelector(".in3-cov"))) && $$(".in3-imports tbody tr").length >= 1`);
+  await tabTo(`el.getAttribute("role") === "switch" && nm(el) === "Remind me to request a new export"`, { what: "export reminder switch" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === true`);
+  await tabTo(`el.getAttribute("role") === "switch" && nm(el) === "Leave out private-session plays"`, { what: "private-session switch" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === false && txt().includes("Private-session plays count in every insight.")`);
+  await key(" ");
+  await waitFor(`document.activeElement.checked === true && /\\d+ plays? left out of every insight/.test(txt())`);
+  await top(); await sleep(1000);
+  await shot("Y1-your-data");
+  await tabTo(`el.getAttribute("role") === "switch" && nm(el) === "Remind me to request a new export"`, { back: true, what: "export reminder switch" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === false`);
+  await send("Page.navigate", { url: `${APP}/#/settings?tab=logger` });
+  await waitFor(`txt().includes("Log what Spotify plays on this PC")`);
+  if (await js(`$$('[role="switch"]').some((e) => /private/i.test(nm(e)))`)) throw new Error("the private-session switch is still in Settings");
+  await send("Page.navigate", { url: `${APP}/#/insights/data?grain=month&vs=prev` });
+  await dataReady();
+  await activate(`el.matches("a.btn") && ${byName("Import a newer export")}`, { back: true, what: "Import a newer export" });
+  await waitFor(`location.hash === "#/import/1"`);
+});
+await step("Y2 Your data states: loading, error, heavy, empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/data?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load what Runout knows/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await dataReady();
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Your data pushes the page sideways");
+  await top(); await sleep(1000);
+  await shot("Y2-your-data-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await dataReady();
+});
+
 /* G — clean up a playlist */
 await step("G1 check-up highlights duplicates and low ratings", async () => {
   await go("Playlists", "#/playlists");

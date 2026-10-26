@@ -32,7 +32,8 @@ export function brushPeriod(a: string, b: string, today: string): PeriodQuery {
   return { grain: "custom", vs: "prev", at: null, from: lo + "-01", to: to < today ? to : today };
 }
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const longDay = (d: string) => `${WD[new Date(utc(d)).getUTCDay()]} ${day(d + "T00:00")} ${d.slice(0, 4)}`;
+/** "Sat 14 Mar 2026" for a local date (Trends calendar, Records). */
+export const longDay = (d: string) => `${WD[new Date(utc(d)).getUTCDay()]} ${day(d + "T00:00")} ${d.slice(0, 4)}`;
 const shortMonth = (ym: string) => `${monthName(ym)} ${ym.slice(0, 4)}`;
 const span = (a: string, b: string) => (a === b ? shortMonth(a) : `${shortMonth(a)} to ${shortMonth(b)}`);
 /** ES2020 has no Array.findLastIndex. */

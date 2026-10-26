@@ -7,15 +7,15 @@ import { m, stagger, useAnimate, useReducedMotion } from "motion/react";
 import {
   ArrowsClockwiseIcon, BooksIcon, ChartBarIcon, ClockCounterClockwiseIcon, CompassIcon, GearSixIcon, HouseIcon, PlaylistIcon, PlusIcon, QueueIcon, SidebarSimpleIcon,
 } from "@phosphor-icons/react";
-import { getCapture, getCounts, getFreshness, getLoggerStatus, invalidateOnDataEvents, MOCK, onEvent, recordPageVisit, type LoggerStatus } from "../api";
+import { getCapture, getCounts, getFreshness, getLoggerStatus, getSettings, invalidateOnDataEvents, MOCK, onEvent, recordPageVisit, type LoggerStatus } from "../api";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { useShortcuts, type ShortcutAction } from "../hooks/useShortcuts";
-import { fieldButton, freshnessText } from "./logic";
-import { LiveDot } from "./ui";
+import { exportReminderDue, fieldButton, freshnessText, localDay } from "./logic";
+import { LiveDot, useToast } from "./ui";
 import { QuickAddCtx, useQuickAdd, type QuickAddOpts } from "./QuickAddContext";
 import QuickAdd from "./QuickAdd";
-import { pl } from "../lib/format";
+import { day, pl, today } from "../lib/format";
 import { LAND, PRESS } from "../lib/motion";
 import appIcon from "../../src-tauri/icons/icon.svg"; // the app icon master: one source for the rail and the installer
 
@@ -186,6 +186,26 @@ export function Topbar({ children }: { children?: ReactNode }) {
   );
 }
 
+/** Monthly export reminder (Settings.export_reminder, off by default; Insights, Your data): a note on app open, 30 days
+ *  after the last export ends and every 30 days after, once each. Local only: nothing goes online. */
+function useExportReminder() {
+  const toast = useToast();
+  useEffect(() => {
+    let off = false;
+    Promise.all([getSettings(), getFreshness()]).then(([s, f]) => {
+      if (off || !s.export_reminder) return;
+      let shown: string | null = null;
+      try { shown = localStorage.getItem("runout.exportReminder"); } catch { /* private storage: may show again next start */ }
+      const due = exportReminderDue(f.export_latest_event, localDay(today()), shown);
+      if (!due) return;
+      try { localStorage.setItem("runout.exportReminder", due); } catch { /* as above */ }
+      toast(f.export_latest_event ? `Time to ask Spotify for a new export: your last one ends ${day(f.export_latest_event)}. Request it on spotify.com, then import it in Insights, Your data.`
+        : "Ask Spotify for your listening history: request it on spotify.com, then import it in Insights, Your data.");
+    }, () => {});
+    return () => { off = true; };
+  }, [toast]);
+}
+
 export default function Shell() {
   const loc = useLocation();
   const online = useOnline(true); // banner only once offline is known
@@ -194,6 +214,7 @@ export default function Shell() {
   const rail = useRailMini();
   const open = useCallback((o: QuickAddOpts = {}) => setQa(o), []);
   useEffect(invalidateOnDataEvents, []);
+  useExportReminder();
   useEffect(() => onEvent("open-quick-add", () => setQa({})), []); // tray "Quick add" (G-35): Rust shows the window
   useEffect(() => {
     recordPageVisit(loc.pathname.split("/")[1] || "home").catch(() => {});

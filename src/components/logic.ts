@@ -166,3 +166,14 @@ export function vsName(q: PeriodQuery, vsFrom: string | null): string {
   if (q.vs === "last_year") return q.grain === "week" ? "the same week last year" : "the same dates last year";
   return `the ${unit} before`;
 }
+
+/** Export reminder (M10, Settings.export_reminder): due every 30 days from the last export's end. Returns the due date
+ *  when it's due and not yet shown (`shown` = the due date shown last), else null. Local only, never network.
+ *  No export yet: due on the first app open with the switch on, then every 30 days from the last one shown. */
+export function exportReminderDue(exportEnd: string | null, today: string, shown: string | null): string | null {
+  if (!exportEnd || !isDay(exportEnd.slice(0, 10))) return !isDay(shown) ? today : addDays(shown, 30) <= today ? today : null;
+  const end = exportEnd.slice(0, 10), n = Math.floor((Date.parse(today + "T00:00Z") - Date.parse(end + "T00:00Z")) / 86_400_000 / 30);
+  if (n < 1) return null;
+  const due = addDays(end, 30 * n);
+  return due === shown ? null : due;
+}

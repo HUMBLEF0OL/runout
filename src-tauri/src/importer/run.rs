@@ -105,11 +105,14 @@ pub fn apply(tx: &Transaction, l: &Loaded) -> Result<ImportResult> {
         // §4.3.4). Drop the triggers during import instead if perf_listening's import time needs it.
         crate::db::rebuild_rollups(tx)?;
         tx.execute(
+            // already_had: set when the batch is new (record_count still 0), so a refused re-import of the
+            // same files doesn't overwrite it
             "UPDATE import_batch SET
+               already_had = CASE WHEN record_count = 0 THEN ?2 ELSE already_had END,
                record_count = (SELECT count(*) FROM listening_event WHERE import_batch_id = ?1),
                latest_event_utc = (SELECT max(ended_at_utc) FROM listening_event WHERE import_batch_id = ?1)
              WHERE id = ?1",
-            [r.batch_id],
+            params![r.batch_id, r.duplicates as i64],
         )?;
     }
     r.took_ms = l.started.elapsed().as_millis() as u64;
@@ -170,12 +173,20 @@ mod tests {
         let r = run(&mut c, &l).unwrap();
         // 16 music rows (15 Audio + 1 Video), one repeated across the Audio files
         assert_eq!((r.added, r.duplicates, r.playlists), (15, 1, 2));
+        let had = |c: &Connection| {
+            count(
+                c,
+                "SELECT already_had FROM import_batch WHERE kind = 'streaming_history'",
+            )
+        };
+        assert_eq!(had(&c), 1);
         let again = run(&mut c, &load(&fixture()).unwrap()).unwrap();
         assert_eq!(
             (again.added, again.duplicates, again.batch_id),
             (0, 16, r.batch_id)
         );
         assert_eq!(count(&c, "SELECT count(*) FROM listening_event"), 15);
+        assert_eq!(had(&c), 1, "a refused re-import keeps the first count");
         assert_eq!(count(&c, "SELECT count(*) FROM exported_playlist"), 2);
         assert_eq!(count(&c, "SELECT count(*) FROM import_batch"), 2);
         let imports = list_imports(&c).unwrap();

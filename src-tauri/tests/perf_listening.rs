@@ -2,7 +2,9 @@
 //! rows inserted directly (time order, as the logger appends), then a 10-year synthetic export
 //! (TSD §4.8 layout, random values, 200k rows) imported on top. Asserts import < 60 s, filter
 //! results (`list_plays`, `list_unmatched`) < 200 ms and screen loads (insights, year review,
-//! record panel, freshness) < 500 ms ("screen navigation"); keep the DB with `RUNOUT_PERF_KEEP=1`. Run: `cargo test --release -- --ignored perf_listening --nocapture`.
+//! record panel, freshness) < 500 ms ("screen navigation"). M10 WI 5 (design §6): every Insights v3
+//! command < 500 ms per header choice, `explore` < 200 ms, lifetime months < 100 ms. Keep the DB with
+//! `RUNOUT_PERF_KEEP=1`. Run: `cargo test --release -- --ignored perf_listening --nocapture`.
 mod common;
 
 use std::time::{Duration, Instant};
@@ -12,7 +14,12 @@ use rand::RngExt;
 use runout_lib::db;
 use runout_lib::importer::events::{Event, Source, insert};
 use runout_lib::importer::run;
+use runout_lib::insights::explore::{ExploreQuery, data_coverage, explore};
+use runout_lib::insights::habits::{discovery, habits};
+use runout_lib::insights::history::{Measure, history_model, lifetime_months, records, trends};
 use runout_lib::insights::plays::{PlayQuery, Tab, item_listening, list_plays, list_unmatched};
+use runout_lib::insights::report::report;
+use runout_lib::insights::v3::{Ctx, PeriodQuery, Src, daily};
 use runout_lib::insights::{Range, collection::collection, freshness, listening, take::take};
 use rusqlite::Connection;
 
@@ -21,17 +28,26 @@ const EXPORT_YEARS: i32 = 10;
 const EXPORT_PER_YEAR: usize = 20_000; // a heavy listener: ~55 plays a day
 const RUNS: usize = 5;
 
-/// Slowest of `RUNS` runs after one warm-up.
+/// Slowest of `RUNS` runs (or `RUNOUT_PERF_RUNS`) after one warm-up.
 fn worst<T>(mut f: impl FnMut() -> T) -> Duration {
-    f();
-    (0..RUNS)
+    // RUNOUT_PERF_RUNS=0: one cold run, for a quick look
+    let runs = std::env::var("RUNOUT_PERF_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(RUNS);
+    if runs > 0 {
+        f();
+    }
+    let d = (0..runs.max(1))
         .map(|_| {
             let t = Instant::now();
             f();
             t.elapsed()
         })
         .max()
-        .unwrap()
+        .unwrap();
+    eprintln!("  {d:?}");
+    d
 }
 
 struct Track {
@@ -195,6 +211,46 @@ fn perf_listening() {
         .unwrap();
     assert_eq!(total, (EVENTS + rows) as i64);
 
+    let slow = reads(&conn);
+    drop(conn);
+    if std::env::var_os("RUNOUT_PERF_KEEP").is_some() {
+        println!("kept {}", dir.display());
+    } else {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    assert!(slow.is_empty(), "over target: {slow:?}");
+}
+
+/// The reads alone on a kept reference DB (`RUNOUT_PERF_KEEP=1` prints its folder):
+/// `RUNOUT_PERF_DB=<folder>\library.db cargo test --release -- --ignored perf_reads --nocapture`.
+#[test]
+#[ignore]
+fn perf_reads() {
+    let Some(p) = std::env::var_os("RUNOUT_PERF_DB") else {
+        return;
+    };
+    let conn = db::open(std::path::Path::new(&p)).unwrap();
+    let slow = reads(&conn);
+    assert!(slow.is_empty(), "over target: {slow:?}");
+}
+
+/// Timed reads; `RUNOUT_PERF_ONLY=<text>` runs only the names containing it.
+struct Checks {
+    only: Option<String>,
+    v: Vec<(String, Duration)>,
+}
+
+impl Checks {
+    fn run<T>(&mut self, name: impl Into<String>, f: impl FnMut() -> T) {
+        let name = name.into();
+        if self.only.as_ref().is_none_or(|o| name.contains(o.as_str())) {
+            self.v.push((name, worst(f)));
+        }
+    }
+}
+
+/// Every read with its target; returns the names over target.
+fn reads(conn: &Connection) -> Vec<String> {
     // 3. Every API.md §4 read < 200 ms over the full table.
     let now = Utc.with_ymd_and_hms(2025, 12, 31, 12, 0, 0).unwrap();
     let busiest: i64 = conn
@@ -206,22 +262,22 @@ fn perf_listening() {
         )
         .unwrap();
     let ranges = [Range::Week, Range::Month, Range::Year, Range::All];
-    let mut checks: Vec<(String, Duration)> = Vec::new();
+    let mut checks = Checks {
+        only: std::env::var("RUNOUT_PERF_ONLY").ok(),
+        v: Vec::new(),
+    };
     for range in ranges {
-        checks.push((
-            format!("listening {range:?}"),
-            worst(|| listening::listening(&conn, range, false, now).unwrap()),
-        ));
-        checks.push((
-            format!("collection {range:?}"),
-            worst(|| collection(&conn, range, now).unwrap()),
-        ));
+        checks.run(format!("listening {range:?}"), || {
+            listening::listening(conn, range, false, now).unwrap()
+        });
+        checks.run(format!("collection {range:?}"), || {
+            collection(conn, range, now).unwrap()
+        });
     }
-    checks.push(("take".into(), worst(|| take(&conn, false, now).unwrap())));
-    checks.push((
-        "year_review 2024".into(),
-        worst(|| listening::year_review(&conn, 2024, false).unwrap()),
-    ));
+    checks.run("take", || take(conn, false, now).unwrap());
+    checks.run("year_review 2024", || {
+        listening::year_review(conn, 2024, false).unwrap()
+    });
     for tab in [Tab::All, Tab::Unrated, Tab::Missing] {
         for range in [Range::Month, Range::All] {
             let q = PlayQuery {
@@ -229,21 +285,17 @@ fn perf_listening() {
                 range,
                 offset: 0,
                 limit: 50,
+                date: None,
             };
-            checks.push((
-                format!("list_plays {tab:?} {range:?}"),
-                worst(|| list_plays(&conn, &q, false, now).unwrap()),
-            ));
+            checks.run(format!("list_plays {tab:?} {range:?}"), || {
+                list_plays(conn, &q, false, now).unwrap()
+            });
         }
     }
-    checks.push((
-        "list_unmatched".into(),
-        worst(|| list_unmatched(&conn, false).unwrap()),
-    ));
-    checks.push((
-        "get_item_listening (busiest)".into(),
-        worst(|| item_listening(&conn, busiest, false, now).unwrap()),
-    ));
+    checks.run("list_unmatched", || list_unmatched(conn, false).unwrap());
+    checks.run("get_item_listening (busiest)", || {
+        item_listening(conn, busiest, false, now).unwrap()
+    });
     let artist: i64 = conn
         .query_row(
             "SELECT to_id FROM item_link WHERE from_id = ?1 AND kind = 'by_artist'",
@@ -251,25 +303,130 @@ fn perf_listening() {
             |r| r.get(0),
         )
         .unwrap();
-    checks.push((
-        "get_item_listening (its artist)".into(),
-        worst(|| item_listening(&conn, artist, false, now).unwrap()),
-    ));
-    checks.push(("get_freshness".into(), worst(|| freshness(&conn).unwrap())));
+    checks.run("get_item_listening (its artist)", || {
+        item_listening(conn, artist, false, now).unwrap()
+    });
+    checks.run("get_freshness", || freshness(conn).unwrap());
+
+    // 4. Insights v3 (M10 WI 5): each header choice of the period tabs, the whole-history tabs,
+    // Explore (filter result: < 200 ms) and lifetime months (< 100 ms).
+    let cx = Ctx {
+        conn,
+        include_private: false,
+        tz: &Utc,
+        now,
+    };
+    let q = |v: serde_json::Value| -> PeriodQuery { serde_json::from_value(v).unwrap() };
+    let periods = [
+        (
+            "week prev",
+            q(serde_json::json!({"grain": "week", "vs": "prev", "at": null})),
+        ),
+        (
+            "week usual",
+            q(serde_json::json!({"grain": "week", "vs": "usual", "at": null})),
+        ),
+        (
+            "month prev",
+            q(serde_json::json!({"grain": "month", "vs": "prev", "at": null})),
+        ),
+        (
+            "month last_year",
+            q(serde_json::json!({"grain": "month", "vs": "last_year", "at": "2025-06"})),
+        ),
+        (
+            "month usual",
+            q(serde_json::json!({"grain": "month", "vs": "usual", "at": null})),
+        ),
+        (
+            "year prev",
+            q(serde_json::json!({"grain": "year", "vs": "prev", "at": null})),
+        ),
+        (
+            "year usual",
+            q(serde_json::json!({"grain": "year", "vs": "usual", "at": null})),
+        ),
+        (
+            "all",
+            q(serde_json::json!({"grain": "all", "vs": "prev", "at": null})),
+        ),
+        (
+            "custom 90 d",
+            q(
+                serde_json::json!({"grain": "custom", "vs": "prev", "at": null, "from": "2025-09-01", "to": "2025-11-29"}),
+            ),
+        ),
+    ];
+    for (name, p) in &periods {
+        checks.run(format!("v3 period_report {name}"), || {
+            report(&cx, p).unwrap()
+        });
+        checks.run(format!("v3 discovery {name}"), || {
+            discovery(&cx, p).unwrap()
+        });
+        checks.run(format!("v3 habits {name}"), || habits(&cx, p).unwrap());
+    }
+    for m in [Measure::Hours, Measure::Artists] {
+        checks.run(format!("v3 trends {m:?}"), || trends(&cx, m).unwrap());
+    }
+    checks.run("v3 records", || records(&cx).unwrap());
+    checks.run("v3 data_coverage", || data_coverage(&cx).unwrap());
+    let today = now.date_naive();
+    let first = runout_lib::insights::coverage::first_day(conn)
+        .unwrap()
+        .unwrap();
+    checks.run("v3 lifetime months", || {
+        let model = history_model(&cx, first, today).unwrap();
+        let days = daily(&cx, Src::All, (first, today)).unwrap();
+        lifetime_months(&cx, Measure::Artists, &days, &model, first, today).unwrap()
+    });
+    let names: Vec<(String, String)> = conn
+        .prepare("SELECT artist_name, track_name FROM listening_event WHERE counts_as_play GROUP BY lower(artist_name) ORDER BY count(*) DESC LIMIT 2")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let explores = [
+        (
+            "artist 10 y month hours",
+            serde_json::json!({"series": [{"kind": "artist", "name": names[0].0}],
+            "from": "2016-01-01", "to": "2025-12-31", "grain": "month", "measure": "hours"}),
+        ),
+        (
+            "3 series 10 y week share",
+            serde_json::json!({"series": [{"kind": "artist", "name": names[0].0},
+            {"kind": "track", "name": names[1].1, "by": names[1].0}, {"kind": "album", "name": "no such album"}],
+            "from": "2016-01-01", "to": "2025-12-31", "grain": "week", "measure": "share"}),
+        ),
+        (
+            "filtered 10 y year plays",
+            serde_json::json!({"series": [{"kind": "artist", "name": names[1].0}],
+            "from": "2016-01-01", "to": "2025-12-31", "grain": "year", "measure": "plays",
+            "hours": [20, 21, 22, 23], "weekdays": [6, 7], "devices": ["computer"], "shuffle": true}),
+        ),
+    ];
+    for (name, v) in explores {
+        let eq: ExploreQuery = serde_json::from_value(v).unwrap();
+        checks.run(format!("list_ explore {name}"), || {
+            explore(&cx, &eq).unwrap()
+        });
+    }
+
     let mut slow = Vec::new();
-    for (name, d) in &checks {
+    for (name, d) in &checks.v {
         let filter = name.starts_with("list_");
-        let limit = Duration::from_millis(if filter { 200 } else { 500 });
+        let limit = Duration::from_millis(if filter {
+            200
+        } else if name == "v3 lifetime months" {
+            100
+        } else {
+            500
+        });
         println!("{name}: worst {d:?} (target {limit:?})");
         if *d >= limit {
-            slow.push(name);
+            slow.push(name.clone());
         }
     }
-    drop(conn);
-    if std::env::var_os("RUNOUT_PERF_KEEP").is_some() {
-        println!("kept {}", dir.display());
-    } else {
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-    assert!(slow.is_empty(), "over target: {slow:?}");
+    slow
 }

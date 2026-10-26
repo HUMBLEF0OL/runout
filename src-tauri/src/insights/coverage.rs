@@ -78,11 +78,18 @@ fn show(d: NaiveDate) -> String {
 
 /// One event's local date: the first (`ASC`) or last (`DESC`) by end time where `filter` holds.
 fn edge(conn: &Connection, filter: &str, order: &str) -> Result<Option<NaiveDate>> {
+    // Export rows have no partial index: without the hint the bundled SQLite scans and sorts every
+    // row (600 ms at 500k events, kb/perf-integrity.md); walking the time index stops at the first.
+    let hint = if filter.contains("'export'") {
+        "INDEXED BY listening_event_ended"
+    } else {
+        ""
+    };
     Ok(conn
         .query_row(
             // unfiltered: coverage counts every stored row (private and reconciled plays still show a source covered the date)
             &format!(
-                "SELECT {LOCAL_DAY} FROM listening_event WHERE {filter} ORDER BY ended_at_utc {order} LIMIT 1"
+                "SELECT {LOCAL_DAY} FROM listening_event {hint} WHERE {filter} ORDER BY ended_at_utc {order} LIMIT 1"
             ),
             [],
             |r| Ok(date(&r.get::<_, String>(0)?, &r.get::<_, String>(1)?)),
@@ -95,6 +102,17 @@ fn utc_time(s: &str) -> Option<DateTime<Utc>> {
     s.get(..19)
         .and_then(|s| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").ok())
         .map(|t| t.and_utc())
+}
+
+/// The first event's local date, any source (listening starts here).
+pub fn first_day(conn: &Connection) -> Result<Option<NaiveDate>> {
+    Ok([
+        edge(conn, "source = 'export'", "ASC")?,
+        edge(conn, "source = 'logger'", "ASC")?,
+    ]
+    .into_iter()
+    .flatten()
+    .min())
 }
 
 impl Model {
@@ -180,6 +198,12 @@ impl Model {
         } else {
             CoverageClass::NoData
         }
+    }
+
+    /// The desktop logger ran on `d` (a date in the loaded window on or after the export's first).
+    /// A period past the last export counts plays on this PC only; then this is its coverage.
+    pub fn ran(&self, d: NaiveDate) -> bool {
+        self.pc_days.contains(&d)
     }
 
     /// The no-data stretches in `from..=to`, from the first event up to `today` (before it there is
@@ -302,25 +326,42 @@ pub(crate) fn compared(cov: &Coverage, include_private: bool) -> Option<String> 
     ))
 }
 
-/// Export batches and their plays' local date range, oldest first (Your data, design §4.4).
+//// Export batches and their plays' local date range, oldest first (Your data, design §4.4). One
+/// unsorted pass (NFR-04: SQL groups by batch with a sort of every export row).
 pub fn export_batches(conn: &Connection) -> Result<Vec<Batch>> {
     let mut st = conn.prepare(
         // unfiltered: the import history lists every stored export row
-        "SELECT import_batch_id, MIN(l), MAX(l), SUM(counts_as_play) FROM (SELECT *, substr(COALESCE(
-           ended_at_local, substr(ended_at_utc, 1, 19)), 1, 10) AS l FROM listening_event WHERE source = 'export')
-         GROUP BY 1 ORDER BY 2, 1",
+        "SELECT import_batch_id, substr(COALESCE(ended_at_local, substr(ended_at_utc, 1, 19)), 1, 10),
+                counts_as_play FROM listening_event WHERE source = 'export'",
     )?;
-    let rows = st.query_map([], |r| {
-        Ok((
+    let mut by: std::collections::HashMap<Option<i64>, (String, String, i64)> =
+        std::collections::HashMap::new();
+    let mut rows = st.query([])?;
+    while let Some(r) = rows.next()? {
+        let (id, l, play) = (
             r.get::<_, Option<i64>>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, i64>(3)?,
-        ))
-    })?;
+            super::text(r, 1)?,
+            r.get::<_, i64>(2)?,
+        );
+        match by.get_mut(&id) {
+            Some(b) => {
+                if l < b.0.as_str() {
+                    b.0 = l.to_owned();
+                }
+                if l > b.1.as_str() {
+                    b.1 = l.to_owned();
+                }
+                b.2 += play;
+            }
+            None => {
+                by.insert(id, (l.to_owned(), l.to_owned(), play));
+            }
+        }
+    }
+    let mut groups: Vec<(Option<i64>, (String, String, i64))> = by.into_iter().collect();
+    groups.sort_by(|a, b| a.1.0.cmp(&b.1.0).then_with(|| a.0.cmp(&b.0)));
     let mut out = vec![];
-    for r in rows {
-        let (id, a, b, plays) = r?;
+    for (id, (a, b, plays)) in groups {
         if let (Some(from), Some(to)) = (date(&a, ""), date(&b, "")) {
             out.push(Batch {
                 id,

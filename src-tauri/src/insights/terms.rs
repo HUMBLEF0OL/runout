@@ -305,8 +305,9 @@ pub enum Period {
 /// Local dates `from..=to`.
 pub type Span = (NaiveDate, NaiveDate);
 
-/// Comparison: previous (the period before), same last year, usual.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Comparison: previous (the period before), same last year, usual (API.md §4.1 `Compare`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Compare {
     Prev,
     LastYear,
@@ -408,13 +409,14 @@ pub struct FirstHeard {
     pub end: DateTime<Utc>,
     pub local: NaiveDateTime,
     pub track: String,
+    pub source: Source,
 }
 
 /// First heard, per artist, from the 0008 rollup (with private sessions included, the earlier of
 /// the two rows). Newest first.
 pub fn first_heard(conn: &Connection, include_private: bool) -> Result<Vec<FirstHeard>> {
     let sql = format!(
-        "{} SELECT a.artist, e.artist_name, e.ended_at_utc, e.local, IFNULL(e.track_name, ''), e.id
+        "{} SELECT a.artist, e.artist_name, e.ended_at_utc, e.local, IFNULL(e.track_name, ''), e.source
          FROM artist_first_play a JOIN base e ON e.id = a.event_id
          ORDER BY e.ended_at_utc, e.id",
         base(include_private)
@@ -430,6 +432,11 @@ pub fn first_heard(conn: &Connection, include_private: bool) -> Result<Vec<First
             end,
             local,
             track: r.get(4)?,
+            source: if r.get::<_, String>(5)? == "export" {
+                Source::Export
+            } else {
+                Source::Logger
+            },
         })
     })? {
         let f = r?;
@@ -453,9 +460,19 @@ pub fn new_artists(first: &[FirstHeard], from: NaiveDate, to: NaiveDate) -> Vec<
 /// Stick: ≥ 3 plays in the 90 days that start 30 days after the first play. `None` while that
 /// window hasn't ended at `now` (estimate; labelled).
 pub fn stuck(first: NaiveDateTime, plays: &[NaiveDateTime], now: NaiveDateTime) -> Option<bool> {
+    let (a, b) = stick_window(first);
+    stuck_by(b, plays.iter().filter(|t| (a..b).contains(*t)).count(), now)
+}
+
+/// The stick window `[a, b)` after a first play.
+pub fn stick_window(first: NaiveDateTime) -> (NaiveDateTime, NaiveDateTime) {
     let a = first + TimeDelta::days(STICK_AFTER_DAYS);
-    let b = a + TimeDelta::days(STICK_WINDOW_DAYS);
-    (now >= b).then(|| plays.iter().filter(|t| (a..b).contains(*t)).count() >= STICK_PLAYS)
+    (a, a + TimeDelta::days(STICK_WINDOW_DAYS))
+}
+
+/// Stuck, from the count of plays inside a window ending at `end`: `None` until it has.
+pub fn stuck_by(end: NaiveDateTime, plays_in_window: usize, now: NaiveDateTime) -> Option<bool> {
+    (now >= end).then_some(plays_in_window >= STICK_PLAYS)
 }
 
 /// Stick rate: % of new artists (window over) that stuck; `None` when no window is over yet.
@@ -594,7 +611,9 @@ pub fn kind_shares<K: Ord + Copy>(evs: &[Ev], kind: impl Fn(&Ev) -> Option<K>) -
     n.into_iter().map(|(k, c)| (k, pct(c, total))).collect()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceClass {
     Phone,
@@ -623,6 +642,21 @@ pub fn device(source: Source, platform: Option<&str>) -> DeviceClass {
     }
 }
 
+/// `device()` as SQL over `source` / `platform`, for Explore's device filter. Fixed SQL only.
+pub fn device_sql(d: DeviceClass) -> &'static str {
+    match d {
+        DeviceClass::ThisPc => "source = 'logger'",
+        DeviceClass::Phone => "(source = 'export' AND (lower(trim(IFNULL(platform, ''))) LIKE 'android%' OR lower(trim(IFNULL(platform, ''))) LIKE 'ios%'))",
+        DeviceClass::Computer => "(source = 'export' AND (lower(trim(IFNULL(platform, ''))) LIKE 'windows%' OR lower(trim(IFNULL(platform, ''))) LIKE 'osx%' OR lower(trim(IFNULL(platform, ''))) LIKE 'linux%'))",
+        DeviceClass::Web => "(source = 'export' AND lower(trim(IFNULL(platform, ''))) LIKE 'web%')",
+        DeviceClass::Other => {
+            "(source = 'export' AND NOT (lower(trim(IFNULL(platform, ''))) LIKE 'android%' OR lower(trim(IFNULL(platform, ''))) LIKE 'ios%'
+               OR lower(trim(IFNULL(platform, ''))) LIKE 'windows%' OR lower(trim(IFNULL(platform, ''))) LIKE 'osx%'
+               OR lower(trim(IFNULL(platform, ''))) LIKE 'linux%' OR lower(trim(IFNULL(platform, ''))) LIKE 'web%'))"
+        }
+    }
+}
+
 // ---------- Fingerprint (0–100 each; on screen only, never exported or shared)
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -646,19 +680,48 @@ pub fn fingerprint(
     new: &HashSet<String>,
     known: &HashSet<String>,
 ) -> Fingerprint {
-    let total = listening_ms(evs) as f64;
     let mut by_artist: HashMap<String, i64> = HashMap::new();
     for e in evs.iter().filter(|e| !e.artist.is_empty()) {
         *by_artist.entry(artist_key(&e.artist)).or_default() += e.ms;
     }
-    let mut times: Vec<i64> = by_artist.values().copied().collect();
+    let plays: Vec<&Ev> = evs.iter().filter(|e| is_play(e)).collect();
+    fingerprint_of(&FpParts {
+        ms: listening_ms(evs),
+        new_ms: by_artist
+            .iter()
+            .filter(|(a, _)| new.contains(*a))
+            .map(|(_, ms)| ms)
+            .sum(),
+        artist_ms: by_artist.into_values().collect(),
+        days_listened: days_listened(evs).len() as i64,
+        covered_days,
+        plays: plays.len() as i64,
+        repeat_plays: plays.iter().filter(|e| known.contains(&e.norm_key)).count() as i64,
+    })
+}
+
+/// A period's totals the fingerprint needs (the commands sum them in SQL, NFR-04).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FpParts {
+    /// Listening time, all events.
+    pub ms: i64,
+    /// Listening time per artist (events with an artist name).
+    pub artist_ms: Vec<i64>,
+    /// Time on the period's new artists.
+    pub new_ms: i64,
+    pub days_listened: i64,
+    pub covered_days: i64,
+    pub plays: i64,
+    /// Plays of tracks played before the period.
+    pub repeat_plays: i64,
+}
+
+/// The five measures from a period's totals (`fingerprint` is this over loaded events).
+pub fn fingerprint_of(p: &FpParts) -> Fingerprint {
+    let total = p.ms as f64;
+    let mut times = p.artist_ms.clone();
     times.sort_unstable_by(|a, b| b.cmp(a));
     let top: i64 = times.iter().take(FOCUS_TOP).sum();
-    let on_new: i64 = by_artist
-        .iter()
-        .filter(|(a, _)| new.contains(*a))
-        .map(|(_, ms)| ms)
-        .sum();
     let artist_total: f64 = times.iter().sum::<i64>() as f64;
     let entropy: f64 = times
         .iter()
@@ -673,14 +736,12 @@ pub fn fingerprint(
     } else {
         0.0
     };
-    let plays: Vec<&Ev> = evs.iter().filter(|e| is_play(e)).collect();
-    let again = plays.iter().filter(|e| known.contains(&e.norm_key)).count();
     Fingerprint {
-        regularity: score(div(days_listened(evs).len() as f64, covered_days as f64)),
-        discovery: score(div(on_new as f64, total)),
+        regularity: score(div(p.days_listened as f64, p.covered_days as f64)),
+        discovery: score(div(p.new_ms as f64, total)),
         focus: score(div(top as f64, total)),
         variety: score(variety),
-        repeat: score(div(again as f64, plays.len() as f64)),
+        repeat: score(div(p.repeat_plays as f64, p.plays as f64)),
     }
 }
 
@@ -784,59 +845,55 @@ pub fn top_tags(
     to: NaiveDate,
     n: usize,
 ) -> Result<(Vec<TagShare>, f64)> {
-    let sql = format!(
-        "{}{SRC}, ev AS (SELECT id, item_id, ms_played FROM base WHERE {})
-         SELECT (SELECT IFNULL(SUM(ms_played), 0) FROM ev),
-                ev.id, ev.ms_played, t.name
-         FROM ev JOIN src ON src.s = ev.item_id JOIN item_tag it ON it.item_id = src.t
-         JOIN tag t ON t.id = it.tag_id
-         GROUP BY ev.id, t.id",
+    // per record first, then its tags (NFR-04: a tag join per play is far slower)
+    let mut st = conn.prepare(&format!(
+        "{} SELECT item_id, SUM(ms_played) FROM base WHERE {} GROUP BY +item_id",
         base(include_private),
         local_between()
-    );
-    let mut st = conn.prepare(&sql)?;
-    let (mut total, mut tagged) = (0i64, HashMap::<i64, i64>::new());
-    let mut by_tag: HashMap<String, i64> = HashMap::new();
+    ))?;
+    let tags = item_tags(conn)?;
+    let (mut total, mut tagged) = (0i64, 0i64);
+    let mut by_tag: HashMap<&str, i64> = HashMap::new();
     for r in st.query_map([day(from), day(to)], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, i64>(1)?,
-            r.get::<_, i64>(2)?,
-            r.get::<_, String>(3)?,
-        ))
+        Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, i64>(1)?))
     })? {
-        let (all, id, ms, tag) = r?;
-        total = all;
-        tagged.insert(id, ms);
-        *by_tag.entry(tag).or_default() += ms;
+        let (id, ms) = r?;
+        total += ms;
+        if let Some(ts) = id.and_then(|id| tags.get(&id)) {
+            tagged += ms;
+            for t in ts {
+                *by_tag.entry(t.as_str()).or_default() += ms;
+            }
+        }
     }
-    let tagged: i64 = tagged.values().sum();
-    let mut rows: Vec<(String, i64)> = by_tag.into_iter().collect();
-    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let mut rows: Vec<(&str, i64)> = by_tag.into_iter().collect();
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
     let rows = rows
         .into_iter()
         .take(n)
         .map(|(tag, ms)| TagShare {
-            tag,
+            tag: tag.to_owned(),
             share_pct: pct(ms, tagged),
         })
         .collect();
-    if total == 0 {
-        // no tagged row returned the total: count it directly
-        total = conn.query_row(
-            &format!(
-                "{} SELECT IFNULL(SUM(ms_played), 0) FROM base WHERE {}",
-                base(include_private),
-                local_between()
-            ),
-            [day(from), day(to)],
-            |r| r.get(0),
-        )?;
-    }
     Ok((rows, pct(tagged, total)))
 }
 
-/// Test events: export, local = UTC, a play unless `ms` says otherwise.
+/// Each record's tags: its own, its album's and artist's (`insights::SRC`), each tag once.
+pub fn item_tags(conn: &Connection) -> Result<HashMap<i64, Vec<String>>> {
+    let mut st = conn.prepare(&format!(
+        "WITH x AS (SELECT 1){SRC} SELECT DISTINCT src.s, t.id, t.name FROM src
+         JOIN item_tag it ON it.item_id = src.t JOIN tag t ON t.id = it.tag_id"
+    ))?;
+    let mut out: HashMap<i64, Vec<String>> = HashMap::new();
+    for r in st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(2)?)))? {
+        let (id, name) = r?;
+        out.entry(id).or_default().push(name);
+    }
+    Ok(out)
+}
+
+// Test events: export, local = UTC, a play unless `ms` says otherwise.
 #[cfg(test)]
 pub(crate) fn ev(local: &str, ms: i64, artist: &str, track: &str) -> Ev {
     let t = NaiveDateTime::parse_from_str(local, "%Y-%m-%dT%H:%M:%S").unwrap();
@@ -1015,6 +1072,7 @@ mod tests {
             end: t(at).and_utc(),
             local: t(at),
             track: "x".into(),
+            source: Source::Export,
         };
         let first = [
             f("old", "2025-12-31T23:00:00"),
@@ -1191,6 +1249,43 @@ mod tests {
         assert_eq!(x(""), Other);
         assert_eq!(device(Source::Export, None), Other);
         assert_eq!(device(Source::Logger, Some("windows")), ThisPc);
+        // the SQL twin (Explore) puts every value in the same class
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        for (src, p) in [
+            ("export", Some("windows")),
+            ("export", Some(" Windows 10 (x64)")),
+            ("export", Some("osx")),
+            ("export", Some("linux")),
+            ("export", Some("android")),
+            ("export", Some("iOS 17.1 (iPhone15,2)")),
+            ("export", Some("web_player windows")),
+            ("export", Some("webplayer")),
+            ("export", Some("unknown")),
+            ("export", Some("")),
+            ("export", None),
+            ("logger", Some("windows")),
+        ] {
+            let s = if src == "export" {
+                Source::Export
+            } else {
+                Source::Logger
+            };
+            let hits: Vec<DeviceClass> = [Phone, Computer, Web, ThisPc, Other]
+                .into_iter()
+                .filter(|d| {
+                    c.query_row(
+                        &format!(
+                            "SELECT {} FROM (SELECT ?1 AS source, ?2 AS platform)",
+                            device_sql(*d)
+                        ),
+                        rusqlite::params![src, p],
+                        |r| r.get::<_, bool>(0),
+                    )
+                    .unwrap()
+                })
+                .collect();
+            assert_eq!(hits, vec![device(s, p)], "{src} {p:?}");
+        }
     }
 
     #[test]

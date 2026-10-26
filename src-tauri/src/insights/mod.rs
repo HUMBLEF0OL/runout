@@ -9,11 +9,18 @@ use crate::error::Result;
 
 pub mod collection;
 pub mod coverage;
+pub mod explore;
+pub mod habits;
 pub mod heuristics;
+pub mod history;
 pub mod listening;
 pub mod plays;
+pub mod report;
 pub mod take;
 pub mod terms;
+pub mod v3;
+#[cfg(test)]
+mod v3_tests;
 
 /// API.md §2 `Range`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -422,6 +429,7 @@ mod tests {
                                 range: Range::All,
                                 offset: 0,
                                 limit: 50,
+                                date: None,
                             };
                             list_plays(&c, &q, p, now).unwrap()
                         })
@@ -494,6 +502,7 @@ mod tests {
                     range: r,
                     offset: 0,
                     limit: 50,
+                    date: None,
                 };
                 out += &format!(
                     "{:?}{:?}{:?}",
@@ -526,4 +535,14 @@ mod tests {
         all(&c, Some(1));
         all(&c, Some(2));
     }
+}
+
+/// A text column without a copy (NFR-04 row passes); NULL is an error.
+pub(crate) fn text<'a>(r: &'a rusqlite::Row, i: usize) -> rusqlite::Result<&'a str> {
+    r.get_ref(i)?.as_str().map_err(Into::into)
+}
+
+/// A nullable text column without a copy.
+pub(crate) fn text_opt<'a>(r: &'a rusqlite::Row, i: usize) -> rusqlite::Result<Option<&'a str>> {
+    r.get_ref(i)?.as_str_or_null().map_err(Into::into)
 }

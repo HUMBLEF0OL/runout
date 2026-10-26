@@ -16,6 +16,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0006_added_via_inbox.sql"),
     include_str!("../../migrations/0007_backlog_history.sql"),
     include_str!("../../migrations/0008_listening_v3.sql"),
+    include_str!("../../migrations/0009_import_already_had.sql"),
+    include_str!("../../migrations/0010_explore_view.sql"),
 ];
 
 /// Schema version a fully migrated library has.
@@ -304,7 +306,7 @@ mod tests {
         )
         .unwrap();
         migrate(&mut c).unwrap();
-        assert_eq!(version(&c), 8);
+        assert_eq!(version(&c), SCHEMA_VERSION);
         let q = |sql: &str| -> String {
             let mut st = c.prepare(sql).unwrap();
             let n = st.column_count();

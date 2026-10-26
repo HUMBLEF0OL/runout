@@ -72,7 +72,7 @@ pub struct YearReview {
 const TOP: usize = 10;
 
 #[derive(Clone, Copy)]
-enum Kind {
+pub(crate) enum Kind {
     Artist,
     Album,
     Track,
@@ -80,7 +80,7 @@ enum Kind {
 
 /// Top rows by listening time over `cte` (`base` or `rollup`) where `filter` (fixed SQL, one
 /// bound param `?1`) holds.
-fn rank(
+pub(crate) fn rank(
     conn: &Connection,
     cte: &str,
     kind: Kind,

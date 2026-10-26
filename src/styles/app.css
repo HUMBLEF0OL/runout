@@ -590,4 +590,68 @@ a.card { display: flex; }
 .in3-log tbody tr { transition: background 150ms; }
 .in3-log tbody tr:hover { background: var(--color-surface-2); }
 .in3-log tbody tr:last-child > * { border-bottom: 0; }
+/* ---------- Insights v3 Records (M10 WI 7): eight record cards (4 across on wide windows, else 2; never 5 + 3), a card that
+   goes somewhere is a link (hover lift from .card.stat), on this day as linked days, forgotten favourites in two columns. */
+.in3-recs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 1360px) { .in3-recs { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.in3-rec { display: flex; color: inherit; text-decoration: none; border-radius: var(--radius-card); }
+.in3-rec > .card { flex: 1; }
+.in3-otd { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 12px; margin: 0 -10px; padding: 0; list-style: none; }
+.in3-otd a { display: flex; flex-direction: column; gap: 3px; height: 100%; padding: 10px; border-radius: var(--radius-control); color: var(--color-text); text-decoration: none; font-size: 13px; transition: background 150ms; }
+.in3-otd a:hover { background: var(--color-surface-2); }
+.in3-favs { columns: 2 320px; column-gap: 24px; margin: 0; padding: 0; list-style: none; }
+.in3-fav { display: flex; gap: 12px; justify-content: space-between; align-items: center; break-inside: avoid; margin-inline: -6px; padding: 8px 6px; border-radius: var(--radius-thumb); font-size: 14px; transition: background 150ms; }
+.in3-fav:hover { background: var(--color-surface-2); }
+/* ---------- Insights v3 Explore + Your data (M10 WI 8): the builder rows, a line chart you scrub (one crosshair, dots in the
+   series colours: accent, text, text-2 dashed, no new colours), the table in a scroll box, ready-made questions as rows,
+   and the coverage strip (export bar grey, desktop log accent tint, a no-data gap hatched in danger, never silence). */
+.in3-qb { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px; border: var(--hair); border-radius: var(--radius-control); background: var(--color-surface-2); }
+.in3-qb .lbl { font-size: 12px; color: var(--color-muted); }
+.in3-qb .chip { background: var(--color-surface); }
+.in3-qb .chip.on { background: var(--color-accent); }
+.in3-qb .chip.add { background: transparent; }
+.in3-qb .seg { background: var(--color-surface); }
+.in3-days { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.in3-x { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-right: -4px; border: 0; border-radius: var(--radius-bar); background: transparent; color: var(--color-text-2); cursor: pointer; transition: background 150ms, color 150ms; }
+.in3-x:hover { background: var(--color-surface-hover); color: var(--color-text); }
+.in3-sw { display: inline-block; width: 10px; height: 3px; border-radius: var(--radius-bar); background: var(--color-accent); }
+.in3-sw.s1 { background: var(--color-text); }
+.in3-sw.s2 { background: repeating-linear-gradient(90deg, var(--color-text-2) 0 3px, transparent 3px 5px); }
+.in3-key .in3-sw { margin-right: 6px; vertical-align: middle; }
+.in3-xplot { position: relative; height: 220px; border-radius: var(--radius-thumb); touch-action: none; cursor: crosshair; }
+.in3-xplot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.in3-xplot polyline { fill: none; stroke: var(--color-accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.in3-xplot polyline.s1 { stroke: var(--color-text); }
+.in3-xplot polyline.s2 { stroke: var(--color-text-2); stroke-dasharray: 6 4; }
+.in3-xplot .base { stroke: var(--color-line); }
+.in3-xplot .cross { stroke: var(--color-line-strong); }
+/* A bucket with no data is hatched, never silence (design §4.4); partly covered buckets are hatched lighter. */
+.in3-xgap { position: absolute; top: 0; bottom: 0; pointer-events: none; background: repeating-linear-gradient(45deg, var(--color-line-2) 0 3px, transparent 3px 6px); }
+.in3-xgap.part { opacity: 0.5; }
+.in3-xgap.key { position: static; display: inline-block; width: 12px; height: 10px; margin-right: 6px; vertical-align: -1px; border-radius: 3px; }
+.in3-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: var(--radius-control); background: var(--color-accent); box-shadow: 0 0 0 3px var(--color-surface); pointer-events: none; }
+.in3-dot.s1 { background: var(--color-text); }
+.in3-dot.s2 { background: var(--color-text-2); }
+.in3-xticks { position: relative; height: 16px; font-family: var(--font-mono); font-size: 11px; color: var(--color-faint); }
+.in3-xticks span { position: absolute; top: 0; white-space: nowrap; }
+.in3-xticks .first { left: 0; }
+.in3-xticks .last { right: 0; }
+.in3-xtable { max-height: 320px; overflow: auto; border-radius: var(--radius-thumb); }
+.in3-xtable .in3-log, .in3-log.in3-imports { min-width: 0; }
+.in3-imports th, .in3-imports td { white-space: nowrap; }
+.in3-xtable thead th { position: sticky; top: 0; background: var(--color-surface); }
+.in3-qs { display: flex; flex-direction: column; gap: 2px; margin: 0 -10px; padding: 0; list-style: none; }
+.in3-q { width: 100%; padding: 9px 10px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; transition: background 150ms, transform 100ms var(--ease-out); }
+.in3-q:hover { background: var(--color-surface-2); }
+.in3-q:active { transform: scale(0.99); }
+.in3-cov { position: relative; height: 40px; border-radius: var(--radius-control); background: var(--color-surface-2); overflow: hidden; }
+.in3-cov i { position: absolute; top: 0; bottom: 0; }
+.in3-cov .exp, .in3-covkey i.exp { background: var(--color-bar); }
+.in3-cov .pc { top: 50%; background: color-mix(in srgb, var(--color-accent) 55%, transparent); }
+.in3-covkey i.pc { background: color-mix(in srgb, var(--color-accent) 55%, transparent); }
+.in3-cov .gap, .in3-covkey i.gap { background: repeating-linear-gradient(45deg, var(--color-danger) 0 3px, transparent 3px 6px); }
+.in3-covkey { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--color-text-2); }
+.in3-covkey li { display: flex; gap: 8px; align-items: baseline; }
+.in3-covkey b { color: var(--color-text); font-weight: 600; }
+.in3-covkey i { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: var(--radius-bar); }
 }

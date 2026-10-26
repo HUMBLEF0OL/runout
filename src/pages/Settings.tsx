@@ -196,7 +196,6 @@ export default function Settings() {
             {logger.loading || !lg ? <div className="skel h-[90px]" /> : <>
               <Switch label="Log what Spotify plays on this PC" on={lg.state !== "off"} onChange={(v) => run("log", () => setLogger({ on: v }))} />
               <Switch label="Start with Windows, in the tray" on={lg.autostart} onChange={(v) => run("auto", () => setLogger({ autostart: v }))} />
-              <Switch label="Include private-session plays in insights" on={lg.include_private} onChange={(v) => run("priv", () => setLogger({ include_private: v }))} />
               {lg.state === "paused"
                 ? <div className="flex justify-between items-baseline gap-3"><span className="text-text-2">Paused{lg.paused_until ? ` until ${time(lg.paused_until)}` : " until you resume"}.</span>
                     <button className="btn btn-light s" onClick={() => run("resume", resumeLogger).then((r) => r && toast("Logging resumed"))}>Resume logging</button></div>
@@ -204,7 +203,7 @@ export default function Settings() {
                     <button className="btn btn-secondary s" onClick={() => run("pause", () => pauseLogger(60)).then((r) => r && toast("Logging paused for 1 hour"))}>Pause for 1 hour</button>
                     <button className="btn btn-secondary s" onClick={() => run("pause", () => pauseLogger(null)).then((r) => r && toast("Logging paused until you resume"))}>Pause until I resume</button>
                   </div>}
-              <span className="text-muted text-xs">A play counts after 30 seconds. Only Spotify is logged.</span>
+              <span className="text-muted text-xs">A play counts after 30 seconds. Only Spotify is logged. Private-session plays are set in <Link to="/insights/data">Insights, Your data</Link>.</span>
             </>}
           </Card>
         )}

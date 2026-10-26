@@ -19,9 +19,14 @@ use crate::importer::playlists::{self, ExportedPlaylist, PlaylistCheckup};
 use crate::importer::preview::{self, ImportPreview};
 use crate::importer::run::{self, ImportRecord, ImportResult};
 use crate::insights::collection::{self, CollectionInsights};
+use crate::insights::explore::{DataCoverage, ExploreQuery, ExploreResult, ExploreView};
+use crate::insights::habits::{self, Discovery, Habits};
+use crate::insights::history::{self, Measure, Records, Trends};
 use crate::insights::listening::{self, ListeningInsights, YearReview};
 use crate::insights::plays::{self, ItemListening, Play, PlayQuery, Unmatched};
+use crate::insights::report::{self, PeriodReport};
 use crate::insights::take::{self, TakeInsights};
+use crate::insights::v3::{self, PeriodQuery};
 use crate::insights::{self, Covered, Freshness, Range, Sourced};
 use crate::library::dashboard::{self, Counts, Dashboard};
 use crate::library::filters::{self, ItemFilter, SavedFilter};
@@ -114,6 +119,16 @@ pub fn handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + 
         get_collection_insights,
         get_take_insights,
         get_year_review,
+        get_period_report,
+        get_trends,
+        get_discovery,
+        get_listening_habits,
+        get_records,
+        explore,
+        get_data_coverage,
+        list_explore_views,
+        save_explore_view,
+        delete_explore_view,
         get_spotify_status,
         connect_spotify,
         disconnect_spotify,
@@ -717,6 +732,70 @@ pub fn get_year_review(st: St<'_>, year: i32) -> Result<Sourced<YearReview>> {
     listening::year_review(&st.db.lock().unwrap(), year, private(&st))
 }
 
+/* ------------------------------------------------------------- Insights v3 (API.md §4.1, M10) */
+// Local time zone, now; every arg is validated again in `insights` (TSD §7).
+
+fn v3<T>(st: &AppState, f: impl FnOnce(&v3::Ctx<chrono::Local>) -> Result<T>) -> Result<T> {
+    let include_private = private(st);
+    let conn = st.db.lock().unwrap();
+    f(&v3::Ctx {
+        conn: &conn,
+        include_private,
+        tz: &chrono::Local,
+        now: chrono::Utc::now(),
+    })
+}
+
+#[tauri::command(async)]
+pub fn get_period_report(st: St<'_>, period: PeriodQuery) -> Result<Covered<PeriodReport>> {
+    v3(&st, |cx| report::report(cx, &period))
+}
+
+#[tauri::command(async)]
+pub fn get_trends(st: St<'_>, measure: Measure) -> Result<Covered<Trends>> {
+    v3(&st, |cx| history::trends(cx, measure))
+}
+
+#[tauri::command(async)]
+pub fn get_discovery(st: St<'_>, period: PeriodQuery) -> Result<Covered<Discovery>> {
+    v3(&st, |cx| habits::discovery(cx, &period))
+}
+
+#[tauri::command(async)]
+pub fn get_listening_habits(st: St<'_>, period: PeriodQuery) -> Result<Covered<Habits>> {
+    v3(&st, |cx| habits::habits(cx, &period))
+}
+
+#[tauri::command(async)]
+pub fn get_records(st: St<'_>) -> Result<Covered<Records>> {
+    v3(&st, history::records)
+}
+
+#[tauri::command(async)]
+pub fn explore(st: St<'_>, query: ExploreQuery) -> Result<Covered<ExploreResult>> {
+    v3(&st, |cx| insights::explore::explore(cx, &query))
+}
+
+#[tauri::command(async)]
+pub fn get_data_coverage(st: St<'_>) -> Result<Covered<DataCoverage>> {
+    v3(&st, insights::explore::data_coverage)
+}
+
+#[tauri::command(async)]
+pub fn list_explore_views(st: St<'_>) -> Result<Vec<ExploreView>> {
+    insights::explore::list_explore_views(&st.db.lock().unwrap())
+}
+
+#[tauri::command(async)]
+pub fn save_explore_view(st: St<'_>, name: String, query: ExploreQuery) -> Result<ExploreView> {
+    insights::explore::save_explore_view(&st.db.lock().unwrap(), &name, &query)
+}
+
+#[tauri::command(async)]
+pub fn delete_explore_view(st: St<'_>, id: i64) -> Result<()> {
+    insights::explore::delete_explore_view(&st.db.lock().unwrap(), id)
+}
+
 /* ------------------------------------------------------------- R3 Spotify (API.md §5) */
 // Every R3 command but status/connect/disconnect starts with `require_connected` (disconnected →
 // `spotify_auth`, the rest of the app unaffected), then validates its args again (TSD §7).
@@ -1136,6 +1215,50 @@ mod tests {
         assert!(t["tracks"].is_array());
         let e = call(&w, "preview_import", json!({"path": "C:\\nope.txt"})).unwrap_err();
         assert_eq!(e["code"], json!("validation"));
+
+        // Insights v3 (API.md §4.1) with the keys api.ts sends; every payload carries `coverage`
+        let period = json!({"period": {"grain": "month", "vs": "usual", "at": null}});
+        let explore = json!({"query": {"series": [{"kind": "artist", "name": "x"}], "from": "2026-01-01",
+                                        "to": "2026-01-31", "grain": "week", "measure": "hours"}});
+        for (cmd, args) in [
+            ("get_period_report", period.clone()),
+            ("get_trends", json!({"measure": "artists"})),
+            ("get_discovery", period.clone()),
+            ("get_listening_habits", period.clone()),
+            ("get_records", json!({})),
+            ("explore", explore.clone()),
+            ("get_data_coverage", json!({})),
+        ] {
+            let v = call(&w, cmd, args).unwrap();
+            assert!(
+                v["coverage"]["gaps"].is_array() && v["data"].is_object(),
+                "{cmd}"
+            );
+        }
+        let mut save = explore.clone();
+        save["name"] = json!("Weekly x");
+        let view = call(&w, "save_explore_view", save).unwrap();
+        assert_eq!(view["query"], explore["query"]);
+        let views = call(&w, "list_explore_views", json!({})).unwrap();
+        assert_eq!(views, json!([view.clone()]));
+        call(&w, "delete_explore_view", json!({"id": view["id"]})).unwrap();
+        assert_eq!(
+            call(&w, "list_explore_views", json!({})).unwrap(),
+            json!([])
+        );
+        let custom =
+            json!({"period": {"grain": "custom", "vs": "prev", "at": null, "from": "2026-02-01"}});
+        let e = call(&w, "get_period_report", custom).unwrap_err();
+        assert_eq!(e["code"], json!("validation"));
+        let p = call(&w, "list_plays", json!({"q": {"tab": "all", "range": "7d", "offset": 0, "limit": 5, "date": "2026-10-25"}})).unwrap();
+        assert!(p["rows"].is_array());
+        let s = call(
+            &w,
+            "update_settings",
+            json!({"patch": {"export_reminder": true}}),
+        )
+        .unwrap();
+        assert_eq!(s["export_reminder"], json!(true));
 
         // R3 (API.md §5): disconnected → status says so, every other command is spotify_auth
         // the Inbox state is settings only: answered disconnected, no request

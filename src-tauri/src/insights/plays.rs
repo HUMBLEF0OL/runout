@@ -26,6 +26,9 @@ pub struct PlayQuery {
     pub range: Range,
     pub offset: i64,
     pub limit: i64,
+    /// Local `YYYY-MM-DD` (M10: Trends calendar day → Recent plays): that day only, `range` ignored.
+    #[serde(default)]
+    pub date: Option<String>,
 }
 
 /// API.md §4 `Play`. `item` is the track record; `album_rating` the rating of its album record
@@ -84,7 +87,28 @@ pub fn list_plays(
     include_private: bool,
     now: DateTime<Utc>,
 ) -> Result<crate::library::Page<Play>> {
-    let start = q.range.start(now);
+    let day = match q.date.as_deref() {
+        None => None,
+        Some(d) => Some(
+            super::v3::strict_day(d)
+                .ok_or_else(|| AppError::validation("That date isn't valid."))?,
+        ),
+    };
+    // A day: its local date, padded on the UTC time index (local is at most a day off). The date
+    // is a validated `NaiveDate`, so formatting it into the SQL is safe; `?1` stays bound (unused).
+    let when = match day {
+        Some(d) => format!(
+            "substr(e.local, 1, 10) = '{0}' AND e.ended_at_utc >= date('{0}', '-1 day')
+             AND e.ended_at_utc < date('{0}', '+2 day') AND ?1 = ?1",
+            d.format("%Y-%m-%d")
+        ),
+        None => "e.ended_at_utc >= ?1".to_owned(),
+    };
+    let start = if day.is_some() {
+        String::new()
+    } else {
+        q.range.start(now)
+    };
     let tab = match q.tab {
         Tab::All => "",
         Tab::Unrated => " AND e.counts_as_play AND t.id IS NOT NULL AND t.rating IS NULL",
@@ -92,7 +116,7 @@ pub fn list_plays(
     };
     let track = "LEFT JOIN item t ON t.id = e.item_id AND t.type = 'track'";
     // Range `all` counts from the rollup (NFR-04, G-17); the page walks the time index newest first.
-    let total: i64 = if super::use_rollup(&start) {
+    let total: i64 = if day.is_none() && super::use_rollup(&start) {
         let n = if q.tab == Tab::Unrated {
             "e.counts_as_play"
         } else {
@@ -109,7 +133,7 @@ pub fn list_plays(
     } else {
         conn.query_row(
             &format!(
-                "{} SELECT COUNT(*) FROM base e {track} WHERE e.ended_at_utc >= ?1{tab}",
+                "{} SELECT COUNT(*) FROM base e {track} WHERE {when}{tab}",
                 base(include_private)
             ),
             [&start],
@@ -117,7 +141,7 @@ pub fn list_plays(
         )?
     };
     let from = format!(
-        "{} SELECT {{cols}} FROM base e {track}{{album}} WHERE e.ended_at_utc >= ?1{tab}",
+        "{} SELECT {{cols}} FROM base e {track}{{album}} WHERE {when}{tab}",
         base(include_private)
     );
     let from = from.replace(
@@ -352,6 +376,41 @@ mod tests {
             range,
             offset: 0,
             limit: 50,
+            date: None,
+        }
+    }
+
+    /// M10: `date` keeps that local day's plays only and replaces `range`; a bad date is refused.
+    #[test]
+    fn list_plays_for_one_day() {
+        let (c, ids) = fixture::build();
+        let now = fixture::now();
+        let day = |d: &str| PlayQuery {
+            date: Some(d.into()),
+            ..q(Tab::All, Range::Week)
+        };
+        let p = list_plays(&c, &day("2026-10-17"), false, now).unwrap();
+        assert_eq!(
+            (p.total, p.rows.iter().map(|r| r.id).collect::<Vec<_>>()),
+            (1, vec![ids[1]])
+        );
+        // e6 is in 2025: outside the 7-day range, inside its day
+        let p = list_plays(&c, &day("2025-01-10"), false, now).unwrap();
+        assert_eq!(
+            (p.total, p.rows.iter().map(|r| r.id).collect::<Vec<_>>()),
+            (1, vec![ids[5]])
+        );
+        assert_eq!(
+            list_plays(&c, &day("2026-10-01"), false, now)
+                .unwrap()
+                .total,
+            0
+        );
+        for bad in ["2026-13-01", "yesterday", "2026-10-1"] {
+            assert_eq!(
+                list_plays(&c, &day(bad), false, now).unwrap_err().code,
+                Code::Validation
+            );
         }
     }
 

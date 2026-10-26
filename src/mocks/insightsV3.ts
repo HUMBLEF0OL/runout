@@ -5,7 +5,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import raw from "../../docs/design/prototype/mock-data.json";
 import type {
-  AppError, Compare, Compared, Coverage, CoverageClass, CoverageGap, DataCoverage, Discovery, DiscoveryRow, ExploreQuery, ExploreResult,
+  AppError, Compare, Compared, Coverage, CoverageClass, CoverageGap, DataCoverage, Discovery, DiscoveryRow, ExploreQuery, ExploreResult, ExploreView,
   Fingerprint, Grain, Habits, PeriodQuery, PeriodReport, Range, Records, Sentence, Source, Status, TopRow, Trends,
 } from "../api";
 import { dev } from "./devState";
@@ -356,10 +356,21 @@ export function insightsV3(find: Find, freshness: () => unknown) {
 
   const KNOWN = new Set<string>([...["artists", "albums", "tracks"].flatMap((kk) => Object.values(L.charts).flatMap((ch: any) => ch[kk].map((x: any) => x.name.toLowerCase()))),
     "floating points", "kelly lee owens", "pharoah sanders", "sons of kemet"]);
-  const exploreQ = ({ query: q }: { query: ExploreQuery }) => {
+  const checkQuery = (q: ExploreQuery) => {
     if (q.series.length < 1 || q.series.length > 3) fail("validation", "Choose one to three artists, albums or tracks.");
     if (!DATE.test(q.from) || !DATE.test(q.to) || q.from > q.to) fail("validation", "Choose a start and an end date.");
     if (q.hours?.some((h) => h < 0 || h > 23) || q.weekdays?.some((w) => w < 1 || w > 7)) fail("validation", "That hour or weekday is out of range.");
+  };
+  // Saved Explore views (API.md §4.1), kept like saved filters: the builder only, never a result.
+  let views: ExploreView[] = [];
+  const saveView = ({ name, query }: { name: string; query: ExploreQuery }) => {
+    if (!name.trim()) fail("validation", "Give the view a name.");
+    checkQuery(query);
+    const v = { id: Math.max(0, ...views.map((x) => x.id)) + 1, name: name.trim(), query };
+    views = [...views, v]; return v;
+  };
+  const exploreQ = ({ query: q }: { query: ExploreQuery }) => {
+    checkQuery(q);
     const export_only = !!q.devices?.length || q.shuffle != null;
     const end = lo(q.to, TODAY, export_only ? EXPORT_END : TODAY);
     const key = (d: string) => (q.grain === "year" ? d.slice(0, 4) : q.grain === "month" ? d.slice(0, 7) : add(d, -weekday(d)));
@@ -400,5 +411,6 @@ export function insightsV3(find: Find, freshness: () => unknown) {
   return {
     get_period_report: report, get_trends: trends, get_discovery: discovery, get_listening_habits: habits,
     get_records: records, explore: exploreQ, get_data_coverage: dataCoverage,
+    list_explore_views: () => views, save_explore_view: saveView, delete_explore_view: ({ id }: { id: number }) => { views = views.filter((v) => v.id !== id); },
   };
 }

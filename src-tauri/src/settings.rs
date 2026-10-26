@@ -18,6 +18,9 @@ pub struct Settings {
     pub backup_weekly: bool,
     pub size_warn_mb: u32,
     pub artwork_default: bool,
+    /// Monthly reminder on app open to request a newer Spotify export (M10 Your data; off by
+    /// default; local only, never network).
+    pub export_reminder: bool,
     /// Listening logger (TSD §4.5); changed only by `set_logger` / `pause_logger` / `resume_logger`.
     pub logger_on: bool,
     pub autostart: bool,
@@ -63,6 +66,7 @@ impl Settings {
             backup_weekly: true,
             size_warn_mb: 100,
             artwork_default: false,
+            export_reminder: false,
             logger_on: true,
             autostart: false,
             include_private: false,
@@ -172,6 +176,12 @@ mod tests {
     #[test]
     fn merge_load_save() {
         let d = Settings::defaults(Path::new("data"), Path::new("docs"));
+        assert!(!d.export_reminder);
+        assert!(
+            merge(&d, &json!({"export_reminder": true}))
+                .unwrap()
+                .export_reminder
+        );
         let m = merge(&d, &json!({"backup_weekly": false, "size_warn_mb": 50})).unwrap();
         assert!(!m.backup_weekly);
         assert_eq!(

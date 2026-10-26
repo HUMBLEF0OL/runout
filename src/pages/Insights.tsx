@@ -18,6 +18,10 @@ import { day, daysSince, nameOf, num, pl, today } from "../lib/format";
 import { PeriodHeader, Report } from "./InsightsReport";
 import { Trends } from "./InsightsTrends";
 import { Discovery } from "./InsightsDiscovery";
+import { Habits } from "./InsightsHabits";
+import { Records } from "./InsightsRecords";
+import { Explore } from "./InsightsExplore";
+import { YourData } from "./InsightsData";
 import { EASE } from "../lib/motion";
 
 type Tab = "report" | "trends" | "discovery" | "habits" | "records" | "explore" | "data" | "collection" | "take" | "year";
@@ -159,9 +163,6 @@ function StaleBanner({ f }: { f: Freshness | undefined }) {
   );
 }
 
-/** A listening tab the next M10 steps fill (WI 7, WI 8). */
-const Later = ({ name }: { name: string }) => <Empty h={name} line="This view is on its way. Report and the tabs after Your data work now." />;
-
 export default function Insights() {
   const param = useParams().tab;
   const tab: Tab = TABS.some((t) => t[0] === param) ? (param as Tab) : "report"; // old #/insights/listening lands on Report
@@ -209,7 +210,10 @@ export default function Insights() {
             </TabPanel>)}
           {tab === "trends" && <Trends today={day0} />}
           {tab === "discovery" && <Discovery key={search} q={q} today={day0} />}
-          {(tab === "habits" || tab === "records" || tab === "explore" || tab === "data") && <Later name={label} />}
+          {tab === "habits" && <Habits key={search} q={q} today={day0} />}
+          {tab === "records" && <Records today={day0} />}
+          {tab === "explore" && <Explore today={day0} />}
+          {tab === "data" && <YourData today={day0} />}
           {tab === "collection" && <Collection />}
           {tab === "take" && <Take />}
           {tab === "year" && <Year />}

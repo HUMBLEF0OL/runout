@@ -224,6 +224,7 @@ export interface ExploreResult {
   series: { kind: "artist" | "album" | "track"; name: string; by: string; values: number[]; total: number; peak: { bucket: string; value: number } | null; first_played_local: string | null }[];
   export_only: boolean;
 }
+export interface ExploreView { id: number; name: string; query: ExploreQuery }
 export interface DataCoverage {
   export: { from: string; to: string; plays: number } | null;
   desktop: { from: string; to: string; plays: number; matched: number } | null;
@@ -399,10 +400,14 @@ export const getTrends = (measure: "hours" | "plays" | "artists") => call<Covere
 export const getDiscovery = (period: PeriodQuery) => call<Covered<Discovery>>("get_discovery", { period: cleanPeriod(period) });
 export const getListeningHabits = (period: PeriodQuery) => call<Covered<Habits>>("get_listening_habits", { period: cleanPeriod(period) });
 export const getRecords = () => call<Covered<Records>>("get_records");
-export const explore = (query: ExploreQuery) => call<Covered<ExploreResult>>("explore", { query: {
+const cleanExplore = (query: ExploreQuery): ExploreQuery => ({
   ...query, from: cleanLine(query.from, 10), to: cleanLine(query.to, 10),
   series: query.series.map((x) => ({ kind: x.kind, name: cleanLine(x.name, LIMITS.name), ...(x.by != null && { by: cleanLine(x.by, LIMITS.name) }) })),
-} });
+});
+export const explore = (query: ExploreQuery) => call<Covered<ExploreResult>>("explore", { query: cleanExplore(query) });
+export const listExploreViews = () => call<ExploreView[]>("list_explore_views");
+export const saveExploreView = (name: string, query: ExploreQuery) => call<ExploreView>("save_explore_view", { name: cleanLine(name, LIMITS.filter), query: cleanExplore(query) });
+export const deleteExploreView = (id: number) => call<void>("delete_explore_view", { id });
 export const getDataCoverage = () => call<Covered<DataCoverage>>("get_data_coverage");
 export const listExportedPlaylists = () => call<ExportedPlaylist[]>("list_exported_playlists");
 export const getPlaylistCheckup = (id: number) => call<PlaylistCheckup>("get_playlist_checkup", { id });
