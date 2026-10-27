@@ -400,11 +400,9 @@ pub struct DataCoverage {
 /// `get_data_coverage`: every stored row counts (private and reconciled ones show a source covered
 /// the date); `coverage.gaps` = every no-data stretch of the whole history.
 pub fn data_coverage<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<DataCoverage>> {
-    let mut __t = std::time::Instant::now();
     let today = cx.today();
     let first = coverage::first_day(cx.conn)?.unwrap_or(today);
     let model = view_model(cx, first, today)?;
-    super::v3::PROFLAP(&mut __t, "let batches = export_batches");
     let batches = export_batches(cx.conn)?;
     let export = match (
         batches.iter().map(|b| b.from).min(),
@@ -417,16 +415,19 @@ pub fn data_coverage<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<DataCoverage>
         }),
         _ => None,
     };
-    super::v3::PROFLAP(&mut __t, "let desktop = cx.conn");
     let desktop = cx.conn.query_row(
-        // unfiltered: what the desktop log stored; 0008's partial index holds only its rows
-        "SELECT (SELECT substr(COALESCE(ended_at_local, ended_at_utc), 1, 10) FROM listening_event
-                   WHERE source = 'logger' ORDER BY ended_at_utc LIMIT 1),
-                (SELECT substr(COALESCE(ended_at_local, ended_at_utc), 1, 10) FROM listening_event
-                   WHERE source = 'logger' ORDER BY ended_at_utc DESC LIMIT 1),
-                IFNULL(SUM(counts_as_play), 0),
-                IFNULL(SUM(CASE WHEN reconciled_with IS NOT NULL THEN counts_as_play END), 0)
-         FROM listening_event WHERE source = 'logger'",
+        concat!(
+            // unfiltered: what the desktop log stored; 0008's partial index holds only its rows
+            "SELECT (SELECT substr(COALESCE(ended_at_local, ended_at_utc), 1, 10) FROM listening_event",
+            " WHERE source = 'logger' ORDER BY ended_at_utc LIMIT 1),",
+            // unfiltered: as above, the last desktop day
+            " (SELECT substr(COALESCE(ended_at_local, ended_at_utc), 1, 10) FROM listening_event",
+            " WHERE source = 'logger' ORDER BY ended_at_utc DESC LIMIT 1),",
+            " IFNULL(SUM(counts_as_play), 0),",
+            " IFNULL(SUM(CASE WHEN reconciled_with IS NOT NULL THEN counts_as_play END), 0)",
+            // unfiltered: reconciled rows are counted on purpose (Your data shows them)
+            " FROM listening_event WHERE source = 'logger'"
+        ),
         [],
         |r| {
             let (a, b): (Option<String>, Option<String>) = (r.get(0)?, r.get(1)?);
@@ -443,7 +444,6 @@ pub fn data_coverage<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<DataCoverage>
         }),
         None => None,
     };
-    super::v3::PROFLAP(&mut __t, "let range: HashMap");
     let range: HashMap<i64, (NaiveDate, NaiveDate)> = batches
         .iter()
         .filter_map(|b| Some((b.id?, (b.from, b.to))))
@@ -474,7 +474,6 @@ pub fn data_coverage<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<DataCoverage>
             |r| r.get(0),
         )?
     };
-    super::v3::PROFLAP(&mut __t, "let data = DataCoverage {");
     let data = DataCoverage {
         export,
         desktop,

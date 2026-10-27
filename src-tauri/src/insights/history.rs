@@ -167,11 +167,9 @@ fn top_per_year<Tz: TimeZone>(
 
 /// `get_trends`.
 pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Trends>> {
-    let mut __t = std::time::Instant::now();
     let today = cx.today();
     let Some(first) = coverage::first_day(cx.conn)? else {
         let model = cx.model(today, today)?;
-        super::v3::PROFLAP(&mut __t, "let data = Trends {");
         let data = Trends {
             months: vec![],
             eras: vec![],
@@ -186,18 +184,15 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
         return covered(cx, data, view_coverage(&model, (today, today), today), true);
     };
     let model = history_model(cx, first, today)?;
-    super::v3::PROFLAP(&mut __t, "let days = daily(");
     let days = daily(cx, Src::All, (first, today))?;
     let all_months = months(first, today);
 
-    super::v3::PROFLAP(&mut __t, "let months_out = lifetime_mo");
     let months_out = lifetime_months(cx, measure, &days, &model, first, today)?;
     let month_totals: Vec<(NaiveDate, i64)> = all_months
         .iter()
         .map(|m| (*m, days.range(*m..=month_end(*m)).map(|(_, v)| v.0).sum()))
         .collect();
 
-    super::v3::PROFLAP(&mut __t, "// Eras: only");
     // Eras: only artists that ever hold ≥ 15% of a month can name one; the rest of each month is
     // one unnamed row, so shares and lifetime shares stay exact.
     let candidates = month_artist_rows(
@@ -219,7 +214,6 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
             (month(*m), rows)
         })
         .collect();
-    super::v3::PROFLAP(&mut __t, "let mut names: HashMap");
     let mut names: HashMap<String, (String, Option<i64>)> = HashMap::new();
     let mut display = |key: &str| -> Result<(String, Option<i64>)> {
         if let Some(v) = names.get(key) {
@@ -236,7 +230,6 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
         }
     }
 
-    super::v3::PROFLAP(&mut __t, "// Arcs over");
     // Arcs over the last 36 months.
     let arc_months: Vec<NaiveDate> = months(
         super::v3::month_start(today) - chrono::Months::new(ARC_MONTHS as u32 - 1),
@@ -276,7 +269,6 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
                 .0 = *ms;
         }
     }
-    super::v3::PROFLAP(&mut __t, "let top20 = top_per_year");
     let top20 = top_per_year(cx, CONSTANT_TOP, "0000", "9999")?;
     let years_n = top20.len();
     let mut in_top: HashMap<&str, usize> = HashMap::new();
@@ -348,11 +340,8 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
         })
         .collect();
 
-    super::v3::PROFLAP(&mut __t, "let fingerprint_by_year = fi");
     let fingerprint_by_year = fingerprint_by_year(cx, &days, &model, first, today)?;
-    super::v3::PROFLAP(&mut __t, "let tag_months = tag_months");
     let tag_months = tag_months(cx, today)?;
-    super::v3::PROFLAP(&mut __t, "let calendar =");
     let calendar = (first.year()..=today.year())
         .map(|y| calendar_year(y, &days, &model, today))
         .collect();
@@ -736,7 +725,6 @@ pub const DAY_ALBUM_PCT: f64 = 50.0;
 
 /// `get_records`.
 pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
-    let mut __t = std::time::Instant::now();
     let today = cx.today();
     let first = coverage::first_day(cx.conn)?;
     let model = match first {
@@ -744,13 +732,11 @@ pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
         None => cx.model(today, today)?,
     };
     let start = first.unwrap_or(today);
-    super::v3::PROFLAP(&mut __t, "let days = daily(");
     let days = daily(cx, Src::All, (start, today))?;
     let class = all_devices(&model);
     let all_dev = |d: &NaiveDate| class(*d) == CoverageClass::AllDevices;
     let plays_total: i64 = days.values().map(|v| v.1).sum();
     let b = base(cx.include_private);
-    super::v3::PROFLAP(&mut __t, "let first_play = cx");
     let first_play = cx
         .conn
         .query_row(
@@ -771,7 +757,6 @@ pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
     let top = |k| -> Result<Option<RankRow>> {
         Ok(rank(cx.conn, &rollup(cx.include_private), k, "?1 = ''", &"", 1)?.pop())
     };
-    super::v3::PROFLAP(&mut __t, "let played: BTreeSet");
     let played: BTreeSet<NaiveDate> = days
         .iter()
         .filter(|(_, v)| v.1 > 0)
@@ -791,7 +776,6 @@ pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
         *years.entry(d.year()).or_default() += v.0;
     }
     let biggest_year = terms::biggest(&years).map(|(year, ms)| YearMs { year, ms });
-    super::v3::PROFLAP(&mut __t, "let most_artists_month");
     let most_artists_month = match model.export {
         Some((a, b)) => cx
             .conn
@@ -810,7 +794,6 @@ pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
             .optional()?,
         None => None,
     };
-    super::v3::PROFLAP(&mut __t, "let loyal =");
     let loyal = terms::most_loyal(&top_per_year(cx, LOYAL_TOP, "0000", "9999")?);
     let most_loyal = match loyal {
         Some((key, years_in_top20, years)) => {
@@ -830,7 +813,6 @@ pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
         .sum();
     let (next, eta) = terms::next_milestone(plays_total, last90);
 
-    super::v3::PROFLAP(&mut __t, "// On this day");
     // On this day: today's date in earlier years, all-device dates only, newest first.
     let heard = terms::first_heard(cx.conn, cx.include_private)?;
     let mut on_this_day = vec![];
@@ -855,7 +837,6 @@ pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
         });
     }
 
-    super::v3::PROFLAP(&mut __t, "// Forgotten favourites");
     // Forgotten favourites: in some year's top 10, no play for ≥ 730 days.
     let top10 = top_per_year(cx, FORGOTTEN_TOP, "0000", "9999")?;
     let mut last_play: HashMap<String, NaiveDateTime> = HashMap::new();
@@ -890,7 +871,6 @@ pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
             play_uri: uri.query_row([&key], |r| r.get(0)).optional()?,
         });
     }
-    super::v3::PROFLAP(&mut __t, "let data = Records {");
     let data = Records {
         since: first.map(day),
         plays_total,

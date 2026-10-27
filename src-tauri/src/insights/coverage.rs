@@ -326,7 +326,7 @@ pub(crate) fn compared(cov: &Coverage, include_private: bool) -> Option<String> 
     ))
 }
 
-//// Export batches and their plays' local date range, oldest first (Your data, design §4.4). One
+/// Export batches and their plays' local date range, oldest first (Your data, design §4.4). One
 /// unsorted pass (NFR-04: SQL groups by batch with a sort of every export row).
 pub fn export_batches(conn: &Connection) -> Result<Vec<Batch>> {
     let mut st = conn.prepare(

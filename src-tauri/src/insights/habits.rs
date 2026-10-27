@@ -15,8 +15,8 @@ use super::terms::{
     stick_rate, stick_window, stuck_by,
 };
 use super::v3::{
-    Ctx, PeriodQuery, Src, artist_item, between, by_artist, covered, day, majority, minute, month,
-    month_end, month_start, months, period_coverage, resolve,
+    Ctx, PeriodQuery, Src, artist_item, artist_items, between, by_artist, covered, day, majority,
+    minute, month, month_end, month_start, months, period_coverage, resolve,
 };
 use super::{Covered, base, pct};
 use crate::error::Result;
@@ -141,16 +141,26 @@ fn arc_series<Tz: TimeZone>(
             )
         })
         .collect();
+    if keys.is_empty() {
+        return Ok(out);
+    }
+    // one range scan of the months for every key (NFR-04: `artist` isn't the rollup's key prefix)
     let mut st = cx.conn.prepare(&format!(
-        "SELECT month, SUM(ms_played) FROM listening_month_artist
-         WHERE artist = ?1 AND month BETWEEN '{a}' AND '{b}' AND events > 0{p} GROUP BY 1"
+        "SELECT artist, month, SUM(ms_played) FROM listening_month_artist
+         WHERE month BETWEEN '{a}' AND '{b}' AND events > 0{p} AND artist IN ({}) GROUP BY 1, 2",
+        vec!["?"; keys.len()].join(", ")
     ))?;
-    for k in keys {
-        for r in st.query_map([k], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
-            let (m, v) = r?;
-            if let (Some(&i), Some(s)) = (idx.get(&m), out.get_mut(*k)) {
-                s[i].0 = v;
-            }
+    let rows = st.query_map(rusqlite::params_from_iter(keys), |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, i64>(2)?,
+        ))
+    })?;
+    for r in rows {
+        let (k, m, v) = r?;
+        if let (Some(&i), Some(s)) = (idx.get(&m), out.get_mut(&k)) {
+            s[i].0 = v;
         }
     }
     Ok(out)
@@ -158,7 +168,6 @@ fn arc_series<Tz: TimeZone>(
 
 /// `get_discovery`.
 pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Discovery>> {
-    let mut __t = std::time::Instant::now();
     let today = cx.today();
     let first = super::coverage::first_day(cx.conn)?;
     let r = resolve(q, today, first)?;
@@ -171,7 +180,6 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
     let back = (r.earliest() - per_from).num_days().max(0);
     let (model, cov) = period_coverage(cx, &r, back)?;
     let vs = r.vs.clone().unwrap_or_default();
-    super::v3::PROFLAP(&mut __t, "let heard = terms::first_hea");
     let heard = terms::first_heard(cx.conn, cx.include_private)?;
     let new_artists = new_artists_compared(&heard, &cov, r.cur, &vs);
     let in_cur: Vec<&FirstHeard> = heard
@@ -185,7 +193,6 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
         .take_while(|d| *d <= end)
         .filter(|d| model.class(*d) != CoverageClass::NoData)
         .count();
-    super::v3::PROFLAP(&mut __t, "let outcomes = stick_outcome");
     let outcomes = stick_outcomes(cx, &heard)?;
 
     // Stick rate: the period's new artists, and the best year (enough closed windows).
@@ -202,7 +209,6 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
         .filter_map(|(y, v)| Some((*y, stick_rate(v.iter().map(|s| Some(*s)))?)))
         .max_by(|a, b| a.1.total_cmp(&b.1).then_with(|| b.0.cmp(&a.0)));
 
-    super::v3::PROFLAP(&mut __t, "let artists = by_artist");
     let artists = by_artist(cx, Src::All, r.cur, first)?;
     let total: i64 = artists.values().map(|v| v.0).sum();
     let new_keys: HashSet<&str> = in_cur.iter().map(|f| f.artist.as_str()).collect();
@@ -212,7 +218,6 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
         .map(|(_, v)| v.0)
         .sum();
 
-    super::v3::PROFLAP(&mut __t, "let per_month = months");
     let per_month = months(per_from, end)
         .into_iter()
         .map(|m| {
@@ -238,7 +243,6 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
         })
         .collect();
 
-    super::v3::PROFLAP(&mut __t, "// How you started");
     // How you started tracks (export only).
     let mut st = cx.conn.prepare(&format!(
         "{} SELECT reason_start, COUNT(*) FROM ev WHERE {} AND source = 'export' GROUP BY 1",
@@ -264,17 +268,28 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
         .collect();
     starts.sort_by(|a, b| b.pct.total_cmp(&a.pct));
 
-    super::v3::PROFLAP(&mut __t, "// The discovery log");
     // The discovery log: newest first.
     let log_rows: Vec<&FirstHeard> = in_cur.iter().take(LOG_MAX).copied().collect();
     let keys: Vec<&str> = log_rows.iter().map(|f| f.artist.as_str()).collect();
     let series = arc_series(cx, &keys, today)?;
     // Plays since the first one = all its plays (nothing counts before an artist's first play), from
     // the 0008 rollup; the last play by the 0004 index from the newest end (NFR-04: no scan per artist).
-    let mut since = cx.conn.prepare(&format!(
-        "SELECT IFNULL(SUM(plays), 0) FROM listening_month_artist WHERE artist = ?1{}",
-        cx.private_filter("private_session")
-    ))?;
+    let since: HashMap<String, i64> = if keys.is_empty() {
+        HashMap::new()
+    } else {
+        cx.conn
+            .prepare(&format!(
+                "SELECT artist, SUM(plays) FROM listening_month_artist WHERE artist IN ({}){}
+                 GROUP BY 1",
+                vec!["?"; keys.len()].join(", "),
+                cx.private_filter("private_session")
+            ))?
+            .query_map(rusqlite::params_from_iter(&keys), |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?
+    };
+    let items = artist_items(cx.conn)?;
     let mut last_play = cx.conn.prepare(&format!(
         "{} SELECT local FROM base WHERE lower(artist_name) = ?1 AND counts_as_play
          ORDER BY ended_at_utc DESC, id DESC LIMIT 1",
@@ -283,10 +298,8 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
     let now_local = cx.now.with_timezone(cx.tz).naive_local();
     let mut log = vec![];
     for f in log_rows {
-        let plays: i64 = since.query_row([&f.artist], |r| r.get(0))?;
-        let last: Option<String> = last_play
-            .query_row([&f.artist], |r| r.get(0))
-            .optional()?;
+        let plays = since.get(&f.artist).copied().unwrap_or(0);
+        let last: Option<String> = last_play.query_row([&f.artist], |r| r.get(0)).optional()?;
         let last = last
             .and_then(|s| NaiveDateTime::parse_from_str(s.get(..19)?, "%Y-%m-%dT%H:%M:%S").ok())
             .unwrap_or(f.local);
@@ -295,14 +308,13 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
             .is_some_and(|s| back_again_at(s).is_some());
         log.push(DiscoveryRow {
             artist: f.name.clone(),
-            item_id: artist_item(cx.conn, &f.name)?.0,
+            item_id: items.get(&f.name.to_ascii_lowercase()).map(|x| x.0),
             first_played_local: minute(&f.local.format("%Y-%m-%dT%H:%M:%S").to_string()),
             first_track: f.track.clone(),
             plays_since: plays,
             now: discovery_now(back_again, last, now_local),
         });
     }
-    super::v3::PROFLAP(&mut __t, "let data = Discovery {");
     let data = Discovery {
         days_per_new: (new_artists.value > 0.0)
             .then(|| (covered_days as f64 / new_artists.value * 10.0).round() / 10.0),
@@ -448,7 +460,6 @@ pub fn session_bucket(ms: i64) -> usize {
 
 /// `get_listening_habits`.
 pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Habits>> {
-    let mut __t = std::time::Instant::now();
     let today = cx.today();
     let first = super::coverage::first_day(cx.conn)?;
     let r = resolve(q, today, first)?;
@@ -459,7 +470,7 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
 
     // One pass over the period's events (NFR-04: no SQL sort or index-ordered group per figure):
     // the per-event figures, offline peak, most skipped, quick bails, how far in, and the plays
-    // sessions read (≥ 30 s, up to today, in end order).
+    // sessions read (≥ 30 s, up to today, put in end order below).
     let durations: HashMap<String, i64> = cx
         .conn
         .prepare(
@@ -473,7 +484,7 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
         "{cte} SELECT id, ended_at_utc, local, ms_played, IFNULL(artist_name, ''), IFNULL(album_name, ''),
                 IFNULL(norm_key, ''), item_id, source, IFNULL(track_name, ''), platform, reason_end,
                 skipped, shuffle, offline, counts_as_play
-         FROM ev WHERE {w} ORDER BY ended_at_utc, id"
+         FROM ev WHERE {w}"
     ))?;
     let today_s = day(today);
     let (mut export_plays, mut export_events, mut finished) = (0i64, 0i64, 0i64);
@@ -485,8 +496,9 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
     let mut platforms: HashMap<Option<String>, i64> = HashMap::new();
     let mut offline = 0i64;
     let mut offline_months: BTreeMap<String, i64> = BTreeMap::new();
-    // artist key → (max display name, ms, skipped, flagged)
-    let mut artists: HashMap<String, (String, i64, i64, i64)> = HashMap::new();
+    // artist key (folded hash) → (max display name, ms, skipped, flagged)
+    let mut artists: HashMap<u64, (String, i64, i64, i64)> = HashMap::new();
+    let mut buf = Vec::new();
     // norm_key → (max track, max artist, max item id, times)
     let mut bails: HashMap<String, (String, String, Option<i64>, usize)> = HashMap::new();
     let (mut far_sum, mut far_n) = (0f64, 0i64);
@@ -562,7 +574,7 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
         }
         if !artist.is_empty() {
             let a = artists
-                .entry(artist.to_ascii_lowercase())
+                .entry(super::v3::folded_hash(&mut buf, &[artist]))
                 .or_insert_with(|| (artist.to_owned(), 0, 0, 0));
             if artist > a.0.as_str() {
                 a.0 = artist.to_owned();
@@ -606,6 +618,8 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
         }
     }
     drop(rows);
+    // end order for sessions, sorted here (NFR-04: SQL would sort every wide row)
+    plays.sort_unstable_by_key(|e| (e.end, e.id));
     let mut devices: BTreeMap<DeviceClass, i64> = BTreeMap::new();
     if this_pc > 0 {
         devices.insert(DeviceClass::ThisPc, this_pc);
@@ -689,7 +703,6 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
     let far_sum = Some(far_sum);
 
     // Sessions and deep dives (all plays), start to finish (library albums with a track list).
-    super::v3::PROFLAP(&mut __t, "let sessions = heuristics::s");
     let sessions = heuristics::sessions(&plays);
     let mut lengths: Vec<i64> = sessions.iter().map(|s| s.span_ms()).collect();
     lengths.sort_unstable();
@@ -707,7 +720,6 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
         spread[session_bucket(*l)] += 1;
     }
     let fmt = |t: NaiveDateTime| minute(&t.format("%Y-%m-%dT%H:%M:%S").to_string());
-    super::v3::PROFLAP(&mut __t, "let mut dives: Vec<DeepDive>");
     let mut dives: Vec<DeepDive> = sessions
         .iter()
         .flat_map(|s| {
@@ -742,7 +754,6 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
                 })
         })
         .collect();
-    super::v3::PROFLAP(&mut __t, "let repeats =");
     let repeats = heuristics::on_repeat(&plays);
     let mut by_day_key: HashMap<(NaiveDate, &str), Vec<&Ev>> = HashMap::new();
     if !repeats.is_empty() {
@@ -782,10 +793,8 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
             .then_with(|| a.start_local.cmp(&b.start_local))
     });
     dives.truncate(DIVES_MAX);
-    super::v3::PROFLAP(&mut __t, "let start_to_finish = start_");
     let start_to_finish = start_to_finish(cx.conn, &sessions)?;
 
-    super::v3::PROFLAP(&mut __t, "let data = Habits {");
     let data = Habits {
         export_plays,
         ends: ends
@@ -859,15 +868,11 @@ fn start_to_finish(
     }
     // Only sessions holding one of the album's tracks can hold them all (NFR-04: thousands of albums
     // × thousands of sessions otherwise).
+    let heard: Vec<HashSet<i64>> = sessions.iter().map(heuristics::Session::item_ids).collect();
     let mut with_track: HashMap<i64, Vec<usize>> = HashMap::new();
-    for (i, s) in sessions.iter().enumerate() {
-        for id in s
-            .plays
-            .iter()
-            .filter_map(|e| e.item_id)
-            .collect::<HashSet<_>>()
-        {
-            with_track.entry(id).or_default().push(i);
+    for (i, ids) in heard.iter().enumerate() {
+        for id in ids {
+            with_track.entry(*id).or_default().push(i);
         }
     }
     let mut out: Vec<StartToFinish> = albums
@@ -876,12 +881,11 @@ fn start_to_finish(
             let first = tracks
                 .iter()
                 .min_by_key(|t| with_track.get(t).map_or(0, Vec::len))?;
-            let candidates: Vec<heuristics::Session> = with_track
+            let times = with_track
                 .get(first)?
                 .iter()
-                .map(|&i| sessions[i].clone())
-                .collect();
-            let times = heuristics::start_to_finish(&tracks, &candidates);
+                .filter(|&&i| heuristics::played_all(&tracks, &heard[i]))
+                .count();
             (times > 0).then_some(StartToFinish {
                 item_id,
                 name,

@@ -456,8 +456,9 @@ pub(crate) fn repeat_plays<Tz: TimeZone>(
         by_key.entry(k).or_default().push((i as usize, n));
     }
     let mut before = cx.conn.prepare(&format!(
-        "SELECT EXISTS(SELECT 1 FROM listening_event WHERE norm_key = ?1 AND ended_at_utc < ?2
-           AND counts_as_play AND reconciled_with IS NULL{})",
+        // unfiltered: base filters inline (reconciled out, private per setting); one seek on 0011's index
+        "SELECT EXISTS(SELECT 1 FROM listening_event INDEXED BY listening_event_norm_time
+           WHERE norm_key = ?1 AND ended_at_utc < ?2 AND counts_as_play AND reconciled_with IS NULL{})",
         cx.private_filter("private_session")
     ))?;
     let lo_s = day(lo);
@@ -682,6 +683,243 @@ fn most_played<Tz: TimeZone>(
         .collect())
 }
 
+/// One Most played group while it's summed: what `listening::rank` / `rankings` compute in SQL.
+#[derive(Default)]
+struct Group {
+    name: String,
+    by: String,
+    plays: i64,
+    ms: i64,
+    iid: Option<i64>,
+}
+
+impl Group {
+    /// `MAX(name)`, `MAX(by)`, `MAX(item_id)` and the sums, as SQL aggregates them (BINARY order).
+    fn add(&mut self, name: Option<&str>, by: Option<&str>, play: bool, ms: i64, iid: Option<i64>) {
+        if let Some(n) = name.filter(|n| *n > self.name.as_str()) {
+            self.name = n.to_owned();
+        }
+        if let Some(b) = by.filter(|b| *b > self.by.as_str()) {
+            self.by = b.to_owned();
+        }
+        self.plays += play as i64;
+        self.ms += ms;
+        self.iid = self.iid.max(iid);
+    }
+}
+
+/// Most played of a period (not all time) for the three kinds in one pass over the period, the
+/// compared window and the sparkline months (NFR-04: a GROUP BY sort per kind and window
+/// otherwise). Same rows, moves and sparks as `most_played`: rows and sparks over the base view,
+/// moves over like for like (`Src::Like`, which may hold reconciled desktop rows).
+fn most_played_pass<Tz: TimeZone>(
+    cx: &Ctx<Tz>,
+    r: &Resolved,
+    cov: &Coverage,
+    prev: Option<Span>,
+    spark_months: &[NaiveDate],
+) -> Result<[Vec<TopRow>; 3]> {
+    let ranked = prev.filter(|_| cov.no_compare_reason.is_none());
+    let base_like = Src::Like(cov).is_base();
+    let like_source = match cov.compared_sources.as_slice() {
+        ["S"] => Some("logger"),
+        ["E"] => Some("export"),
+        _ => None,
+    };
+    let num = |d: NaiveDate| d.year() as u32 * 10_000 + d.month() * 100 + d.day();
+    let cur = (num(r.cur.0), num(r.cur.1));
+    let pv = ranked.map(|p| (num(p.0), num(p.1)));
+    let spark = spark_months
+        .first()
+        .zip(spark_months.last())
+        .map(|(a, b)| (*a, super::v3::month_end(*b)));
+    // windows to read: the period with the sparkline months, and the compared one unless it overlaps
+    let mut wins: Vec<Span> = vec![spark.map_or(r.cur, |s| (r.cur.0.min(s.0), r.cur.1.max(s.1)))];
+    if let Some(p) = ranked {
+        if p.1 < wins[0].0 || p.0 > wins[0].1 {
+            wins.push(p);
+        } else {
+            wins[0] = (wins[0].0.min(p.0), wins[0].1.max(p.1));
+        }
+    }
+    let month_ix: HashMap<u32, usize> = spark_months
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (m.year() as u32 * 100 + m.month(), i))
+        .collect();
+    // [kind] → group key (as SQL groups: lower(artist), lower(album), norm_key) → group: the shown
+    // rows (base, period), like for like in the period (when that isn't the base view) and before
+    let mut shown: [HashMap<Option<String>, Group>; 3] = Default::default();
+    let mut now_like: [HashMap<Option<String>, Group>; 3] = Default::default();
+    let mut before: [HashMap<Option<String>, Group>; 3] = Default::default();
+    // [kind] → spark key (as `sparks` matches rows) → ms per spark month
+    let mut sp: [HashMap<String, Vec<i64>>; 3] = Default::default();
+    for w in wins {
+        let mut st = cx.conn.prepare(&format!(
+            // unfiltered: base and like for like at once; `reconciled_with IS NULL` = base (insights::base)
+            "WITH ev AS NOT MATERIALIZED (SELECT e.*, COALESCE(e.ended_at_local, substr(e.ended_at_utc, 1, 19)) AS local
+               FROM listening_event e WHERE 1{})
+             SELECT local, ms_played, counts_as_play, artist_name, album_name, track_name, norm_key,
+                    item_id, reconciled_with IS NULL, source FROM ev WHERE {}",
+            cx.private_filter("e.private_session"),
+            between(w)
+        ))?;
+        let mut rows = st.query([])?;
+        while let Some(row) = rows.next()? {
+            let Some(d) = super::v3::day_num(super::text(row, 0)?) else {
+                continue;
+            };
+            let in_base = row.get::<_, bool>(8)?;
+            let in_like = match like_source {
+                Some(s) => super::text(row, 9)? == s,
+                None => in_base,
+            };
+            let in_cur = cur.0 <= d && d <= cur.1;
+            let si = month_ix.get(&(d / 100)).copied().filter(|_| in_base);
+            let to = [
+                in_base && in_cur,
+                !base_like && in_like && in_cur && ranked.is_some(),
+                in_like && pv.is_some_and(|p| p.0 <= d && d <= p.1),
+            ];
+            if !to.iter().any(|x| *x) && si.is_none() {
+                continue;
+            }
+            let ms: i64 = row.get(1)?;
+            let play = row.get::<_, i64>(2)? != 0;
+            let artist = super::text_opt(row, 3)?;
+            let album = super::text_opt(row, 4)?;
+            let track = super::text_opt(row, 5)?;
+            let norm = super::text_opt(row, 6)?;
+            let iid: Option<i64> = row.get(7)?;
+            if to.iter().any(|x| *x) {
+                let keys = [
+                    artist.map(str::to_ascii_lowercase),
+                    album.map(str::to_ascii_lowercase),
+                    norm.map(str::to_owned),
+                ];
+                let names = [artist, album, track];
+                let bys = [None, artist, artist];
+                for k in 0..3 {
+                    for (on, map) in
+                        to.iter()
+                            .zip([&mut shown[k], &mut now_like[k], &mut before[k]])
+                    {
+                        if *on {
+                            map.entry(keys[k].clone())
+                                .or_default()
+                                .add(names[k], bys[k], play, ms, iid);
+                        }
+                    }
+                }
+            }
+            if let Some(i) = si {
+                let lower = |x: Option<&str>| x.unwrap_or("").to_ascii_lowercase();
+                let sk = [
+                    lower(artist),
+                    lower(album),
+                    format!("{}\u{1f}{}", lower(track), lower(artist)),
+                ];
+                for (k, key) in sk.into_iter().enumerate() {
+                    sp[k]
+                        .entry(key)
+                        .or_insert_with(|| vec![0; spark_months.len()])[i] += ms;
+                }
+            }
+        }
+    }
+    let kinds = [Kind::Artist, Kind::Album, Kind::Track];
+    let by_name = [
+        super::v3::items_by_name(cx.conn, "artist")?,
+        super::v3::items_by_name(cx.conn, "album")?,
+    ];
+    let mut item_info = cx
+        .conn
+        .prepare("SELECT type, rating, status FROM item WHERE id = ?1")?;
+    // `rankings`: keys with time in the window, by time then key, the first MOVE_DEPTH
+    let ranking = |kind: Kind, g: &HashMap<Option<String>, Group>| -> Vec<String> {
+        let mut v: Vec<(i64, String)> = g
+            .values()
+            .filter(|g| !g.name.is_empty() && g.ms > 0)
+            .map(|g| (g.ms, row_key(kind, &g.name, &g.by)))
+            .collect();
+        v.sort_by(|x, y| y.0.cmp(&x.0).then_with(|| x.1.cmp(&y.1)));
+        v.into_iter().take(MOVE_DEPTH).map(|x| x.1).collect()
+    };
+    let mut out: [Vec<TopRow>; 3] = Default::default();
+    for k in 0..3 {
+        let kind = kinds[k];
+        let mut groups: Vec<&Group> = shown[k].values().filter(|g| !g.name.is_empty()).collect();
+        groups.sort_by(|a, b| b.ms.cmp(&a.ms).then_with(|| a.name.cmp(&b.name)));
+        groups.truncate(TOP);
+        let keys: Vec<String> = groups
+            .iter()
+            .map(|g| row_key(kind, &g.name, &g.by))
+            .collect();
+        let moves: Option<(Vec<String>, Vec<String>)> = ranked.map(|_| {
+            let now = if base_like {
+                keys.clone()
+            } else {
+                ranking(kind, &now_like[k])
+            };
+            (now, ranking(kind, &before[k]))
+        });
+        for (g, key) in groups.into_iter().zip(&keys) {
+            let id = match kind {
+                Kind::Track => g.iid,
+                _ => by_name[k].get(&g.name.to_ascii_lowercase()).map(|x| x.0),
+            };
+            // `rank`: a track's id only when it is a track record
+            let info: Option<(Option<f64>, Status)> = match id {
+                Some(id) => rusqlite::OptionalExtension::optional(
+                    item_info
+                        .query_row([id], |r| Ok((r.get::<_, String>(0)?, r.get(1)?, r.get(2)?))),
+                )?
+                .filter(|(t, _, _)| !matches!(kind, Kind::Track) || t == "track")
+                .map(|(_, rating, status)| (rating, status)),
+                None => None,
+            };
+            let (mv, is_new) = match &moves {
+                None => (None, false),
+                Some((now, before)) => {
+                    let at = |v: &[String]| v.iter().position(|x| x == key).map(|i| i as i64);
+                    match (at(now), at(before)) {
+                        (Some(n), Some(b)) => (Some(b - n), false),
+                        (_, None) => (None, true),
+                        _ => (None, false),
+                    }
+                }
+            };
+            let spark_key = match kind {
+                Kind::Track => format!(
+                    "{}\u{1f}{}",
+                    g.name.to_ascii_lowercase(),
+                    g.by.to_ascii_lowercase()
+                ),
+                _ => g.name.to_ascii_lowercase(),
+            };
+            let spark = sp[k].get(&spark_key).map_or_else(
+                || vec![0.0; spark_months.len()],
+                |v| v.iter().map(|ms| super::hours(*ms)).collect(),
+            );
+            out[k].push(TopRow {
+                row: RankRow {
+                    name: g.name.clone(),
+                    by: g.by.clone(),
+                    plays: g.plays,
+                    hours: super::hours(g.ms),
+                    item_id: info.as_ref().and(id),
+                    rating: info.as_ref().and_then(|i| i.0),
+                    status: info.map(|i| i.1),
+                },
+                r#move: mv,
+                is_new,
+                spark,
+            });
+        }
+    }
+    Ok(out)
+}
+
 /// An artist that left the top 10: in it each of the ≥ 6 months before the period (consecutive,
 /// ending the month before) and not in the period's top 10. The longest such run wins.
 fn left_top10<Tz: TimeZone>(
@@ -777,7 +1015,6 @@ pub(crate) fn new_artists_compared(
 
 /// `get_period_report`.
 pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<PeriodReport>> {
-    let mut __t = std::time::Instant::now();
     let today = cx.today();
     let first = coverage::first_day(cx.conn)?;
     let r = resolve(q, today, first)?;
@@ -789,16 +1026,18 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     let vs: Vec<Span> = r.vs.clone().unwrap_or_default();
     let all_time = r.grain == Grain::All;
 
-    super::v3::PROFLAP(&mut __t, "// Basic counts: the per");
     // Basic counts: the period, then like for like (FR-048).
     let like = Src::Like(&cov);
+    // like for like: the same pass gives the timeline's days (`daily` over `like`)
+    let mut like_days = None;
     let (all, like_aggs): (Agg, Option<(Agg, Vec<Agg>)>) = if all_time {
         (super::v3::aggs_all(cx)?, None)
     } else if hidden {
         (aggs(cx, Src::All, &[r.cur])?[0], None)
     } else {
         let spans: Vec<Span> = std::iter::once(r.cur).chain(vs.iter().copied()).collect();
-        let v = aggs(cx, like, &spans)?;
+        let (v, days) = super::v3::aggs_days(cx, like, &spans)?;
+        like_days = Some(days);
         let all = if like.is_base() {
             v[0]
         } else {
@@ -813,12 +1052,10 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     };
     let c = |f: fn(&Agg) -> f64, round: fn(f64) -> f64| compared(f(&all), pick(f), round);
 
-    super::v3::PROFLAP(&mut __t, "// New artists (first pl");
     // New artists (first play in all stored data in the window).
     let heard = terms::first_heard(cx.conn, cx.include_private)?;
     let new_artists = new_artists_compared(&heard, &cov, r.cur, &vs);
 
-    super::v3::PROFLAP(&mut __t, "// Days listened, streak");
     // Days listened, streak and covered days: this PC only past the export (design §4.4).
     let basis = if on_pc { Src::Desktop } else { Src::All };
     let class = |d: NaiveDate| {
@@ -860,18 +1097,18 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         compared(v, like, round1)
     });
 
-    super::v3::PROFLAP(&mut __t, "// Timeline: day by day");
     // Timeline: day by day for weeks, months and short custom ranges, else month by month.
     let by_day = matches!(r.grain, Grain::Week | Grain::Month)
         || (r.grain == Grain::Custom && (r.cur.1 - r.cur.0).num_days() < DAILY_MAX_DAYS);
     let tl_src = if hidden { Src::All } else { like };
-    let cur_days = if end >= r.cur.0 {
-        daily(cx, tl_src, shown)?
-    } else {
-        BTreeMap::new()
+    let cur_days = match &like_days {
+        _ if end < r.cur.0 => BTreeMap::new(),
+        Some(d) => d.range(shown.0..=shown.1).map(|(k, v)| (*k, *v)).collect(),
+        None => daily(cx, tl_src, shown)?,
     };
-    let vs_days = match (vs.iter().map(|s| s.0).min(), vs.iter().map(|s| s.1).max()) {
-        (Some(a), Some(b)) if !hidden => daily(cx, like, (a, b))?,
+    // read only at the compared windows' dates, which hold no current day
+    let vs_days = match (vs.is_empty(), like_days) {
+        (false, Some(d)) => d,
         _ => BTreeMap::new(),
     };
     let sum = |m: &BTreeMap<NaiveDate, (i64, i64)>, a: NaiveDate, b: NaiveDate| -> i64 {
@@ -940,7 +1177,6 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
             .collect()
     };
 
-    super::v3::PROFLAP(&mut __t, "// When you listened:");
     // When you listened: the period vs the last 6 months.
     let (hours, weekdays) = clock_ms(cx, r.cur, all_time)?;
     let base_span = (end - Months::new(6) + TimeDelta::days(1), end);
@@ -952,7 +1188,6 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         .filter(|(_, ms)| **ms > 0)
         .map(|(h, ms)| (h, pct(*ms, hours.iter().sum())));
 
-    super::v3::PROFLAP(&mut __t, "// Artists of the period");
     // Artists of the period, new ones first heard in it.
     let artists = by_artist(cx, Src::All, r.cur, first)?;
     let mut ranked: Vec<(&String, &(i64, i64))> = artists.iter().collect();
@@ -994,7 +1229,6 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         .collect();
     let also_new_more = new_ranked.len().saturating_sub(1 + also_new.len());
 
-    super::v3::PROFLAP(&mut __t, "// Fingerprint now");
     // Fingerprint now (basis as days listened) and the 12-month average.
     let basis_artists;
     let (fp_artists, fp_agg) = if on_pc {
@@ -1021,10 +1255,8 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
             0
         },
     };
-    super::v3::PROFLAP(&mut __t, "let average = average_fi");
     let average = average_fingerprint(cx, &model, &heard, r.cur.0, end)?;
 
-    super::v3::PROFLAP(&mut __t, "// Lines (design §5.1).");
     // Lines (design §5.1).
     let top_names: Vec<(String, Option<NaiveDate>)> = ranked
         .iter()
@@ -1058,17 +1290,19 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         record_day,
     };
 
-    super::v3::PROFLAP(&mut __t, "let (tag_rows, tag_cov) ");
     let (tag_rows, tag_cov) = if all_time {
         top_tags_all(cx)?
     } else {
         terms::top_tags(cx.conn, cx.include_private, r.cur.0, r.cur.1, 6)?
     };
-    super::v3::PROFLAP(&mut __t, "let prev = r.single_vs()");
     let prev = r.single_vs().or_else(|| vs.first().copied());
     let spark_months = months(month_start_minus(end, 11), end);
     let most = |k| most_played(cx, &r, &cov, k, all_time, prev, &spark_months);
-    super::v3::PROFLAP(&mut __t, "let private_excluded = i");
+    let [artists, albums, tracks] = if all_time {
+        [most(Kind::Artist)?, most(Kind::Album)?, most(Kind::Track)?]
+    } else {
+        most_played_pass(cx, &r, &cov, prev, &spark_months)?
+    };
     let private_excluded = if cx.include_private {
         0
     } else {
@@ -1133,12 +1367,11 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
             covered_pct: tag_cov,
         },
         most_played: MostPlayed {
-            artists: most(Kind::Artist)?,
-            albums: most(Kind::Album)?,
-            tracks: most(Kind::Track)?,
+            artists,
+            albums,
+            tracks,
         },
     };
-    super::v3::PROFLAP(&mut __t, "covered(cx, data, cov, t");
     covered(cx, data, cov, true)
 }
 
@@ -1411,6 +1644,58 @@ mod tests {
                 now: Some(4.0),
                 before: Some(3.0)
             } // median of 1, 2, 3, 10 = 2.5 → 3
+        );
+    }
+
+    /// The one-pass Most played equals the per-kind SQL path (rows, moves, sparks) for every grain
+    /// and comparison, with and without private sessions, on the insights fixture (library records,
+    /// a reconciled twin, a private play, a play with no record, export-only comparisons).
+    #[test]
+    fn most_played_pass_equals_the_sql_path() {
+        let (c, _) = super::super::fixture::build();
+        let (mut compared, mut moves, mut like) = (0, 0, 0);
+        for include_private in [false, true] {
+            let cx = Ctx {
+                conn: &c,
+                include_private,
+                tz: &chrono::Utc,
+                now: super::super::fixture::now(),
+            };
+            let today = cx.today();
+            let first = coverage::first_day(&c).unwrap();
+            for q in [
+                r#"{"grain": "week", "vs": "prev", "at": "2026-10-12"}"#,
+                r#"{"grain": "month", "vs": "prev", "at": null}"#,
+                r#"{"grain": "month", "vs": "prev", "at": "2026-09"}"#,
+                r#"{"grain": "month", "vs": "last_year", "at": null}"#,
+                r#"{"grain": "month", "vs": "usual", "at": null}"#,
+                r#"{"grain": "year", "vs": "prev", "at": null}"#,
+                r#"{"grain": "custom", "vs": "prev", "at": null, "from": "2026-09-01", "to": "2026-10-19"}"#,
+            ] {
+                let q: PeriodQuery = serde_json::from_str(q).unwrap();
+                let r = resolve(&q, today, first).unwrap();
+                let (_, cov) = period_coverage(&cx, &r, 0).unwrap();
+                let end = r.cur.1.min(today);
+                let prev = r
+                    .single_vs()
+                    .or_else(|| r.vs.as_ref().and_then(|v| v.first().copied()));
+                let spark = months(month_start_minus(end, 11), end);
+                let pass = most_played_pass(&cx, &r, &cov, prev, &spark).unwrap();
+                like += usize::from(!Src::Like(&cov).is_base() && cov.no_compare_reason.is_none());
+                let sql = [Kind::Artist, Kind::Album, Kind::Track]
+                    .map(|k| most_played(&cx, &r, &cov, k, false, prev, &spark).unwrap());
+                assert_eq!(pass, sql, "{q:?} private {include_private}");
+                compared += pass.iter().map(Vec::len).sum::<usize>();
+                moves += pass
+                    .iter()
+                    .flatten()
+                    .filter(|t| t.r#move.is_some() || t.is_new)
+                    .count();
+            }
+        }
+        assert!(
+            compared > 20 && moves > 0 && like > 0,
+            "the fixture exercises rows, moves and export-only rankings"
         );
     }
 }

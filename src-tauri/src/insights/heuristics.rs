@@ -59,6 +59,13 @@ pub struct Session<'a> {
 }
 
 impl Session<'_> {
+    /// The library item ids its plays are linked to.
+    pub fn item_ids(&self) -> HashSet<i64> {
+        self.plays.iter().filter_map(|e| e.item_id).collect()
+    }
+}
+
+impl Session<'_> {
     /// Wall-clock length, estimated start to last end.
     pub fn span_ms(&self) -> i64 {
         (self.end - self.start).num_milliseconds()
@@ -115,6 +122,10 @@ pub struct Dive {
 /// starting and ending on the key's plays, of ≥ 60 min where ≥ 80% of the time is one artist
 /// (or one album). Stretches of one key don't overlap.
 pub fn deep_dives(s: &Session) -> Vec<Dive> {
+    // every window is part of the session's time: a shorter session holds no dive
+    if s.ms < DIVE_MIN_MS {
+        return vec![];
+    }
     let p = &s.plays;
     let mut pre = vec![0i64];
     for e in p {
@@ -197,23 +208,28 @@ pub struct Repeat {
 
 /// On repeat: a track with ≥ 5 plays in one local day. By date, then most played.
 pub fn on_repeat(evs: &[Ev]) -> Vec<Repeat> {
-    let mut by: BTreeMap<(NaiveDate, &str), Repeat> = BTreeMap::new();
+    // count first, copy names only for the repeats (NFR-04: one entry per day and track)
+    let mut by: HashMap<(NaiveDate, &str), (&Ev, usize)> = HashMap::new();
     for e in evs.iter().filter(|e| is_play(e) && !e.norm_key.is_empty()) {
-        by.entry((e.date(), &e.norm_key))
-            .or_insert_with(|| Repeat {
-                date: e.date(),
-                norm_key: e.norm_key.clone(),
-                track: e.track.clone(),
-                artist: e.artist.clone(),
-                times: 0,
-            })
-            .times += 1;
+        by.entry((e.date(), &e.norm_key)).or_insert((e, 0)).1 += 1;
     }
     let mut out: Vec<Repeat> = by
-        .into_values()
-        .filter(|r| r.times >= REPEAT_PLAYS)
+        .into_iter()
+        .filter(|(_, (_, n))| *n >= REPEAT_PLAYS)
+        .map(|((date, _), (e, times))| Repeat {
+            date,
+            norm_key: e.norm_key.clone(),
+            track: e.track.clone(),
+            artist: e.artist.clone(),
+            times,
+        })
         .collect();
-    out.sort_by(|a, b| a.date.cmp(&b.date).then(b.times.cmp(&a.times)));
+    out.sort_by(|a, b| {
+        a.date
+            .cmp(&b.date)
+            .then(b.times.cmp(&a.times))
+            .then_with(|| a.norm_key.cmp(&b.norm_key))
+    });
     out
 }
 
@@ -411,11 +427,13 @@ pub fn start_to_finish(tracklist: &HashSet<i64>, sessions: &[Session]) -> usize 
     }
     sessions
         .iter()
-        .filter(|s| {
-            let heard: HashSet<i64> = s.plays.iter().filter_map(|e| e.item_id).collect();
-            tracklist.is_subset(&heard)
-        })
+        .filter(|s| played_all(tracklist, &s.item_ids()))
         .count()
+}
+
+/// One session of `start_to_finish`: `heard` (its plays' item ids) holds the whole track list.
+pub fn played_all(tracklist: &HashSet<i64>, heard: &HashSet<i64>) -> bool {
+    !tracklist.is_empty() && tracklist.is_subset(heard)
 }
 
 #[cfg(test)]

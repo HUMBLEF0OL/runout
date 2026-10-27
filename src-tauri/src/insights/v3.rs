@@ -364,6 +364,9 @@ pub fn between(s: Span) -> String {
     )
 }
 
+/// `(ms, plays)` per local date.
+pub type Days = BTreeMap<NaiveDate, (i64, i64)>;
+
 /// `(ms, plays)` per local date in `s` (dates without events left out).
 pub fn daily<Tz: TimeZone>(
     cx: &Ctx<Tz>,
@@ -442,17 +445,52 @@ fn per(a: i64, b: i64) -> f64 {
 /// `Agg` per window in one pass (windows may not overlap); an empty window gives zeros. The
 /// distinct counts are kept in Rust (NFR-04: SQL's per-window join and COUNT(DISTINCT) sorts).
 pub fn aggs<Tz: TimeZone>(cx: &Ctx<Tz>, src: Src, spans: &[Span]) -> Result<Vec<Agg>> {
+    Ok(aggs_days(cx, src, spans)?.0)
+}
+
+/// Case-folded (ASCII, as SQL `lower`) 64-bit hash of `parts`: distinct counts without a copy per
+/// event. A collision would undercount by one; at 2^-64 per pair that never happens in practice.
+pub(crate) fn folded_hash(buf: &mut Vec<u8>, parts: &[&str]) -> u64 {
+    use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+    buf.clear();
+    for p in parts {
+        buf.extend(p.bytes().map(|b| b.to_ascii_lowercase()));
+        buf.push(0x1f);
+    }
+    BuildHasherDefault::<DefaultHasher>::default().hash_one(&buf[..])
+}
+
+/// `YYYY-MM-DD…` → `YYYYMMDD` without parsing a date.
+pub(crate) fn day_num(d: &str) -> Option<u32> {
+    let b = d.as_bytes();
+    if b.len() < 10 || b[4] != b'-' || b[7] != b'-' {
+        return None;
+    }
+    [0, 1, 2, 3, 5, 6, 8, 9].iter().try_fold(0u32, |n, &i| {
+        b[i].is_ascii_digit().then(|| n * 10 + (b[i] - b'0') as u32)
+    })
+}
+
+/// `aggs` plus `(ms, plays)` per local date inside the windows (as `daily`, same events).
+pub fn aggs_days<Tz: TimeZone>(
+    cx: &Ctx<Tz>,
+    src: Src,
+    spans: &[Span],
+) -> Result<(Vec<Agg>, Days)> {
     let mut out = vec![Agg::default(); spans.len()];
     if spans.is_empty() {
-        return Ok(out);
+        return Ok((out, BTreeMap::new()));
     }
     let lo = spans.iter().map(|s| s.0).min().expect("non-empty");
     let hi = spans.iter().map(|s| s.1).max().expect("non-empty");
-    let bounds: Vec<(String, String)> = spans.iter().map(|s| (day(s.0), day(s.1))).collect();
-    let mut sets: Vec<[std::collections::HashSet<String>; 4]> =
+    let num = |d: NaiveDate| d.year() as u32 * 10_000 + d.month() * 100 + d.day();
+    let bounds: Vec<(u32, u32)> = spans.iter().map(|s| (num(s.0), num(s.1))).collect();
+    let mut sets: Vec<[std::collections::HashSet<u64>; 3]> =
         (0..spans.len()).map(|_| Default::default()).collect();
+    let mut by_day: HashMap<u32, (usize, i64, i64)> = HashMap::new();
+    let mut buf = Vec::new();
     let mut st = cx.conn.prepare(&format!(
-        "{} SELECT substr(local, 1, 10), ms_played, counts_as_play, IFNULL(artist_name, ''),
+        "{} SELECT local, ms_played, counts_as_play, IFNULL(artist_name, ''),
                 IFNULL(norm_key, ''), IFNULL(album_name, ''), source = 'export', reason_end = 'trackdone'
          FROM ev WHERE {}",
         src.cte(cx.include_private),
@@ -460,54 +498,56 @@ pub fn aggs<Tz: TimeZone>(cx: &Ctx<Tz>, src: Src, spans: &[Span]) -> Result<Vec<
     ))?;
     let mut rows = st.query([])?;
     while let Some(r) = rows.next()? {
-        let d = super::text(r, 0)?;
-        let Some(i) = bounds
-            .iter()
-            .position(|(a, b)| a.as_str() <= d && d <= b.as_str())
-        else {
+        let Some(d) = day_num(super::text(r, 0)?) else {
+            continue;
+        };
+        let Some(i) = bounds.iter().position(|(a, b)| *a <= d && d <= *b) else {
             continue;
         };
         let a = &mut out[i];
-        a.ms += r.get::<_, i64>(1)?;
+        let ms = r.get::<_, i64>(1)?;
+        let play = r.get::<_, i64>(2)? != 0;
+        a.ms += ms;
+        let day = by_day.entry(d).or_insert((i, 0, 0));
+        day.1 += ms;
+        day.2 += play as i64;
         if r.get::<_, Option<bool>>(6)? == Some(true) {
             a.export_events += 1;
             a.finished += (r.get::<_, Option<bool>>(7)? == Some(true)) as i64;
         }
-        if r.get::<_, i64>(2)? == 0 {
+        if !play {
             continue;
         }
         a.plays += 1;
-        let (artist, key, album) = (
-            super::text(r, 3)?,
-            super::text(r, 4)?,
-            super::text(r, 5)?,
-        );
-        let [artists, tracks, albums, days] = &mut sets[i];
-        if !artist.is_empty() && !artists.contains(&artist.to_ascii_lowercase()) {
-            artists.insert(artist.to_ascii_lowercase());
+        let (artist, key, album) = (super::text(r, 3)?, super::text(r, 4)?, super::text(r, 5)?);
+        let [artists, tracks, albums] = &mut sets[i];
+        if !artist.is_empty() {
+            artists.insert(folded_hash(&mut buf, &[artist]));
         }
-        if !key.is_empty() && !tracks.contains(key) {
-            tracks.insert(key.to_owned());
+        if !key.is_empty() {
+            // `norm_key` is compared as stored
+            tracks.insert(std::hash::BuildHasher::hash_one(
+                &std::hash::BuildHasherDefault::<std::hash::DefaultHasher>::default(),
+                key,
+            ));
         }
         if !album.is_empty() {
-            let k = format!(
-                "{}\u{1f}{}",
-                album.to_ascii_lowercase(),
-                artist.to_ascii_lowercase()
-            );
-            albums.insert(k);
-        }
-        if !days.contains(d) {
-            days.insert(d.to_owned());
+            albums.insert(folded_hash(&mut buf, &[album, artist]));
         }
     }
-    for (a, [artists, tracks, albums, days]) in out.iter_mut().zip(sets) {
+    let mut days = BTreeMap::new();
+    for (d, (i, ms, plays)) in by_day {
+        out[i].days += (plays > 0) as i64;
+        if let Some(d) = NaiveDate::from_ymd_opt((d / 10_000) as i32, d / 100 % 100, d % 100) {
+            days.insert(d, (ms, plays));
+        }
+    }
+    for (a, [artists, tracks, albums]) in out.iter_mut().zip(sets) {
         a.artists = artists.len() as i64;
         a.tracks = tracks.len() as i64;
         a.albums = albums.len() as i64;
-        a.days = days.len() as i64;
     }
-    Ok(out)
+    Ok((out, days))
 }
 
 /// `Agg` over all time (range `all`, NFR-04): distinct counts from the 0005 `listening_rollup`
@@ -619,6 +659,28 @@ pub fn artist_item(conn: &Connection, name: &str) -> Result<(Option<i64>, Option
         )
         .optional()?
         .unwrap_or((None, None)))
+}
+
+/// Every library artist by `lower(display_name)` → the lowest id and its status: `artist_item` for
+/// many names in one pass (`COLLATE NOCASE` and `lower` both fold ASCII only).
+pub fn artist_items(conn: &Connection) -> Result<HashMap<String, (i64, Status)>> {
+    items_by_name(conn, "artist")
+}
+
+/// `artist_items` for any record type.
+pub fn items_by_name(conn: &Connection, kind: &str) -> Result<HashMap<String, (i64, Status)>> {
+    let mut out = HashMap::new();
+    let mut st = conn.prepare(
+        "SELECT lower(display_name), id, status FROM item
+         WHERE type = ?1 AND display_name IS NOT NULL ORDER BY id DESC",
+    )?;
+    for r in st.query_map([kind], |r| {
+        Ok((r.get::<_, String>(0)?, r.get(1)?, r.get(2)?))
+    })? {
+        let (k, id, status) = r?;
+        out.insert(k, (id, status));
+    }
+    Ok(out)
 }
 
 /// Played local dates in `s` (≥ 1 play).
@@ -773,12 +835,4 @@ mod tests {
         ));
         assert_eq!(minute("2026-09-04T21:14:33"), "2026-09-04T21:14");
     }
-}
-
-#[allow(non_snake_case)]
-pub fn PROFLAP(t: &mut std::time::Instant, l: &str) {
-    if std::env::var_os("RUNOUT_PROF").is_some() {
-        eprintln!("    {l}: {:?}", t.elapsed());
-    }
-    *t = std::time::Instant::now();
 }

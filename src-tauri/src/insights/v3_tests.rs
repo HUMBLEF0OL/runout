@@ -748,6 +748,7 @@ fn an_artist_leaving_the_top_10_after_six_months_gets_a_line() {
     );
     // five months is under the threshold
     c.execute(
+        // unfiltered: fixture edit
         "DELETE FROM listening_event WHERE artist_name = 'Elm' AND ended_at_utc < '2026-04-01'",
         [],
     )
