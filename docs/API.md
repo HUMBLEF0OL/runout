@@ -35,7 +35,7 @@ interface Page<T> { rows: T[]; total: number; offset: number }
 type ItemType = 'album' | 'track' | 'artist';
 type Status = 'planned' | 'in_progress' | 'explored' | 'not_for_me' | 'abandoned';
 type Priority = 'high' | 'medium' | 'low';
-type Source = 'U' | 'S' | 'E';                          // never 'A' in insights (DESIGN §7)
+type Source = 'U' | 'S' | 'E' | 'M';                    // never 'A' in insights (DESIGN §7); M = open music database labels (M10 WI 9, only from get_genres_decades)
 type Range = '7d' | '30d' | '12m' | 'all';
 
 interface ItemSummary {
@@ -103,7 +103,7 @@ interface Sourced<T> { data: T; sources: Source[]; freshness: Freshness }   // e
 | `list_saved_filters` / `save_filter` / `delete_saved_filter` | — / `name, definition` / `id` | `SavedFilter[]` / `SavedFilter` / `void` | FR-013. `save_filter` trims `definition.tags` and drops empties and case-insensitive duplicates; `rename_tag`/`merge_tags` rewrite saved filters' tags |
 | `get_rediscover` | — | `{revisit, top_rated, stale_backlog, incomplete_reviews: ItemSummary[]}` | SC-07, FR-013 |
 | `get_online` | — | `boolean` | `net::online()`, cached 30 s (TSD §4.3) |
-| `get_settings` / `update_settings` | — / `patch` | `Settings` | `{library_path, backup_dir, backup_weekly, size_warn_mb, artwork_default, export_reminder}` (`export_reminder` M10, §4.1) |
+| `get_settings` / `update_settings` | — / `patch` | `Settings` | `{library_path, backup_dir, backup_weekly, size_warn_mb, artwork_default, export_reminder, music_db}` (`export_reminder`, `music_db` M10, §4.1); `music_db` is set only by `set_music_db` |
 | `get_capture` / `set_capture_enabled` / `new_pairing_code` | — / `on` / — | `{on, address, port, code}` | SC-13e; TSD §5.1 |
 | `export_library` | — | `{path, count} \| null` | Save picker; JSON with provenance (FR-020) |
 | `list_backups` / `backup_now` | — | `Backup[]` / `Backup` | `Backup = {path, created_at, size_bytes, item_count, size_warning}` |
@@ -175,6 +175,8 @@ Every definition and threshold: [design/M10-insights-v3.md](design/M10-insights-
 | `get_records` | — | `Covered<Records>` | Records tab; all-time figures use all-device dates only (design §4.4) |
 | `explore` | `query: ExploreQuery` | `Covered<ExploreResult>` | Explore, < 200 ms (NFR-04). `validation` for 0 or more than 3 series, `from` after `to`, or an hour/weekday out of range. A name with no plays gives a series of zeros, not an error |
 | `get_data_coverage` | — | `Covered<DataCoverage>` | Your data tab; `coverage.gaps` = every no-data stretch in the whole history |
+| `get_genres_decades` | `period: PeriodQuery` | `Covered<GenresDecades>` | Genres & decades tab (M10 WI 9, design §7, TSD §5.4): S/E listening time labelled from the `enrich` tables (source M; `sources` gains `'M'` when any label is used). No comparison: `coverage` is the period's gaps only. `validation` like `get_period_report` |
+| `set_music_db` | `on: boolean` | `Settings` | The music database switch: off stops lookups and deletes every `enrich` row in one transaction; on resumes lookups (background, ≤ 1 request/s, names only). `update_settings` refuses `music_db` |
 | `list_explore_views` / `save_explore_view` / `delete_explore_view` | — / `name, query: ExploreQuery` / `id` | `ExploreView[]` / `ExploreView` / `void` | Explore's "Save this view" (M10 WI 8), stored in the library DB like saved filters (FR-013): local only, in backups. `save_explore_view` validates `query` like `explore` and the name like `save_filter`; a view holds the builder only, never a result or a fingerprint score |
 
 `get_listening_insights` (above) returns `Covered<ListeningInsights>` from M10: its `coverage` is computed for `range` vs the period before, and `PeriodStats` gains `plays_cmp`/`ms_cmp` so Home's strip and the Insights stat tiles compare like for like (G-46).
@@ -302,9 +304,23 @@ interface DataCoverage {
   imports: { id: number; imported_at: string; from: string | null; to: string | null; added: number; already_had: number }[];
   private_excluded: number;
 }
+
+interface GenresDecades {
+  lookups: { on: boolean; contact_set: boolean; pending: number; last_lookup: string | null };   // contact_set false = no project contact yet (U-12): nothing is looked up
+  attribution: string;                                   // "Genres from MusicBrainz, CC BY-NC-SA 3.0": shown wherever genres show
+  genre_count: number;                                   // distinct genres of the period's artists
+  top_genres: { name: string; share_pct: number }[];     // ≤ 10; an artist's genre = its most voted; % of the period's time
+  genre_months: { months: string[]; rows: { genre: string; shares: number[] }[] };   // last 24 months to today, top 6 genres, % of each month's time
+  decades: { decade: number; share_pct: number; top_album: { name: string; by: string } | null }[];   // by album first release year; % of the period's time
+  unknown_year_pct: number;                              // time with no album year (unmatched, no album, not looked up yet)
+  average_age: { years: number; year: number } | null;   // period's last year − time-weighted mean release year
+  released_this_year_pct: number | null;                 // time on albums first released in the period's last year ÷ time with a year
+  countries: { name: string; share_pct: number }[];      // ISO 3166-1 alpha-2 codes, ≤ 10; % of the time whose artist has a country
+  coverage: { artists_genre_pct: number; albums_year_pct: number; artists_country_pct: number; same_name_pct: number };   // % of the period's time; same_name = several artists share the name: labels are the top hit's, shown as "probably" (included in the other %)
+}
 ```
 
-`Settings` gains `export_reminder: boolean` (off by default): a local reminder on app open, monthly from the last export's end, never network (design §5, Your data).
+`Settings` gains `export_reminder: boolean` (off by default): a local reminder on app open, monthly from the last export's end, never network (design §5, Your data). It also gains `music_db: boolean` (on by default, U-11): open music database lookups, changed only by `set_music_db`.
 
 ## 5. R3 commands (backend M5 · switched in M7)
 | Command | Args | Returns | Notes / spec |

@@ -588,6 +588,48 @@ await step("R2 Records states: loading, error, heavy (Play again opens Spotify),
   await recordsReady();
 });
 
+/* J — Insights v3 Genres & decades (M10 WI 9): months by keyboard, the MusicBrainz credit, still looking up, the off switch */
+const genresReady = (label) => waitFor(`!!document.querySelector('[aria-label="Genres and decades in ${label}"]') && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("J1 Genres & decades: genres by month by keyboard, credit shown; turn lookups off (deleted) and on again", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/genres?grain=month&at=2026-09&vs=prev` });
+  await genresReady("Sep 2026");
+  await waitFor(`txt().includes("Genres from MusicBrainz, CC BY-NC-SA 3.0") && /Still looking up \\d+ names/.test(txt()) && txt().includes("From: Desktop log") && txt().includes("Music database")`);
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el) === "Top genres by month"`, { what: "genres by month" });
+  await key("Home");
+  await waitFor(`/^.+ \\d{4}: Spiritual jazz \\d+%/.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await key("End");
+  await top(); await sleep(1000);
+  await shot("J1-genres");
+  await activate(byName("Turn off lookups and delete them"), { what: "Turn off lookups" });
+  await toast(/^Lookups off\./);
+  await waitFor(`txt().includes("Genres and decades are off") && !txt().includes("Genres from MusicBrainz")`);
+  await activate(byName("Turn on lookups"), { back: true, what: "Turn on lookups" });
+  await genresReady("Sep 2026");
+});
+await step("J2 Genres & decades states: loading, error, heavy, empty; the switch in Your data", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/genres?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load genres and decades/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await genresReady("Oct 2026");
+  await waitFor(`$$(".in3-genre-row").length === 10 && $$(".in3-dec > div").length === 8`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Genres & decades pushes the page sideways");
+  await js(`(document.querySelector(".in3-dec").scrollIntoView({ block: "center" }), true)`); await sleep(1000);
+  await shot("J2-genres-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await send("Page.navigate", { url: `${APP}/#/insights/data?grain=month&vs=prev` });
+  await tabTo(`el.getAttribute("role") === "switch" && nm(el) === "Look up genres and release years"`, { what: "music database switch" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === false && txt().includes("nothing looked up is kept")`);
+  await key(" ");
+  await waitFor(`document.activeElement.checked === true`);
+});
+
 /* X — Insights v3 Explore (M10 WI 8): scrub the chart, a ready-made question fills the builder, save the view, Copy as CSV */
 const exploreReady = (name = "Hours per month") => waitFor(`!!$$('[role="slider"]').find((e) => nm(e) === ${JSON.stringify(name)}) && !document.querySelector('main [aria-busy="true"]')`, 8000);
 await step("X1 Explore: chart by arrow keys, a ready-made question fills the builder, Save this view, Copy as CSV", async () => {

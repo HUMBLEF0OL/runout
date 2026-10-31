@@ -37,7 +37,7 @@ export function freshnessText(f: Freshness | undefined, loggerState?: string): s
   return `Desktop plays: ${desktop}. All devices: ${all}.`;
 }
 
-const SRC = { U: "Your records", S: "Desktop log", E: "Spotify export" } as const;
+const SRC = { U: "Your records", S: "Desktop log", E: "Spotify export", M: "Music database" } as const;
 /** Source tag (FR-032): "From: Your records + Desktop log." */
 export const sourceText = (sources: (keyof typeof SRC)[]) => `From: ${sources.map((s) => SRC[s]).join(" + ")}.`;
 /** Insight card tag (FR-032): the response's sources, each listening source with how current it is. A response
@@ -144,6 +144,13 @@ export function periodLabel(q: PeriodQuery, today: string): string {
   }
   const s = periodSpan(q.grain, q.at, today);
   return q.grain === "year" ? s.from.slice(0, 4) : q.grain === "month" ? `${MON[+s.from.slice(5, 7) - 1]} ${s.from.slice(0, 4)}` : `Week of ${dm(s.from)} ${s.from.slice(0, 4)}`;
+}
+
+/** The period's last calendar year (API.md GenresDecades "the period's last year"); All time = today's year. */
+export function periodLastYear(q: PeriodQuery, today: string): number {
+  if (q.grain === "all") return +today.slice(0, 4);
+  const to = q.grain === "custom" ? (q.to ?? today) : periodSpan(q.grain, q.at, today).to;
+  return +(to < today ? to : today).slice(0, 4); // Rust: span end clipped to today
 }
 
 /** "Compare with" choices for the grain (none for All time; a year's "same period last year" is its "before"). */

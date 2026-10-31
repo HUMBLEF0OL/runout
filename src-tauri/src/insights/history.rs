@@ -1,7 +1,7 @@
 //! Whole-history tabs (API.md §4.1): `get_trends` (design §5 Trends) and `get_records` (Records).
 //! All-time figures use all-device dates only (design §4.4); heavy lifting stays in SQL over the
 //! 0008 rollups (`listening_day`, `listening_month_artist`), so only small results reach Rust.
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeDelta, TimeZone};
 use rusqlite::OptionalExtension;
@@ -117,52 +117,80 @@ pub fn history_model<Tz: TimeZone>(
     super::v3::view_model(cx, first, today)
 }
 
-/// `(month, artist key, ms)` rows of the rollup, artists with ≥ 1 play.
+/// `(month, artist key, ms)` rows of the rollup.
 type MonthRows = BTreeMap<String, Vec<(String, i64)>>;
 
-fn month_artist_rows<Tz: TimeZone>(cx: &Ctx<Tz>, extra: &str) -> Result<MonthRows> {
+/// The whole 0008 month-and-artist rollup, read once for every figure built on it: the named
+/// artists' rows (`v3::month_artists`' shape and order) and each month's total time, unnamed
+/// events included. One ordered read of the primary key, summed here (NFR-04: each GROUP BY there
+/// sorts the table).
+struct MonthArtistsAll {
+    rows: Vec<super::v3::MonthArtist>,
+    totals: HashMap<String, i64>,
+}
+
+fn month_artists_all<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<MonthArtistsAll> {
     let mut st = cx.conn.prepare(&format!(
-        "SELECT month, artist, SUM(ms_played) FROM listening_month_artist
-         WHERE events > 0 AND artist <> ''{}{extra} GROUP BY 1, 2",
+        "SELECT month, artist, ms_played, plays FROM listening_month_artist
+         WHERE events > 0{} ORDER BY month, artist",
         cx.private_filter("private_session")
     ))?;
-    let mut out: MonthRows = BTreeMap::new();
-    for r in st.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    })? {
-        let (m, a, ms) = r?;
-        out.entry(m).or_default().push((a, ms));
+    let mut out = MonthArtistsAll {
+        rows: vec![],
+        totals: HashMap::new(),
+    };
+    let mut rows = st.query([])?;
+    while let Some(r) = rows.next()? {
+        let (m, a) = (super::text(r, 0)?, super::text(r, 1)?);
+        let (ms, plays): (i64, i64) = (r.get(2)?, r.get(3)?);
+        match out.totals.get_mut(m) {
+            Some(t) => *t += ms,
+            None => {
+                out.totals.insert(m.to_owned(), ms);
+            }
+        }
+        if a.is_empty() {
+            continue;
+        }
+        match out.rows.last_mut() {
+            Some(l) if l.0 == m && l.1 == a => {
+                l.2 += ms;
+                l.3 += plays;
+            }
+            _ => out.rows.push((m.to_owned(), a.to_owned(), ms, plays)),
+        }
     }
     Ok(out)
 }
 
-/// Each year's top `n` artist keys by time (SQL window, so only those rows load).
-fn top_per_year<Tz: TimeZone>(
-    cx: &Ctx<Tz>,
-    n: usize,
-    months_from: &str,
-    months_to: &str,
-) -> Result<BTreeMap<i32, Vec<String>>> {
-    let mut st = cx.conn.prepare(&format!(
-        "SELECT y, artist FROM (SELECT y, artist, ROW_NUMBER() OVER (PARTITION BY y ORDER BY ms DESC, artist) AS k
-           FROM (SELECT CAST(substr(month, 1, 4) AS INT) AS y, artist, SUM(ms_played) AS ms
-                 FROM listening_month_artist WHERE events > 0 AND artist <> '' AND month BETWEEN ?1 AND ?2{}
-                 GROUP BY 1, 2 HAVING ms > 0))
-         WHERE k <= {n} ORDER BY y, k",
-        cx.private_filter("private_session")
-    ))?;
-    let mut out: BTreeMap<i32, Vec<String>> = BTreeMap::new();
-    for r in st.query_map([months_from, months_to], |r| {
-        Ok((r.get::<_, i32>(0)?, r.get::<_, String>(1)?))
-    })? {
-        let (y, a) = r?;
-        out.entry(y).or_default().push(a);
+impl MonthArtistsAll {
+    /// The rows of `keep`'s artists in the months `from..=to`, by month.
+    fn by_month(&self, from: &str, to: &str, keep: &HashSet<&str>) -> MonthRows {
+        let mut out: MonthRows = BTreeMap::new();
+        for (m, a, ms, _) in &self.rows {
+            if (from..=to).contains(&m.as_str()) && keep.contains(a.as_str()) {
+                out.entry(m.clone()).or_default().push((a.clone(), *ms));
+            }
+        }
+        out
     }
-    Ok(out)
+
+    /// `(year, artist, ms)` in (year, artist) order (the year as SQL's CAST of the month's first 4).
+    fn by_year(&self) -> Vec<(i32, String, i64)> {
+        let mut by: BTreeMap<(i32, &str), i64> = BTreeMap::new();
+        for (m, a, ms, _) in &self.rows {
+            let y = m.get(..4).and_then(|y| y.parse().ok()).unwrap_or(0);
+            *by.entry((y, a.as_str())).or_default() += ms;
+        }
+        by.into_iter()
+            .map(|((y, a), ms)| (y, a.to_owned(), ms))
+            .collect()
+    }
+}
+
+/// Each year's top `n` artist keys by time.
+fn top_per_year(years: &[(i32, String, i64)], n: usize) -> BTreeMap<i32, Vec<String>> {
+    terms::top_per_year(years, n)
 }
 
 /// `get_trends`.
@@ -195,16 +223,15 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
 
     // Eras: only artists that ever hold ≥ 15% of a month can name one; the rest of each month is
     // one unnamed row, so shares and lifetime shares stay exact.
-    let candidates = month_artist_rows(
-        cx,
-        &format!(
-            " AND artist IN (SELECT artist FROM (SELECT g.artist, g.ms, t.ms AS total FROM
-               (SELECT month, artist, SUM(ms_played) AS ms FROM listening_month_artist WHERE events > 0{p} GROUP BY 1, 2) g
-               JOIN (SELECT month, SUM(ms_played) AS ms FROM listening_month_artist WHERE events > 0{p} GROUP BY 1) t
-               USING (month)) WHERE ms >= {ERA_SHARE} * total)",
-            p = cx.private_filter("private_session")
-        ),
-    )?;
+    let all = month_artists_all(cx)?;
+    let total_of = |m: &str| all.totals.get(m).copied().unwrap_or(0) as f64;
+    let named: HashSet<&str> = all
+        .rows
+        .iter()
+        .filter(|(m, _, ms, _)| *ms as f64 >= ERA_SHARE * total_of(m))
+        .map(|r| r.1.as_str())
+        .collect();
+    let candidates = all.by_month("", "~", &named);
     let era_months: Vec<(String, Vec<(String, i64)>)> = month_totals
         .iter()
         .map(|(m, total)| {
@@ -239,23 +266,26 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
     let arc_to = month(today);
     let totals_by_month: HashMap<String, i64> =
         month_totals.iter().map(|(m, t)| (month(*m), *t)).collect();
-    let arc_rows = month_artist_rows(
-        cx,
-        &format!(
-            " AND month BETWEEN '{arc_from}' AND '{arc_to}' AND artist IN (
-               SELECT artist FROM (SELECT artist, SUM(ms_played) AS ms FROM listening_month_artist
-                 WHERE events > 0 AND artist <> '' AND month BETWEEN '{arc_from}' AND '{arc_to}'{p}
-                 GROUP BY 1 ORDER BY ms DESC, artist LIMIT {ARC_CANDIDATES})
-               UNION SELECT g.artist FROM (SELECT month, artist, SUM(ms_played) AS ms FROM listening_month_artist
-                 WHERE events > 0 AND month >= '{recent}'{p} GROUP BY 1, 2) g
-                 JOIN (SELECT month, SUM(ms_played) AS ms FROM listening_month_artist
-                 WHERE events > 0 AND month >= '{recent}'{p} GROUP BY 1) t USING (month)
-                 WHERE g.artist <> '' AND g.ms >= {back} * t.ms)",
-            p = cx.private_filter("private_session"),
-            recent = month(arc_months[ARC_MONTHS - ARC_RECENT]),
-            back = heuristics::BACK_AGAIN,
-        ),
-    )?;
+    // Arc candidates: the top artists of the arc months, and any back again in the recent ones.
+    let recent = month(arc_months[ARC_MONTHS - ARC_RECENT]);
+    let mut arc_ms: BTreeMap<&str, i64> = BTreeMap::new();
+    for (m, a, ms, _) in &all.rows {
+        if (arc_from.as_str()..=arc_to.as_str()).contains(&m.as_str()) {
+            *arc_ms.entry(a.as_str()).or_default() += ms;
+        }
+    }
+    let mut top: Vec<(&str, i64)> = arc_ms.into_iter().collect();
+    top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    let mut keep: HashSet<&str> = top.into_iter().take(ARC_CANDIDATES).map(|x| x.0).collect();
+    keep.extend(
+        all.rows
+            .iter()
+            .filter(|(m, _, ms, _)| {
+                *m >= recent && *ms as f64 >= heuristics::BACK_AGAIN * total_of(m)
+            })
+            .map(|r| r.1.as_str()),
+    );
+    let arc_rows = all.by_month(&arc_from, &arc_to, &keep);
     let totals: Vec<i64> = arc_months
         .iter()
         .map(|m| totals_by_month.get(&month(*m)).copied().unwrap_or(0))
@@ -269,7 +299,8 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
                 .0 = *ms;
         }
     }
-    let top20 = top_per_year(cx, CONSTANT_TOP, "0000", "9999")?;
+    let years = all.by_year();
+    let top20 = top_per_year(&years, CONSTANT_TOP);
     let years_n = top20.len();
     let mut in_top: HashMap<&str, usize> = HashMap::new();
     for a in top20.values().flatten() {
@@ -340,7 +371,7 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
         })
         .collect();
 
-    let fingerprint_by_year = fingerprint_by_year(cx, &days, &model, first, today)?;
+    let fingerprint_by_year = fingerprint_by_year(cx, &years, &days, &model, first, today)?;
     let tag_months = tag_months(cx, today)?;
     let calendar = (first.year()..=today.year())
         .map(|y| calendar_year(y, &days, &model, today))
@@ -472,58 +503,77 @@ fn calendar_year(
 /// The fingerprint of each year with listening, from the rollups plus one grouped pass for Repeat.
 fn fingerprint_by_year<Tz: TimeZone>(
     cx: &Ctx<Tz>,
+    years: &[(i32, String, i64)],
     days: &BTreeMap<NaiveDate, (i64, i64)>,
     model: &Model,
     first: NaiveDate,
     today: NaiveDate,
 ) -> Result<Vec<YearFingerprint>> {
     let mut artists: HashMap<i32, Vec<(String, i64)>> = HashMap::new();
-    let mut st = cx.conn.prepare(&format!(
-        "SELECT CAST(substr(month, 1, 4) AS INT), artist, SUM(ms_played) FROM listening_month_artist
-         WHERE events > 0 AND artist <> ''{} GROUP BY 1, 2",
-        cx.private_filter("private_session")
-    ))?;
-    for r in st.query_map([], |r| {
-        Ok((
-            r.get::<_, i32>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    })? {
-        let (y, a, ms) = r?;
-        artists.entry(y).or_default().push((a, ms));
+    for (y, a, ms) in years {
+        artists.entry(*y).or_default().push((a.clone(), *ms));
     }
     let first_year: HashMap<String, i32> = terms::first_heard(cx.conn, cx.include_private)?
         .into_iter()
         .map(|f| (f.artist, f.local.year()))
         .collect();
-    // Repeat: plays of tracks played in an earlier year (the year is the period). One unsorted pass
-    // (NFR-04: grouping every play by track and year sorts the whole table): a year's repeat plays are
-    // its plays minus those of tracks first played that year.
-    let mut st = cx.conn.prepare(&format!(
-        "{} SELECT norm_key, CAST(substr(local, 1, 4) AS INT) FROM base
-         WHERE counts_as_play AND norm_key <> '' AND +ended_at_utc >= ''",
-        base(cx.include_private)
-    ))?;
-    let mut plays_by_year: HashMap<i32, i64> = HashMap::new();
-    // track → (first year with a play, its plays that year)
-    let mut first_year_of: HashMap<String, (i32, i64)> = HashMap::new();
-    let mut rows = st.query([])?;
-    while let Some(r) = rows.next()? {
-        let (k, y): (&str, i32) = (super::text(r, 0)?, r.get(1)?);
-        *plays_by_year.entry(y).or_default() += 1;
-        match first_year_of.get_mut(k) {
-            Some(f) if y < f.0 => *f = (y, 1),
-            Some(f) if y == f.0 => f.1 += 1,
-            Some(_) => {}
-            None => {
-                first_year_of.insert(k.to_owned(), (y, 1));
+    // Repeat: plays of tracks played in an earlier year (the year is the period). One unsorted pass,
+    // split over threads (NFR-04: grouping every play by track and year sorts the whole table): a
+    // year's repeat plays are its plays minus those of tracks first played that year.
+    type Firsts = (
+        HashMap<i32, i64>,
+        // quick hash of the track (retried on a collision) → (track, first year with a play, its
+        // plays that year)
+        super::v3::IdMap<u64, (String, i32, i64)>,
+    );
+    fn note(f: &mut Firsts, k: &str, y: i32, n: i64) {
+        let mut h = super::v3::quick_hash(&[Some(k)]);
+        loop {
+            match f.1.get_mut(&h) {
+                Some(e) if e.0 == k => {
+                    if y < e.1 {
+                        (e.1, e.2) = (y, n);
+                    } else if y == e.1 {
+                        e.2 += n;
+                    }
+                    return;
+                }
+                Some(_) => h = h.wrapping_add(0x9e37_79b9_7f4a_7c15),
+                None => {
+                    f.1.insert(h, (k.to_owned(), y, n));
+                    return;
+                }
             }
         }
     }
-    drop(rows);
+    let base_sql = base(cx.include_private);
+    let sql = |w: &str| {
+        format!(
+            "{base_sql} SELECT norm_key, CAST(substr(local, 1, 4) AS INT) FROM base
+             WHERE counts_as_play AND norm_key <> '' AND +ended_at_utc >= '' AND {w}"
+        )
+    };
+    let row = |f: &mut Firsts, r: &rusqlite::Row| -> Result<()> {
+        let (k, y): (&str, i32) = (super::text(r, 0)?, r.get(1)?);
+        *f.0.entry(y).or_default() += 1;
+        note(f, k, y, 1);
+        Ok(())
+    };
+    let (plays_by_year, first_year_of) =
+        super::v3::par_rows(cx, None, &sql, &Firsts::default, &row)?
+            .into_iter()
+            .reduce(|mut a, b| {
+                for (y, n) in b.0 {
+                    *a.0.entry(y).or_default() += n;
+                }
+                for (k, y, n) in b.1.into_values() {
+                    note(&mut a, &k, y, n);
+                }
+                a
+            })
+            .unwrap_or_default();
     let mut repeat: HashMap<i32, i64> = plays_by_year;
-    for (y, n) in first_year_of.into_values() {
+    for (_, y, n) in first_year_of.into_values() {
         *repeat.entry(y).or_default() -= n;
     }
     let class = all_devices(model);
@@ -578,24 +628,37 @@ fn tag_months<Tz: TimeZone>(cx: &Ctx<Tz>, today: NaiveDate) -> Result<TagMonths>
         today,
     );
     let span = (ms12[0], today);
-    // per record and month first, then its tags (NFR-04, as `terms::top_tags`)
+    // per record and month first (summed here: a GROUP BY sorts every event), then its tags
+    // (NFR-04, as `terms::top_tags`)
     let mut st = cx.conn.prepare(&format!(
-        "{} SELECT item_id, substr(local, 1, 7), SUM(ms_played) FROM base
-         WHERE {} AND item_id IS NOT NULL GROUP BY +item_id, 2",
+        "{} SELECT item_id, substr(local, 1, 7), ms_played FROM base
+         WHERE {} AND item_id IS NOT NULL",
         base(cx.include_private),
         super::v3::between(span)
     ))?;
+    // keyed by the month's index in `ms12` (NFR-04: no text copy per event)
+    let keys: Vec<String> = ms12.iter().map(|m| month(*m)).collect();
+    let ix: HashMap<&str, usize> = keys
+        .iter()
+        .enumerate()
+        .map(|(i, k)| (k.as_str(), i))
+        .collect();
+    let mut per_ix: HashMap<(i64, usize), i64> = HashMap::new();
+    let mut rows = st.query([])?;
+    while let Some(r) = rows.next()? {
+        let (id, m, ms): (i64, &str, i64) = (r.get(0)?, super::text(r, 1)?, r.get(2)?);
+        if let Some(&i) = ix.get(m) {
+            *per_ix.entry((id, i)).or_default() += ms;
+        }
+    }
+    drop(rows);
+    let per_item = per_ix
+        .into_iter()
+        .map(|((id, i), ms)| ((id, keys[i].clone()), ms));
     let tags = terms::item_tags(cx.conn)?;
     let mut per_month: HashMap<String, i64> = HashMap::new();
     let mut by_tag: BTreeMap<String, HashMap<String, i64>> = BTreeMap::new();
-    for r in st.query_map([], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    })? {
-        let (id, m, ms) = r?;
+    for ((id, m), ms) in per_item {
         let Some(ts) = tags.get(&id) else {
             continue;
         };
@@ -613,7 +676,6 @@ fn tag_months<Tz: TimeZone>(cx: &Ctx<Tz>, today: NaiveDate) -> Result<TagMonths>
         .map(|(t, m)| (m.values().sum(), t.clone()))
         .collect();
     ranked.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    let keys: Vec<String> = ms12.iter().map(|m| month(*m)).collect();
     let rows = ranked
         .into_iter()
         .take(TAG_ROWS)
@@ -794,7 +856,8 @@ pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
             .optional()?,
         None => None,
     };
-    let loyal = terms::most_loyal(&top_per_year(cx, LOYAL_TOP, "0000", "9999")?);
+    let years = month_artists_all(cx)?.by_year();
+    let loyal = terms::most_loyal(&top_per_year(&years, LOYAL_TOP));
     let most_loyal = match loyal {
         Some((key, years_in_top20, years)) => {
             let (name, item_id, _) = artist_name(cx.conn, &key)?;
@@ -838,7 +901,7 @@ pub fn records<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<Covered<Records>> {
     }
 
     // Forgotten favourites: in some year's top 10, no play for ≥ 730 days.
-    let top10 = top_per_year(cx, FORGOTTEN_TOP, "0000", "9999")?;
+    let top10 = top_per_year(&years, FORGOTTEN_TOP);
     let mut last_play: HashMap<String, NaiveDateTime> = HashMap::new();
     let mut st = cx.conn.prepare(&format!(
         // 0004's index answers each artist's newest event

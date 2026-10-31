@@ -3,7 +3,7 @@
 //! (TSD §4.8 layout, random values, 200k rows) imported on top. Asserts import < 60 s, filter
 //! results (`list_plays`, `list_unmatched`) < 200 ms and screen loads (insights, year review,
 //! record panel, freshness) < 500 ms ("screen navigation"). M10 WI 5 (design §6): every Insights v3
-//! command < 500 ms per header choice, `explore` < 200 ms, lifetime months < 100 ms. Keep the DB with
+//! command < 500 ms per header choice (Genres & decades with seeded source M rows), `explore` < 200 ms, lifetime months < 100 ms. Keep the DB with
 //! `RUNOUT_PERF_KEEP=1`. Run: `cargo test --release -- --ignored perf_listening --nocapture`.
 mod common;
 
@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use rand::RngExt;
 use runout_lib::db;
+use runout_lib::enrich::genres::genres_decades;
 use runout_lib::importer::events::{Event, Source, insert};
 use runout_lib::importer::run;
 use runout_lib::insights::explore::{ExploreQuery, data_coverage, explore};
@@ -357,6 +358,18 @@ fn reads(conn: &Connection) -> Vec<String> {
             ),
         ),
     ];
+    // M10 WI 9: source M rows for every other artist / album, so lookups stay pending too.
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO enrich_artist
+           SELECT lower(artist_name), 'matched', 'musicbrainz', 'GB', 'x' FROM listening_rollup
+           WHERE artist_name <> '' GROUP BY 1 HAVING length(lower(artist_name)) % 2 = 0;
+         INSERT OR IGNORE INTO enrich_artist_genre
+           SELECT artist, 'genre ' || (length(artist) % 17), 1 FROM enrich_artist;
+         INSERT OR IGNORE INTO enrich_album
+           SELECT lower(artist_name), lower(album_name), 'matched', 1960 + length(album_name) % 60, 'x'
+           FROM listening_rollup WHERE album_name <> '' GROUP BY 1, 2 HAVING length(lower(album_name)) % 2 = 0;",
+    )
+    .unwrap();
     for (name, p) in &periods {
         checks.run(format!("v3 period_report {name}"), || {
             report(&cx, p).unwrap()
@@ -365,6 +378,9 @@ fn reads(conn: &Connection) -> Vec<String> {
             discovery(&cx, p).unwrap()
         });
         checks.run(format!("v3 habits {name}"), || habits(&cx, p).unwrap());
+        checks.run(format!("v3 genres_decades {name}"), || {
+            genres_decades(&cx, p).unwrap()
+        });
     }
     for m in [Measure::Hours, Measure::Artists] {
         checks.run(format!("v3 trends {m:?}"), || trends(&cx, m).unwrap());

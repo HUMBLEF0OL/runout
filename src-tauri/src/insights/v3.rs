@@ -352,11 +352,12 @@ impl Src<'_> {
 /// `local` in `from..=to` plus a padded UTC bound for the time index (local is at most a day off).
 /// Spans over two years read with `+` (a table scan beats ~all rows by index, TSD §3).
 pub fn between(s: Span) -> String {
-    let plus = if (s.1 - s.0).num_days() > 730 {
-        "+"
-    } else {
-        ""
-    };
+    between_on(s, (s.1 - s.0).num_days() > 730)
+}
+
+/// `between`, on the time index or not (`+`: a table scan, or a range of row ids).
+fn between_on(s: Span, scan: bool) -> String {
+    let plus = if scan { "+" } else { "" };
     let (a, b) = (day(s.0), day(s.1));
     format!(
         "substr(local, 1, 10) BETWEEN '{a}' AND '{b}'
@@ -460,6 +461,37 @@ pub(crate) fn folded_hash(buf: &mut Vec<u8>, parts: &[&str]) -> u64 {
     BuildHasherDefault::<DefaultHasher>::default().hash_one(&buf[..])
 }
 
+/// Hasher for keys that are already hashes (`folded_hash`) or small numbers: the key itself, so a
+/// lookup costs no second SipHash (NFR-04: a few per event in the period passes).
+#[derive(Default)]
+pub(crate) struct IdHash(u64);
+
+impl std::hash::Hasher for IdHash {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.0 = self.0.rotate_left(8) ^ u64::from(*b);
+        }
+    }
+    fn write_u64(&mut self, n: u64) {
+        self.0 = self.0.rotate_left(32) ^ n;
+    }
+    fn write_u32(&mut self, n: u32) {
+        self.write_u64(n.into());
+    }
+}
+
+/// A map keyed by hashes or small numbers (`IdHash`).
+pub(crate) type IdMap<K, V> = HashMap<K, V, std::hash::BuildHasherDefault<IdHash>>;
+
+/// 64-bit hash of `s` as stored (case kept), for distinct counts like `folded_hash`.
+pub(crate) fn exact_hash(s: &str) -> u64 {
+    use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+    BuildHasherDefault::<DefaultHasher>::default().hash_one(s)
+}
+
 /// `YYYY-MM-DD…` → `YYYYMMDD` without parsing a date.
 pub(crate) fn day_num(d: &str) -> Option<u32> {
     let b = d.as_bytes();
@@ -471,79 +503,551 @@ pub(crate) fn day_num(d: &str) -> Option<u32> {
     })
 }
 
-/// `aggs` plus `(ms, plays)` per local date inside the windows (as `daily`, same events).
-pub fn aggs_days<Tz: TimeZone>(cx: &Ctx<Tz>, src: Src, spans: &[Span]) -> Result<(Vec<Agg>, Days)> {
-    let mut out = vec![Agg::default(); spans.len()];
-    if spans.is_empty() {
-        return Ok((out, BTreeMap::new()));
+/// One event of a `scan`: its local date (`YYYYMMDD`), time, the play rule and which views hold
+/// it; the text columns are read only when a figure asks.
+pub struct Pass<'r, 's> {
+    row: &'r rusqlite::Row<'s>,
+    pub day: u32,
+    pub ms: i64,
+    pub play: bool,
+    /// In the base view (`reconciled_with IS NULL`).
+    pub base: bool,
+    /// A desktop (logger) row; else an export row.
+    pub logger: bool,
+}
+
+impl Pass<'_, '_> {
+    pub fn local(&self) -> rusqlite::Result<&str> {
+        super::text(self.row, 0)
     }
-    let lo = spans.iter().map(|s| s.0).min().expect("non-empty");
-    let hi = spans.iter().map(|s| s.1).max().expect("non-empty");
-    let num = |d: NaiveDate| d.year() as u32 * 10_000 + d.month() * 100 + d.day();
-    let bounds: Vec<(u32, u32)> = spans.iter().map(|s| (num(s.0), num(s.1))).collect();
-    let mut sets: Vec<[std::collections::HashSet<u64>; 3]> =
-        (0..spans.len()).map(|_| Default::default()).collect();
-    let mut by_day: HashMap<u32, (usize, i64, i64)> = HashMap::new();
-    let mut buf = Vec::new();
-    let mut st = cx.conn.prepare(&format!(
-        "{} SELECT local, ms_played, counts_as_play, IFNULL(artist_name, ''),
-                IFNULL(norm_key, ''), IFNULL(album_name, ''), source = 'export', reason_end = 'trackdone'
+    pub fn artist(&self) -> rusqlite::Result<Option<&str>> {
+        super::text_opt(self.row, 3)
+    }
+    pub fn album(&self) -> rusqlite::Result<Option<&str>> {
+        super::text_opt(self.row, 4)
+    }
+    pub fn track(&self) -> rusqlite::Result<Option<&str>> {
+        super::text_opt(self.row, 5)
+    }
+    pub fn norm_key(&self) -> rusqlite::Result<Option<&str>> {
+        super::text_opt(self.row, 6)
+    }
+    pub fn item_id(&self) -> rusqlite::Result<Option<i64>> {
+        self.row.get(7)
+    }
+    /// Ended `trackdone` (export rows).
+    pub fn trackdone(&self) -> rusqlite::Result<bool> {
+        Ok(self.row.get::<_, Option<bool>>(10)? == Some(true))
+    }
+}
+
+impl Src<'_> {
+    /// The event is one this source counts (as `cte`: base, like for like, desktop rows).
+    pub fn has(self, p: &Pass) -> bool {
+        let sources = match self {
+            Src::All => return p.base,
+            Src::Desktop => return p.logger,
+            Src::Like(c) => c.compared_sources.as_slice(),
+        };
+        match sources {
+            ["S"] => p.logger,
+            ["E"] => !p.logger,
+            _ => p.base,
+        }
+    }
+}
+
+/// Every stored event (private sessions per setting) whose local date is in `s`, unordered, as one
+/// SQL pass that several figures share (NFR-04: one read of the period instead of one per figure).
+/// `f` picks the views it counts with `Src::has`.
+pub fn scan<Tz: TimeZone>(cx: &Ctx<Tz>, s: Span, f: impl FnMut(&Pass) -> Result<()>) -> Result<()> {
+    scan_rows(cx.conn, cx.include_private, s, None, f)
+}
+
+/// `scan` over the rows with ids in `ids` only (a part of the table, `scan_parts`).
+fn scan_rows(
+    conn: &Connection,
+    include_private: bool,
+    s: Span,
+    ids: Option<(i64, i64)>,
+    mut f: impl FnMut(&Pass) -> Result<()>,
+) -> Result<()> {
+    let private = if include_private {
+        ""
+    } else {
+        " AND e.private_session = 0"
+    };
+    let id_range = ids.map_or(String::new(), |(a, b)| {
+        format!(" AND e.id BETWEEN {a} AND {b}")
+    });
+    let mut st = conn.prepare(&format!(
+        // unfiltered: base, like for like and desktop rows at once; `Src::has` applies each view
+        "WITH ev AS NOT MATERIALIZED (SELECT e.*, COALESCE(e.ended_at_local, substr(e.ended_at_utc, 1, 19)) AS local
+           FROM listening_event e WHERE 1{private}{id_range})
+         SELECT local, ms_played, counts_as_play, artist_name, album_name, track_name, norm_key, item_id,
+                reconciled_with IS NULL, source = 'logger', reason_end = 'trackdone'
          FROM ev WHERE {}",
-        src.cte(cx.include_private),
-        between((lo, hi))
+        between_on(s, ids.is_some() || (s.1 - s.0).num_days() > 730)
     ))?;
     let mut rows = st.query([])?;
-    while let Some(r) = rows.next()? {
-        let Some(d) = day_num(super::text(r, 0)?) else {
+    while let Some(row) = rows.next()? {
+        let Some(day) = day_num(super::text(row, 0)?) else {
             continue;
         };
-        let Some(i) = bounds.iter().position(|(a, b)| *a <= d && d <= *b) else {
-            continue;
-        };
-        let a = &mut out[i];
-        let ms = r.get::<_, i64>(1)?;
-        let play = r.get::<_, i64>(2)? != 0;
-        a.ms += ms;
-        let day = by_day.entry(d).or_insert((i, 0, 0));
-        day.1 += ms;
-        day.2 += play as i64;
-        if r.get::<_, Option<bool>>(6)? == Some(true) {
-            a.export_events += 1;
-            a.finished += (r.get::<_, Option<bool>>(7)? == Some(true)) as i64;
+        f(&Pass {
+            row,
+            day,
+            ms: row.get(1)?,
+            play: row.get::<_, i64>(2)? != 0,
+            base: row.get(8)?,
+            logger: row.get(9)?,
+        })?;
+    }
+    Ok(())
+}
+
+/// `spans` as the stretches to read: overlapping or nearby spans (a month apart at most) together,
+/// far ones apart (the newest period and the 12 months before the first play would otherwise read
+/// the whole history).
+fn segments(spans: &[Span]) -> Vec<Span> {
+    let mut v = spans.to_vec();
+    v.sort();
+    let mut segs: Vec<Span> = vec![];
+    for s in v {
+        match segs.last_mut() {
+            Some(l) if s.0 <= l.1 + TimeDelta::days(31) => l.1 = l.1.max(s.1),
+            _ => segs.push(s),
         }
-        if !play {
+    }
+    segs
+}
+
+/// `scan` over every date of `spans` once (`segments`).
+pub fn scan_spans<Tz: TimeZone>(
+    cx: &Ctx<Tz>,
+    spans: &[Span],
+    mut f: impl FnMut(&Pass) -> Result<()>,
+) -> Result<()> {
+    for s in segments(spans) {
+        scan(cx, s, &mut f)?;
+    }
+    Ok(())
+}
+
+/// Threads a long pass is split over: the logical CPUs, at most 8.
+fn parts() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get().min(8))
+}
+
+/// A split pass is cut into this many pieces per thread, each thread taking the next one.
+const PIECES_PER_PART: usize = 4;
+/// A stretch at least this long is split over `parts()` threads (NFR-04).
+const SPLIT_MIN_DAYS: i64 = 60;
+/// Split stretches up to this long in all go by date, each thread reading its days on the time
+/// index; longer ones by row id, each thread scanning its share of the table (a scan beats ~all
+/// rows by index, TSD §3).
+const BY_DATE_MAX_DAYS: i64 = 4 * 366;
+
+/// Part `i` of `n` of `s`, by date (`None` when it has no days).
+fn stretch(s: Span, i: i64, n: i64) -> Option<Span> {
+    let days = (s.1 - s.0).num_days() + 1;
+    let a = s.0 + TimeDelta::days(days * i / n);
+    let b = s.0 + TimeDelta::days(days * (i + 1) / n) - TimeDelta::days(1);
+    (a <= b).then_some((a, b))
+}
+
+/// How part `i` of `n` reads `s`: its days (time index), or all of it within a row id range.
+#[derive(Clone, Copy)]
+enum Split {
+    Dates,
+    Ids(i64, i64),
+}
+
+impl Split {
+    /// The plan for long stretches `long`: `None` = read on `cx`'s connection, unsplit.
+    fn plan<Tz: TimeZone>(cx: &Ctx<Tz>, long: &[Span]) -> Result<Option<(String, Split)>> {
+        let path = cx.conn.path().filter(|p| !p.is_empty()).map(str::to_owned);
+        let (Some(path), false, true) = (path, long.is_empty(), parts() > 1) else {
+            return Ok(None);
+        };
+        let days: i64 = long.iter().map(|s| (s.1 - s.0).num_days() + 1).sum();
+        if days <= BY_DATE_MAX_DAYS {
+            return Ok(Some((path, Split::Dates)));
+        }
+        let ids: Option<(i64, i64)> = cx
+            .conn
+            // unfiltered: only the id range to split work; each part reads through base
+            .query_row("SELECT MIN(id), MAX(id) FROM listening_event", [], |r| {
+                Ok(r.get::<_, Option<i64>>(0)?.zip(r.get(1)?))
+            })?;
+        Ok(ids.map(|(lo, hi)| (path, Split::Ids(lo, hi))))
+    }
+
+    /// Part `i`'s piece of `s`: (span, row ids), `None` when it has none.
+    fn part(self, s: Span, i: i64, n: i64) -> Option<(Span, Option<(i64, i64)>)> {
+        match self {
+            Split::Dates => stretch(s, i, n).map(|x| (x, None)),
+            Split::Ids(lo, hi) => {
+                let step = (hi - lo) / n + 1;
+                Some((s, Some((lo + i * step, (lo + (i + 1) * step - 1).min(hi)))))
+            }
+        }
+    }
+}
+
+/// `scan_spans` into copies of `acc`, one per part, for the caller to merge. Stretches of two
+/// months or more are split over `parts()` threads (`Split`), each on its own read-only connection
+/// to the library file (NFR-04: a whole history is 500k events); the rest is read meanwhile on
+/// `cx`'s, as is everything for a library that isn't a file (tests).
+pub fn scan_parts<Tz: TimeZone, A: Clone + Send>(
+    cx: &Ctx<Tz>,
+    spans: &[Span],
+    acc: A,
+    add: &(dyn Fn(&mut A, &Pass) -> Result<()> + Sync),
+) -> Result<Vec<A>> {
+    let segs = segments(spans);
+    let (long, short): (Vec<Span>, Vec<Span>) = segs
+        .iter()
+        .partition(|s| (s.1 - s.0).num_days() >= SPLIT_MIN_DAYS);
+    let Some((path, split)) = Split::plan(cx, &long)? else {
+        let mut a = acc;
+        for s in segs {
+            scan(cx, s, |p| add(&mut a, p))?;
+        }
+        return Ok(vec![a]);
+    };
+    // more pieces than threads, taken in turn (NFR-04: rows cost unevenly across the table)
+    let n = parts();
+    let pieces = (n * PIECES_PER_PART) as i64;
+    let next = std::sync::atomic::AtomicI64::new(0);
+    let include_private = cx.include_private;
+    std::thread::scope(|sc| {
+        let handles: Vec<_> = (0..n)
+            .map(|_| {
+                let mut a = acc.clone();
+                let (path, long, next) = (&path, &long, &next);
+                sc.spawn(move || -> Result<A> {
+                    let conn = open_read(path)?;
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if i >= pieces {
+                            return Ok(a);
+                        }
+                        for (s, ids) in long.iter().filter_map(|s| split.part(*s, i, pieces)) {
+                            scan_rows(&conn, include_private, s, ids, |p| add(&mut a, p))?;
+                        }
+                    }
+                })
+            })
+            .collect();
+        // the short stretches on this thread meanwhile
+        let mut first = acc.clone();
+        let mut out = vec![];
+        for s in &short {
+            if let Err(e) = scan(cx, *s, |p| add(&mut first, p)) {
+                out.push(Err(e));
+            }
+        }
+        out.push(Ok(first));
+        for h in handles {
+            out.push(
+                h.join()
+                    .unwrap_or_else(|_| Err(AppError::internal("A listening read stopped."))),
+            );
+        }
+        out.into_iter().collect()
+    })
+}
+
+/// The caller's own query over the events of `s` (`None`: every event), into one `A` per part,
+/// for the caller to merge. `sql` gets the WHERE condition for its piece (`between`, and a row id
+/// range when split by id; `1` for every event unsplit). Split over threads as `scan_parts`
+/// (NFR-04); else one part on `cx`'s connection.
+pub fn par_rows<Tz: TimeZone, A: Send>(
+    cx: &Ctx<Tz>,
+    s: Option<Span>,
+    sql: &(dyn Fn(&str) -> String + Sync),
+    init: &(dyn Fn() -> A + Sync),
+    row: &(dyn Fn(&mut A, &rusqlite::Row) -> Result<()> + Sync),
+) -> Result<Vec<A>> {
+    let one = |conn: &Connection, w: &str, a: &mut A| -> Result<()> {
+        let mut st = conn.prepare(&sql(w))?;
+        let mut rows = st.query([])?;
+        while let Some(r) = rows.next()? {
+            row(a, r)?;
+        }
+        Ok(())
+    };
+    // every event: as one stretch longer than `BY_DATE_MAX_DAYS`, so split by id
+    let whole = s.unwrap_or_else(|| {
+        let d = NaiveDate::from_ymd_opt(2000, 1, 1).expect("a date");
+        (d, d + TimeDelta::days(BY_DATE_MAX_DAYS))
+    });
+    let long: Vec<Span> = [whole]
+        .into_iter()
+        .filter(|s| (s.1 - s.0).num_days() >= SPLIT_MIN_DAYS)
+        .collect();
+    let Some((path, split)) = Split::plan(cx, &long)? else {
+        let mut a = init();
+        one(cx.conn, &s.map_or("1".into(), between), &mut a)?;
+        return Ok(vec![a]);
+    };
+    // more pieces than threads, taken in turn (as `scan_parts`)
+    let n = parts();
+    let pieces = (n * PIECES_PER_PART) as i64;
+    let next = std::sync::atomic::AtomicI64::new(0);
+    std::thread::scope(|sc| {
+        let handles: Vec<_> = (0..n)
+            .map(|_| {
+                let (path, one, next) = (&path, &one, &next);
+                sc.spawn(move || -> Result<A> {
+                    let conn = open_read(path)?;
+                    let mut a = init();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if i >= pieces {
+                            return Ok(a);
+                        }
+                        let Some((x, ids)) = split.part(whole, i, pieces) else {
+                            continue;
+                        };
+                        let w = match (ids, s) {
+                            (Some((a, b)), Some(_)) => {
+                                format!("{} AND id BETWEEN {a} AND {b}", between_on(x, true))
+                            }
+                            (Some((a, b)), None) => format!("id BETWEEN {a} AND {b}"),
+                            (None, _) => between(x),
+                        };
+                        one(&conn, &w, &mut a)?;
+                    }
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| Err(AppError::internal("A listening read stopped.")))
+            })
+            .collect()
+    })
+}
+
+/// A job on its own read-only connection on another thread while the caller reads on (a library
+/// file, NFR-04), or done right here (a library in memory: tests).
+pub enum Aside<T> {
+    Done(Result<T>),
+    Running(std::thread::JoinHandle<Result<T>>),
+}
+
+impl<T: Send + 'static> Aside<T> {
+    /// Starts `job(connection, include_private)`.
+    pub fn run<Tz: TimeZone>(
+        cx: &Ctx<Tz>,
+        job: impl FnOnce(&Connection, bool) -> Result<T> + Send + 'static,
+    ) -> Self {
+        let private = cx.include_private;
+        match cx.conn.path().filter(|p| !p.is_empty()).map(str::to_owned) {
+            Some(path) => {
+                Aside::Running(std::thread::spawn(move || job(&open_read(&path)?, private)))
+            }
+            None => Aside::Done(job(cx.conn, private)),
+        }
+    }
+
+    pub fn join(self) -> Result<T> {
+        match self {
+            Aside::Done(r) => r,
+            Aside::Running(h) => h
+                .join()
+                .unwrap_or_else(|_| Err(AppError::internal("A listening read stopped."))),
+        }
+    }
+}
+
+/// A read-only connection to the library file, for a `scan_parts` thread (pragmas as `db::open`).
+fn open_read(path: &str) -> Result<Connection> {
+    let conn = Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.pragma_update(None, "cache_size", -65536)?;
+    conn.pragma_update(None, "mmap_size", 1i64 << 30)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    Ok(conn)
+}
+
+/// `YYYYMMDD` of a date.
+pub fn num(d: NaiveDate) -> u32 {
+    d.year() as u32 * 10_000 + d.month() * 100 + d.day()
+}
+
+/// A cheap hash of texts (8 bytes a step), for finding a text already seen; callers compare the
+/// text itself on a hit, so a collision costs a retry, never a wrong count.
+pub(crate) fn quick_hash(parts: &[Option<&str>]) -> u64 {
+    const K: u64 = 0x517c_c1b7_2722_0a95;
+    let mut h = 0u64;
+    for p in parts {
+        let Some(p) = p else {
+            h = (h.rotate_left(5) ^ 0xfe).wrapping_mul(K);
             continue;
+        };
+        for c in p.as_bytes().chunks(8) {
+            let mut w = [0u8; 8];
+            w[..c.len()].copy_from_slice(c);
+            h = (h.rotate_left(5) ^ u64::from_le_bytes(w)).wrapping_mul(K);
+        }
+        h = (h.rotate_left(5) ^ 0xff).wrapping_mul(K);
+    }
+    h
+}
+
+/// The distinct-count keys of one (artist, norm_key, album): `[artist, track, album]` hashes as
+/// `aggs` counts them (`None` = empty, not counted).
+#[derive(Clone)]
+struct Keys {
+    text: [String; 3],
+    keys: [Option<u64>; 3],
+}
+
+/// `aggs_days` as a `scan` figure: `Agg` per window and `(ms, plays)` per date of `src`'s events.
+/// Each distinct (artist, track, album) is hashed for the counts once, not once per play (NFR-04).
+#[derive(Clone)]
+pub struct AggAcc<'c> {
+    src: Src<'c>,
+    pub spans: Vec<Span>,
+    bounds: Vec<(u32, u32)>,
+    out: Vec<Agg>,
+    /// quick hash (retried on a collision) → the texts and their count keys
+    keys: IdMap<u64, Keys>,
+    /// per window: the `keys` entries with a play
+    sets: Vec<IdMap<u64, ()>>,
+    by_day: IdMap<u32, (usize, i64, i64)>,
+    buf: Vec<u8>,
+}
+
+impl<'c> AggAcc<'c> {
+    pub fn new(src: Src<'c>, spans: &[Span]) -> Self {
+        AggAcc {
+            src,
+            spans: spans.to_vec(),
+            bounds: spans.iter().map(|s| (num(s.0), num(s.1))).collect(),
+            out: vec![Agg::default(); spans.len()],
+            keys: IdMap::default(),
+            sets: (0..spans.len()).map(|_| Default::default()).collect(),
+            by_day: IdMap::default(),
+            buf: Vec::new(),
+        }
+    }
+
+    pub fn add(&mut self, p: &Pass) -> Result<()> {
+        if !self.src.has(p) {
+            return Ok(());
+        }
+        let d = p.day;
+        let Some(i) = self.bounds.iter().position(|(a, b)| *a <= d && d <= *b) else {
+            return Ok(());
+        };
+        let a = &mut self.out[i];
+        a.ms += p.ms;
+        let day = self.by_day.entry(d).or_insert((i, 0, 0));
+        day.1 += p.ms;
+        day.2 += p.play as i64;
+        if !p.logger {
+            a.export_events += 1;
+            a.finished += p.trackdone()? as i64;
+        }
+        if !p.play {
+            return Ok(());
         }
         a.plays += 1;
-        let (artist, key, album) = (super::text(r, 3)?, super::text(r, 4)?, super::text(r, 5)?);
-        let [artists, tracks, albums] = &mut sets[i];
-        if !artist.is_empty() {
-            artists.insert(folded_hash(&mut buf, &[artist]));
-        }
-        if !key.is_empty() {
-            // `norm_key` is compared as stored
-            tracks.insert(std::hash::BuildHasher::hash_one(
-                &std::hash::BuildHasherDefault::<std::hash::DefaultHasher>::default(),
-                key,
-            ));
-        }
-        if !album.is_empty() {
-            albums.insert(folded_hash(&mut buf, &[album, artist]));
+        let k = self.key_of([
+            p.artist()?.unwrap_or(""),
+            p.norm_key()?.unwrap_or(""),
+            p.album()?.unwrap_or(""),
+        ]);
+        self.sets[i].insert(k, ());
+        Ok(())
+    }
+
+    /// The `keys` entry of (artist, norm_key, album), added when new.
+    fn key_of(&mut self, text: [&str; 3]) -> u64 {
+        let mut k = quick_hash(&text.map(Some));
+        loop {
+            match self.keys.get(&k) {
+                Some(e) if e.text.iter().zip(text).all(|(x, y)| x == y) => return k,
+                Some(_) => k = k.wrapping_add(0x9e37_79b9_7f4a_7c15),
+                None => {
+                    let [artist, key, album] = text;
+                    let buf = &mut self.buf;
+                    let keys = [
+                        (!artist.is_empty()).then(|| folded_hash(buf, &[artist])),
+                        // `norm_key` is compared as stored
+                        (!key.is_empty()).then(|| exact_hash(key)),
+                        (!album.is_empty()).then(|| folded_hash(buf, &[album, artist])),
+                    ];
+                    let text = text.map(str::to_owned);
+                    self.keys.insert(k, Keys { text, keys });
+                    return k;
+                }
+            }
         }
     }
-    let mut days = BTreeMap::new();
-    for (d, (i, ms, plays)) in by_day {
-        out[i].days += (plays > 0) as i64;
-        if let Some(d) = NaiveDate::from_ymd_opt((d / 10_000) as i32, d / 100 % 100, d % 100) {
-            days.insert(d, (ms, plays));
+
+    /// Adds another part's events (`scan_parts`).
+    pub fn merge(&mut self, o: AggAcc) {
+        for (a, b) in self.out.iter_mut().zip(&o.out) {
+            a.ms += b.ms;
+            a.plays += b.plays;
+            a.export_events += b.export_events;
+            a.finished += b.finished;
+        }
+        for (d, (i, ms, plays)) in o.by_day {
+            let e = self.by_day.entry(d).or_insert((i, 0, 0));
+            e.1 += ms;
+            e.2 += plays;
+        }
+        for (w, set) in o.sets.iter().enumerate() {
+            for k in set.keys() {
+                let t = &o.keys[k].text;
+                let k = self.key_of([&t[0], &t[1], &t[2]]);
+                self.sets[w].insert(k, ());
+            }
         }
     }
-    for (a, [artists, tracks, albums]) in out.iter_mut().zip(sets) {
-        a.artists = artists.len() as i64;
-        a.tracks = tracks.len() as i64;
-        a.albums = albums.len() as i64;
+
+    pub fn finish(self) -> (Vec<Agg>, Days) {
+        let mut out = self.out;
+        let mut days = BTreeMap::new();
+        for (d, (i, ms, plays)) in self.by_day {
+            out[i].days += (plays > 0) as i64;
+            if let Some(d) = NaiveDate::from_ymd_opt((d / 10_000) as i32, d / 100 % 100, d % 100) {
+                days.insert(d, (ms, plays));
+            }
+        }
+        for (a, set) in out.iter_mut().zip(self.sets) {
+            let mut distinct: [IdMap<u64, ()>; 3] = Default::default();
+            for k in set.keys() {
+                for (d, key) in distinct.iter_mut().zip(self.keys[k].keys) {
+                    if let Some(key) = key {
+                        d.insert(key, ());
+                    }
+                }
+            }
+            let [artists, tracks, albums] = distinct;
+            a.artists = artists.len() as i64;
+            a.tracks = tracks.len() as i64;
+            a.albums = albums.len() as i64;
+        }
+        (out, days)
     }
-    Ok((out, days))
+}
+
+/// `aggs` plus `(ms, plays)` per local date inside the windows (as `daily`, same events).
+pub fn aggs_days<Tz: TimeZone>(cx: &Ctx<Tz>, src: Src, spans: &[Span]) -> Result<(Vec<Agg>, Days)> {
+    let mut acc = AggAcc::new(src, spans);
+    scan_spans(cx, spans, |p| acc.add(p))?;
+    Ok(acc.finish())
 }
 
 /// `Agg` over all time (range `all`, NFR-04): distinct counts from the 0005 `listening_rollup`
@@ -595,37 +1099,129 @@ pub fn whole_months(s: Span, first: Option<NaiveDate>, today: NaiveDate) -> bool
 }
 
 /// Per artist key (`lower(artist_name)`, none empty): `(ms, plays)` in `s`. Whole months over the
-/// base view read `listening_month_artist`.
+/// base view read `listening_month_artist` (`by_artist_rollup`); the rest is an `ArtistAcc` pass.
 pub fn by_artist<Tz: TimeZone>(
     cx: &Ctx<Tz>,
     src: Src,
     s: Span,
     first: Option<NaiveDate>,
 ) -> Result<HashMap<String, (i64, i64)>> {
-    let sql = if src.is_base() && whole_months(s, first, cx.today()) {
-        format!(
-            "SELECT artist, SUM(ms_played), SUM(plays) FROM listening_month_artist
-             WHERE month BETWEEN '{}' AND '{}' AND events > 0 AND artist <> ''{} GROUP BY artist",
-            month(s.0),
-            month(s.1),
+    if by_artist_rollup(cx, src, s, first) {
+        // summed here, not by GROUP BY (NFR-04: `artist` isn't the rollup's key prefix, so SQL sorts)
+        let mut st = cx.conn.prepare(&format!(
+            "SELECT artist, ms_played, plays FROM listening_month_artist
+             WHERE month BETWEEN ?1 AND ?2 AND events > 0 AND artist <> ''{}",
             cx.private_filter("private_session")
-        )
-    } else {
-        format!(
-            "{} SELECT lower(artist_name), SUM(ms_played), SUM(counts_as_play) FROM ev
-             WHERE {} AND artist_name <> '' GROUP BY 1",
-            src.cte(cx.include_private),
-            between(s)
-        )
-    };
-    let mut st = cx.conn.prepare(&sql)?;
-    let rows = st.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?),
-        ))
-    })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+        ))?;
+        let mut out: HashMap<String, (i64, i64)> = HashMap::new();
+        let mut rows = st.query([month(s.0), month(s.1)])?;
+        while let Some(r) = rows.next()? {
+            let a = super::text(r, 0)?;
+            let (ms, plays): (i64, i64) = (r.get(1)?, r.get(2)?);
+            match out.get_mut(a) {
+                Some(e) => {
+                    e.0 += ms;
+                    e.1 += plays;
+                }
+                None => {
+                    out.insert(a.to_owned(), (ms, plays));
+                }
+            }
+        }
+        return Ok(out);
+    }
+    let mut acc = ArtistAcc::new(src, s);
+    scan_spans(cx, &[s], |p| acc.add(p))?;
+    Ok(acc.out)
+}
+
+/// `by_artist` reads the 0008 rollup (whole months of the base view), not the events.
+pub fn by_artist_rollup<Tz: TimeZone>(
+    cx: &Ctx<Tz>,
+    src: Src,
+    s: Span,
+    first: Option<NaiveDate>,
+) -> bool {
+    src.is_base() && whole_months(s, first, cx.today())
+}
+
+/// `by_artist` over the events as a `scan` figure.
+#[derive(Clone)]
+pub struct ArtistAcc<'c> {
+    src: Src<'c>,
+    pub span: Span,
+    bounds: (u32, u32),
+    buf: String,
+    pub out: HashMap<String, (i64, i64)>,
+}
+
+impl<'c> ArtistAcc<'c> {
+    pub fn new(src: Src<'c>, s: Span) -> Self {
+        ArtistAcc {
+            src,
+            span: s,
+            bounds: (num(s.0), num(s.1)),
+            buf: String::new(),
+            out: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, p: &Pass) -> Result<()> {
+        if p.day < self.bounds.0 || p.day > self.bounds.1 || !self.src.has(p) {
+            return Ok(());
+        }
+        let Some(a) = p.artist()?.filter(|a| !a.is_empty()) else {
+            return Ok(());
+        };
+        // SQL's lower(): ASCII only
+        self.buf.clear();
+        self.buf.extend(a.chars().map(|c| c.to_ascii_lowercase()));
+        if !self.out.contains_key(self.buf.as_str()) {
+            self.out.insert(self.buf.clone(), (0, 0));
+        }
+        let e = self.out.get_mut(self.buf.as_str()).expect("inserted");
+        e.0 += p.ms;
+        e.1 += p.play as i64;
+        Ok(())
+    }
+
+    /// Adds another part's events (`scan_parts`).
+    pub fn merge(&mut self, o: ArtistAcc) {
+        for (k, v) in o.out {
+            let e = self.out.entry(k).or_default();
+            e.0 += v.0;
+            e.1 += v.1;
+        }
+    }
+}
+
+/// One month and artist of `listening_month_artist`: `(month, artist key, ms, plays)`.
+pub type MonthArtist = (String, String, i64, i64);
+
+/// `listening_month_artist` over the months `from..=to` (`YYYY-MM`, inclusive), artists named, rows
+/// with events, private per setting: one row per month and artist (a private and a non-private row
+/// summed), in (month, artist) order. Read in primary-key order and summed here (NFR-04: a GROUP BY
+/// there costs several times the read).
+pub fn month_artists<Tz: TimeZone>(cx: &Ctx<Tz>, from: &str, to: &str) -> Result<Vec<MonthArtist>> {
+    let mut st = cx.conn.prepare(&format!(
+        "SELECT month, artist, ms_played, plays FROM listening_month_artist
+         WHERE month BETWEEN ?1 AND ?2 AND events > 0 AND artist <> ''{} ORDER BY month, artist",
+        cx.private_filter("private_session")
+    ))?;
+    let mut out: Vec<MonthArtist> = Vec::new();
+    let mut rows = st.query([from, to])?;
+    while let Some(r) = rows.next()? {
+        let (m, a) = (super::text(r, 0)?, super::text(r, 1)?);
+        let (ms, plays): (i64, i64) = (r.get(2)?, r.get(3)?);
+        match out.last_mut() {
+            Some(l) if l.0 == m && l.1 == a => {
+                l.2 += ms;
+                l.3 += plays;
+            }
+            _ => out.push((m.to_owned(), a.to_owned(), ms, plays)),
+        }
+    }
+    Ok(out)
 }
 
 /// An artist key's stored name (the newest spelling) and library record, for display.

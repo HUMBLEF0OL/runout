@@ -21,6 +21,9 @@ pub struct Settings {
     /// Monthly reminder on app open to request a newer Spotify export (M10 Your data; off by
     /// default; local only, never network).
     pub export_reminder: bool,
+    /// Open music database lookups (source M, TSD §5.4; on by default, U-11); changed only by
+    /// `set_music_db`, which also deletes the results when turned off.
+    pub music_db: bool,
     /// Listening logger (TSD §4.5); changed only by `set_logger` / `pause_logger` / `resume_logger`.
     pub logger_on: bool,
     pub autostart: bool,
@@ -67,6 +70,7 @@ impl Settings {
             size_warn_mb: 100,
             artwork_default: false,
             export_reminder: false,
+            music_db: true,
             logger_on: true,
             autostart: false,
             include_private: false,
@@ -92,6 +96,10 @@ pub fn merge(base: &Settings, patch: &Value) -> Result<Settings> {
         ("logger_paused", LOGGER),
         ("paused_until", LOGGER),
         ("inbox", "Use the Runout Inbox controls for this setting."),
+        (
+            "music_db",
+            "Use the music database switch for this setting.",
+        ),
     ] {
         if patch.get(key).is_some() {
             return Err(AppError::validation(what));

@@ -73,9 +73,15 @@ impl Session<'_> {
 }
 
 /// Sessions over `evs` (any order; only plays are used).
-pub fn sessions(evs: &[Ev]) -> Vec<Session<'_>> {
-    let mut plays: Vec<&Ev> = evs.iter().filter(|e| is_play(e)).collect();
+pub fn sessions<'a>(evs: impl IntoIterator<Item = &'a Ev>) -> Vec<Session<'a>> {
+    let mut plays: Vec<&Ev> = evs.into_iter().filter(|e| is_play(e)).collect();
     plays.sort_by_key(|e| (e.end, e.id));
+    sessions_in_order(plays)
+}
+
+/// `sessions` over plays already in end order (`(end, id)`).
+pub fn sessions_in_order(plays: Vec<&Ev>) -> Vec<Session<'_>> {
+    debug_assert!(plays.is_sorted_by_key(|e| (e.end, e.id)));
     let mut out: Vec<Session> = vec![];
     for p in plays {
         let gap = out.last().map(|s| {
@@ -118,6 +124,79 @@ pub struct Dive {
     pub ms: i64,
 }
 
+/// A dive key without a copy: (album, artist), ASCII-case-folded as `artist_key`.
+#[derive(Clone, Copy)]
+struct FoldKey<'a>(Option<&'a str>, &'a str);
+
+impl PartialEq for FoldKey<'_> {
+    fn eq(&self, o: &Self) -> bool {
+        self.1.eq_ignore_ascii_case(o.1)
+            && match (self.0, o.0) {
+                (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+                (a, b) => a.is_none() && b.is_none(),
+            }
+    }
+}
+
+impl Eq for FoldKey<'_> {}
+
+impl std::hash::Hash for FoldKey<'_> {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        // FNV-1a over the folded bytes, one write
+        let mut x: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in self
+            .0
+            .unwrap_or("")
+            .bytes()
+            .chain([0x1f])
+            .chain(self.1.bytes())
+        {
+            x = (x ^ u64::from(b.to_ascii_lowercase())).wrapping_mul(0x100_0000_01b3);
+        }
+        h.write_u64(x);
+    }
+}
+
+/// `FoldKey`'s hasher: it writes one u64 already mixed.
+#[derive(Default)]
+struct FoldHasher(u64);
+
+impl std::hash::Hasher for FoldHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, _: &[u8]) {
+        unreachable!("FoldKey writes one u64")
+    }
+    fn write_u64(&mut self, x: u64) {
+        self.0 = x;
+    }
+}
+
+type FoldBuild = std::hash::BuildHasherDefault<FoldHasher>;
+
+/// FNV-1a, for maps keyed by local data only (NFR-04: SipHash costs more than the work per play).
+struct Fnv(u64);
+
+impl Default for Fnv {
+    fn default() -> Self {
+        Fnv(0xcbf2_9ce4_8422_2325)
+    }
+}
+
+impl std::hash::Hasher for Fnv {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.0 = (self.0 ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3);
+        }
+    }
+}
+
+type FnvBuild = std::hash::BuildHasherDefault<Fnv>;
+
 /// Deep dives (estimate) in one session: the longest stretches of consecutive plays, each
 /// starting and ending on the key's plays, of ≥ 60 min where ≥ 80% of the time is one artist
 /// (or one album). Stretches of one key don't overlap.
@@ -143,18 +222,33 @@ pub fn deep_dives(s: &Session) -> Vec<Dive> {
                 artist_key(&e.artist)
             )),
         };
-        let mut at: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-        for (i, e) in p.iter().enumerate() {
-            if let Some(k) = key(e) {
-                at.entry(k).or_default().push(i);
+        // each key's time first, without a copy per play or a list per key (NFR-04: a whole
+        // history is ~400k plays); the keys that can hold a dive are then taken in `key` order
+        fn fold_of(kind: DiveKind, e: &Ev) -> Option<FoldKey<'_>> {
+            match kind {
+                _ if e.artist.is_empty() => None,
+                DiveKind::Artist => Some(FoldKey(None, &e.artist)),
+                DiveKind::Album if e.album.is_empty() => None,
+                DiveKind::Album => Some(FoldKey(Some(&e.album), &e.artist)),
             }
         }
-        for idx in at.values() {
-            // a dive needs ≥ 80% of 60 min on this key: skip keys that can't reach it
-            let total: i64 = idx.iter().map(|&i| p[i].ms).sum();
-            if total * 100 < DIVE_MIN_MS * DIVE_SHARE_PCT {
-                continue;
+        let fold = |e| fold_of(kind, e);
+        let mut totals: HashMap<FoldKey, i64, FoldBuild> = HashMap::default();
+        for e in p {
+            if let Some(k) = fold(e) {
+                *totals.entry(k).or_default() += e.ms;
             }
+        }
+        // a dive needs ≥ 80% of 60 min on this key: skip keys that can't reach it
+        let mut at: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        for (k, _) in totals
+            .into_iter()
+            .filter(|(_, ms)| ms * 100 >= DIVE_MIN_MS * DIVE_SHARE_PCT)
+        {
+            let idx: Vec<usize> = (0..p.len()).filter(|&i| fold(p[i]) == Some(k)).collect();
+            at.insert(key(p[idx[0]]).expect("a keyed play"), idx);
+        }
+        for idx in at.values() {
             let mut kp = vec![0i64];
             for &i in idx {
                 kp.push(kp.last().unwrap() + p[i].ms);
@@ -207,23 +301,54 @@ pub struct Repeat {
 }
 
 /// On repeat: a track with ≥ 5 plays in one local day. By date, then most played.
-pub fn on_repeat(evs: &[Ev]) -> Vec<Repeat> {
-    // count first, copy names only for the repeats (NFR-04: one entry per day and track)
-    let mut by: HashMap<(NaiveDate, &str), (&Ev, usize)> = HashMap::new();
-    for e in evs.iter().filter(|e| is_play(e) && !e.norm_key.is_empty()) {
-        by.entry((e.date(), &e.norm_key)).or_insert((e, 0)).1 += 1;
-    }
-    let mut out: Vec<Repeat> = by
+pub fn on_repeat<'a>(evs: impl IntoIterator<Item = &'a Ev>) -> Vec<Repeat> {
+    let evs: Vec<&Ev> = evs
         .into_iter()
-        .filter(|(_, (_, n))| *n >= REPEAT_PLAYS)
-        .map(|((date, _), (e, times))| Repeat {
-            date,
-            norm_key: e.norm_key.clone(),
-            track: e.track.clone(),
-            artist: e.artist.clone(),
-            times,
-        })
+        .filter(|e| is_play(e) && !e.norm_key.is_empty())
         .collect();
+    let repeat = |date: NaiveDate, e: &Ev, times: usize| Repeat {
+        date,
+        norm_key: e.norm_key.clone(),
+        track: e.track.clone(),
+        artist: e.artist.clone(),
+        times,
+    };
+    // Count first, copy names only for the repeats. Plays in end order come one local day at a
+    // time: counted a day at a time in one small map (NFR-04: a whole history is ~400k plays);
+    // a day seen twice (any other order) counts them all at once.
+    let mut out: Vec<Repeat> = vec![];
+    let mut seen: HashSet<NaiveDate> = HashSet::new();
+    let mut day: HashMap<&str, (&Ev, usize), FnvBuild> = HashMap::default();
+    let mut i = 0;
+    let mut by_day = true;
+    while i < evs.len() {
+        let d = evs[i].date();
+        if !seen.insert(d) {
+            by_day = false;
+            break;
+        }
+        day.clear();
+        while i < evs.len() && evs[i].date() == d {
+            day.entry(&evs[i].norm_key).or_insert((evs[i], 0)).1 += 1;
+            i += 1;
+        }
+        out.extend(
+            day.values()
+                .filter(|(_, n)| *n >= REPEAT_PLAYS)
+                .map(|(e, n)| repeat(d, e, *n)),
+        );
+    }
+    if !by_day {
+        let mut by: HashMap<(NaiveDate, &str), (&Ev, usize), FnvBuild> = HashMap::default();
+        for e in &evs {
+            by.entry((e.date(), &e.norm_key)).or_insert((e, 0)).1 += 1;
+        }
+        out = by
+            .into_iter()
+            .filter(|(_, (_, n))| *n >= REPEAT_PLAYS)
+            .map(|((date, _), (e, times))| repeat(date, e, times))
+            .collect();
+    }
     out.sort_by(|a, b| {
         a.date
             .cmp(&b.date)
@@ -543,6 +668,18 @@ mod tests {
         assert_eq!(
             (r[0].date.to_string(), r[0].norm_key.as_str(), r[0].times),
             ("2026-05-01".into(), "a|one", 5)
+        );
+        // out of day order (a day comes back): the same repeats
+        let mut mixed: Vec<Ev> = evs.clone();
+        mixed.swap(0, 7);
+        mixed.extend((0..5).map(|i| ev(&format!("2026-05-03T1{i}:00:00"), 60_000, "B", "Two")));
+        mixed.swap(1, 11);
+        let r = on_repeat(&mixed);
+        assert_eq!(
+            r.iter()
+                .map(|x| (x.date.to_string(), x.times))
+                .collect::<Vec<_>>(),
+            vec![("2026-05-01".into(), 5), ("2026-05-03".into(), 5)]
         );
     }
 

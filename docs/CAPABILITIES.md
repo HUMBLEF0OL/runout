@@ -68,7 +68,7 @@ All computed on your PC from sources U, S and E. Milestones column: M10 does des
 | CAP-41 | Records: firsts, bests, streaks, next milestone, on this day, forgotten favourites | M10 | FR-047 | S, E |
 | CAP-42 | Explore: compare artists, albums or tracks over any span, filter by hour, weekday, device or shuffle; ready-made questions; save a view; copy as CSV | M10 | FR-047 | U, S, E |
 | CAP-43 | Your data: what each source covers, gaps shown as no data, import history, re-import a newer export, a reminder to request one | M10 | FR-048, 027 | S, E (metadata) |
-| CAP-44 | Genres and decades: top genres, genres over time, music by decade, where your artists are from (only if you approve the open music database, U-11) | M10 WI 9 (gated) | FR-047 | S, E + open database (new source, O8) |
+| CAP-44 | Genres and decades: top genres, genres over time, music by decade, where your artists are from (open music database approved, U-11 = yes 26 Oct 2026) | M10 WI 9 | FR-047 | S, E + M (open music database, names only; O8 resolved) |
 
 ## Not capabilities (explicitly excluded)
 In-app audio playback (beyond Spotify’s own embed) · BPM/mood/energy · Spotify recommendations · popularity · other users’ playlists · podcasts/episodes · stats from Spotify API data · reading Spotify’s internal files · cloud sync · multiple users · native mobile app.

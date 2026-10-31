@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { explore, listPlays, getDataCoverage, getListeningInsights, getPeriodReport, getRecords, getTrends, type AppError, type Compared } from "../api";
+import { explore, getGenresDecades, setMusicDb, updateSettings, listPlays, getDataCoverage, getListeningInsights, getPeriodReport, getRecords, getTrends, type AppError, type Compared } from "../api";
 import { setDev } from "./devState";
 import { likeForLike } from "../components/logic";
 
@@ -111,5 +111,18 @@ describe("Insights v3 mocks (API.md §4.1, FR-048 coverage rule)", () => {
     const r = await getPeriodReport({ grain: "month", vs: "prev", at: "2026-10" });
     expect(r.data.most_played.artists).toEqual([]);
     expect(r.coverage.desktop_only_since).toBe("2026-10-03");
+  });
+
+  it("genres & decades: source M with the credit; the switch off empties it and update_settings can't flip it", async () => {
+    const y = { grain: "year" as const, vs: "prev" as const, at: null };
+    const on = await getGenresDecades(y);
+    expect(on.sources).toContain("M");
+    expect(on.data.attribution).toBe("Genres from MusicBrainz, CC BY-NC-SA 3.0");
+    expect(await updateSettings({ music_db: false }).catch((e: AppError) => e.code)).toBe("validation");
+    expect((await setMusicDb(false)).music_db).toBe(false);
+    const off = await getGenresDecades(y);
+    expect(off.sources).not.toContain("M");
+    expect(off.data.top_genres).toEqual([]);
+    await setMusicDb(true);
   });
 });

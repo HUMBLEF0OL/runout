@@ -148,7 +148,7 @@ Source of truth: the clickable prototype in [design/prototype/](design/README.md
 | SC-06 | Quick add: link, manual, naming, duplicate, unsupported, offline, R3 autofill | MVP | CAP-01, 03, 13, 31 | dialog (`Ctrl+N`) |
 | SC-07 | Rediscover, with filters and Make a Spotify playlist (R3) | MVP | CAP-11, 30 | `#/rediscover` |
 | SC-08 | Recent plays, unmatched plays, logger | R2 | CAP-18, 20, 21 | `#/plays/{all,unrated,missing}` |
-| SC-09 | Insights: Listening, Collection, Your take, Year in review. **M10 (D35):** listening becomes Report · Trends · Discovery · How you listen · Records · Explore · Your data (+ Genres & decades after U-11); design [design/M10-insights-v3.md](design/M10-insights-v3.md), screens `design/screens/m10-insights/` | R2 | CAP-23–27, 37–44 | `#/insights/{listening,collection,take,year}`; M10: `#/insights/{report,trends,discovery,habits,records,explore,data,genres}` |
+| SC-09 | Insights: Listening, Collection, Your take, Year in review. **M10 (D35):** listening becomes Report · Trends · Discovery · How you listen · Records · Explore · Your data (+ Genres & decades, U-11 approved 26 Oct 2026); design [design/M10-insights-v3.md](design/M10-insights-v3.md), screens `design/screens/m10-insights/` | R2 | CAP-23–27, 37–44 | `#/insights/{listening,collection,take,year}`; M10: `#/insights/{report,trends,discovery,habits,records,explore,data,genres}` |
 | SC-10 | Import Spotify export (3 steps) | R2 | CAP-19 | `#/import/{1,2,3}` |
 | SC-11 | Playlists: check-up (R2) and Studio with apply and undo (R3) | R2/R3 | CAP-22, 29, 30 | `#/playlists/{checkup,studio}` |
 | SC-12 | From Spotify: Top items and recent plays | R3 | CAP-32, 33, 34 | `#/spotify/{tracks,artists}` |

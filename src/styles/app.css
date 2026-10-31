@@ -580,6 +580,27 @@ a.card { display: flex; }
 .in3-key i.other, .in3-split .other { background: var(--color-line-strong); }
 .in3-key i.open { height: 8px; }
 .in3-split { display: flex; gap: 3px; height: 12px; }
+/* ---------- Insights v3 Genres & decades (M10 WI 9): genres per month as stacked columns of six greys and the accent (the
+   rest of the month is the column's own fill), a numbered genre row, decades as columns with the top one in accent. */
+.in3-gm { height: 170px; }
+.in3-gm .hm-cols > span { background: var(--color-surface-3); }
+.in3-gm .hm-cols > span.on { box-shadow: 0 0 0 1px var(--color-line-hover); }
+.in3-gm i.g0, .in3-key i.g0 { background: var(--color-accent); }
+.in3-gm i.g1, .in3-key i.g1 { background: var(--color-text); }
+.in3-gm i.g2, .in3-key i.g2 { background: var(--color-text-2); }
+.in3-gm i.g3, .in3-key i.g3 { background: var(--color-faint); }
+.in3-gm i.g4, .in3-key i.g4 { background: var(--color-bar); }
+.in3-gm i.g5, .in3-key i.g5 { background: var(--color-line-strong); }
+.in3-tag.in3-genre-row { grid-template-columns: 18px minmax(0, 130px) minmax(0, 1fr) 40px; }
+.in3-dec { display: grid; gap: 10px; align-items: end; }
+.in3-dec > div { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; text-align: center; }
+.in3-dec .bar { display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; width: 100%; height: 170px; }
+.in3-dec i { display: block; width: 100%; min-height: 3px; border-radius: var(--radius-bar); background: var(--color-bar); transition: background 150ms; }
+.in3-dec > div:hover i { background: var(--color-line-hover); }
+.in3-dec .hot i, .in3-dec .hot:hover i { background: var(--color-accent); }
+.in3-dec b { font-size: 13px; }
+.in3-dec .truncate { max-width: 100%; }
+
 .in3-split i { height: 100%; }
 .in3-log { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px; }
 .in3-log th, .in3-log td { padding: 9px 8px; text-align: left; border-bottom: 1px solid var(--color-line); }

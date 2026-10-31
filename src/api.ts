@@ -22,7 +22,7 @@ export const toAppError = (e: unknown): AppError => (isAppError(e) ? e : { code:
 export type ItemType = "album" | "track" | "artist";
 export type Status = "planned" | "in_progress" | "explored" | "not_for_me" | "abandoned";
 export type Priority = "high" | "medium" | "low";
-export type Source = "U" | "S" | "E";
+export type Source = "U" | "S" | "E" | "M"; // M = open music database labels (get_genres_decades only)
 export type Range = "7d" | "30d" | "12m" | "all";
 
 export interface ItemSummary {
@@ -81,7 +81,7 @@ export interface Dashboard {
 export interface ParsedLink { state: "ok" | "short" | "unsupported" | "invalid"; uri?: string; type?: ItemType; existing_id?: number }
 export interface SearchHit { item: ItemSummary; snippet: string; field: string }
 export interface Rediscover { revisit: ItemSummary[]; top_rated: ItemSummary[]; stale_backlog: ItemSummary[]; incomplete_reviews: ItemSummary[] }
-export interface Settings { library_path: string; backup_dir: string; backup_weekly: boolean; size_warn_mb: number; artwork_default: boolean; export_reminder: boolean }
+export interface Settings { library_path: string; backup_dir: string; backup_weekly: boolean; size_warn_mb: number; artwork_default: boolean; export_reminder: boolean; music_db: boolean }
 export interface Capture { on: boolean; address: string; port: number; code: string }
 export interface Backup { path: string; created_at: string; size_bytes: number; item_count: number; size_warning: boolean }
 export interface RestoreCheck { ok: boolean; schema_version: number; counts: Partial<Counts>; error?: string }
@@ -231,6 +231,19 @@ export interface DataCoverage {
   logger_runs_since: string | null;
   imports: { id: number; imported_at: string; from: string | null; to: string | null; added: number; already_had: number }[];
   private_excluded: number;
+}
+export interface GenresDecades {
+  lookups: { on: boolean; contact_set: boolean; pending: number; last_lookup: string | null }; // contact_set false = U-12 open: nothing looked up
+  attribution: string; // show wherever genres show (CC BY-NC-SA 3.0)
+  genre_count: number;
+  top_genres: { name: string; share_pct: number }[];
+  genre_months: { months: string[]; rows: { genre: string; shares: number[] }[] };
+  decades: { decade: number; share_pct: number; top_album: { name: string; by: string } | null }[];
+  unknown_year_pct: number;
+  average_age: { years: number; year: number } | null;
+  released_this_year_pct: number | null;
+  countries: { name: string; share_pct: number }[]; // ISO 3166-1 alpha-2
+  coverage: { artists_genre_pct: number; albums_year_pct: number; artists_country_pct: number; same_name_pct: number };
 }
 
 /* ------------------------------------------------------------------ §5 R3 types */
@@ -409,6 +422,8 @@ export const listExploreViews = () => call<ExploreView[]>("list_explore_views");
 export const saveExploreView = (name: string, query: ExploreQuery) => call<ExploreView>("save_explore_view", { name: cleanLine(name, LIMITS.filter), query: cleanExplore(query) });
 export const deleteExploreView = (id: number) => call<void>("delete_explore_view", { id });
 export const getDataCoverage = () => call<Covered<DataCoverage>>("get_data_coverage");
+export const getGenresDecades = (period: PeriodQuery) => call<Covered<GenresDecades>>("get_genres_decades", { period: cleanPeriod(period) });
+export const setMusicDb = (on: boolean) => call<Settings>("set_music_db", { on });
 export const listExportedPlaylists = () => call<ExportedPlaylist[]>("list_exported_playlists");
 export const getPlaylistCheckup = (id: number) => call<PlaylistCheckup>("get_playlist_checkup", { id });
 

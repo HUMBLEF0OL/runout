@@ -217,7 +217,8 @@ pub fn explore<Tz: TimeZone>(cx: &Ctx<Tz>, q: &ExploreQuery) -> Result<Covered<E
         filters += &format!(" AND ({})", l.join(" OR "));
     }
     if let Some(s) = q.shuffle {
-        filters += &format!(" AND shuffle = {}", s as i64);
+        // `+`: not on 0009's shuffle index, which covers most rows (the series' artist index is the short read)
+        filters += &format!(" AND +shuffle = {}", s as i64);
     }
 
     // One pass: per bucket, everything's time (for share) and each series' time, plays, first play.
@@ -243,7 +244,50 @@ pub fn explore<Tz: TimeZone>(cx: &Ctx<Tz>, q: &ExploreQuery) -> Result<Covered<E
         );
         matches.push(format!("({m})"));
     }
-    let only = format!(" AND ({})", matches.join(" OR "));
+    let mut only = format!(" AND ({})", matches.join(" OR "));
+    // The series' artists, so the read walks the 0004 artist index, not every event (NFR-04: an
+    // album or track without `by` takes its artists from the 0005 rollup). A name with no artist
+    // ('' in the rollup) keeps the plain match.
+    let mut artists: Vec<String> = vec![];
+    let mut keyed = true;
+    for (kind, name, by) in &series {
+        match (kind, by) {
+            (SeriesKind::Artist, _) | (_, Some(_)) => {
+                let n = if *kind == SeriesKind::Artist {
+                    name
+                } else {
+                    by.as_ref().expect("by")
+                };
+                artists.push(cx.conn.query_row("SELECT lower(?1)", [n], |r| r.get(0))?);
+            }
+            _ => {
+                let col = if *kind == SeriesKind::Album {
+                    "album_name"
+                } else {
+                    "track_name"
+                };
+                let mut st = cx.conn.prepare_cached(&format!(
+                    "SELECT DISTINCT lower(artist_name) FROM listening_rollup
+                     WHERE lower({col}) = lower(?1) AND events > 0"
+                ))?;
+                for a in st.query_map([name], |r| r.get::<_, String>(0))? {
+                    let a = a?;
+                    keyed &= !a.is_empty();
+                    artists.push(a);
+                }
+            }
+        }
+    }
+    artists.sort();
+    artists.dedup();
+    if keyed {
+        let first = params.len() + 1;
+        let marks: Vec<String> = (first..first + artists.len())
+            .map(|i| format!("?{i}"))
+            .collect();
+        params.extend(artists.iter().map(|a| a as &dyn ToSql));
+        only += &format!(" AND lower(artist_name) IN ({})", marks.join(", "));
+    }
     let mut out: Vec<SeriesOut> = series
         .iter()
         .map(|(kind, name, by)| SeriesOut {

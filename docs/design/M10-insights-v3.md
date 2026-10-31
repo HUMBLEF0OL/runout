@@ -175,7 +175,7 @@ Each change is a migration plus a logger change, with tests.
 | **Discovery** ([3](screens/m10-insights/3-discovery.png)) | Stats (new artists this year, stick rate, time on new artists, artists known); new artists per month split stuck/dropped; how you started tracks (export only); discovery log (artist, first played, with which track, plays since, now: in rotation / dropped / back again) | S, E |
 | **How you listen** ([4](screens/m10-insights/4-habits.png)) | Banner naming the export-only coverage; how plays ended; skips by hour; quick bails; shuffle over time (desktop joins after 4.3.2); where you listen (device classes, offline share); finished tracks (+ "how far in" after 4.3.1, with its coverage); sessions (count, typical, longest, spread); deep dives | E (+S after 4.3) |
 | **Records** ([5](screens/m10-insights/5-records.png)) | All-time records (8 cards); on this day (earlier years); forgotten favourites with "Play again" (opens Spotify like other "Open Spotify" actions) | S, E |
-| **Genres & decades** ([6](screens/m10-insights/6-genres.png)) | **Only after U-11 is approved** (§7). Hidden until then; no placeholder tab | + open database |
+| **Genres & decades** ([6](screens/m10-insights/6-genres.png)) | **U-11 approved 26 Oct 2026** (§7); no placeholder tab | + source M (open music database) |
 | **Explore** ([7](screens/m10-insights/7-explore.png)) | Builder: up to 3 artists / albums / tracks, from–to, grain (week / month / year), measure (hours / share / plays); filters: hours of day, weekdays, and (export only) device and shuffle; a line chart, a table, "Save this view" (stored like saved filters), "Copy as CSV". Ready-made questions fill the builder; there's no free text | U, S, E |
 | **Your data** ([8](screens/m10-insights/8-data.png)) | Coverage strip per source with gaps; import history (date, range covered, new plays, already had); "Import a newer export" (the existing 3-step import); monthly reminder to request an export (off by default; a local notification on app open, never network); private-session exclusion switch (moves from where it lives today, same setting) | metadata |
 
@@ -198,17 +198,16 @@ Other rules:
 - **Rollups:** rebuilt within the import transaction; the import of 10 years stays < 60 s.
 - **Proof:** measured numbers are recorded in kb/perf-integrity.md.
 
-## 7. Genres & decades (gated: U-11, O8)
+## 7. Genres & decades (approved: U-11 = yes, 26 Oct 2026; O8 resolved)
 - **Approach:** look up each artist and album **name** once in MusicBrainz (genres via community tags, first release year, artist area). Fall back to Wikidata where MusicBrainz has nothing.
-- **Privacy:** no account and nothing about the user. Only names are sent, over HTTPS, at ≤ 1 request/s (MusicBrainz rule). The user-agent names the app.
-- **Storage:** results stay forever in a separate `enrich` table set, as a new data source with its own letter (proposed **M**, "music database"). It can be deleted with one switch, which also stops lookups.
+- **Privacy:** no account and nothing about the user. Only names are sent, over HTTPS, at ≤ 1 request/s (MusicBrainz rule). The user-agent names the app and a project contact that is not about the user (U-12).
+- **Storage:** results stay forever in a separate `enrich` table set, as a new data source with its own letter (**M**, "music database", BRD §5.1). It can be deleted with one switch, which also stops lookups.
 - **Unlocks:** top genres, genres over time, music by decade, the average age of your music, the share released this year, where your artists are from, and coverage. Genres also fill gaps in the top tags card.
 
-**Needs before building (the user's decision first):**
-- **U-11:** the user approves sending names to an open database. That breaks "nothing leaves this PC except to Spotify" (`check.py` allowed hosts, NFR-07 wording) and adds a source to BRD §5.1.
-- **T6:** verify licensing (core data CC0; tags believed CC BY-NC-SA, so non-commercial with attribution), the rate limits, and the match rate on the user's real artists and albums (target ≥ 85% of listening time).
-
-If U-11 is declined, WI 9 is dropped. Nothing else depends on it.
+**Needs before building (U-11 done; T6 match rate still open):**
+- **U-11 (yes, 26 Oct 2026):** the user approved sending names to an open database. Done: `check.py` allowed hosts gained `musicbrainz.org` and `www.wikidata.org`, NFR-07 names the music database, BRD §5.1 has source M.
+- **T6:** licence and rate limit verified (tags CC BY-NC-SA 3.0, credit "Genres from MusicBrainz"); match rate on the user's real artists and albums open (target ≥ 85% of listening time).
+- **U-12:** a project contact for the User-Agent (TSD §5.4); live lookups wait for it.
 
 ## 8. Calls made in this design (not asked of the user)
 Check these while reading:

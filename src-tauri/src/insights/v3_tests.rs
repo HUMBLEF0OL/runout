@@ -552,6 +552,23 @@ fn explore_series_and_validation() {
         (&json!([0.0, 0.0, 0.0]), &json!(null))
     );
     assert_eq!(d["export_only"], json!(false));
+    // a track or album without `by` matches any artist, case-folded, and reports who it is by
+    let mut v = base.clone();
+    v["series"] = json!([{"kind": "track", "name": "THREE"}, {"kind": "album", "name": "cedar lp"},
+                         {"kind": "track", "name": "four", "by": "cedar"}]);
+    let s = &j(explore(&cx(&c), &q(v)).unwrap())["data"]["series"];
+    assert_eq!(
+        (&s[0]["values"], &s[0]["by"]),
+        (&json!([0.0, 1.0, 0.0]), &json!("Birch"))
+    );
+    assert_eq!(
+        (&s[1]["values"], &s[1]["by"]),
+        (&json!([0.0, 1.0, 1.0]), &json!("Cedar"))
+    );
+    assert_eq!(
+        (&s[2]["values"], &s[2]["by"]),
+        (&json!([0.0, 1.0, 1.0]), &json!("cedar"))
+    );
     // share of each month's time: Aug 100%, Oct 60 000 of 360 000
     let mut v = base.clone();
     v["measure"] = json!("share");
@@ -779,5 +796,77 @@ fn repeat_counts_plays_of_tracks_heard_before_the_window() {
     assert_eq!(
         super::report::repeat_plays(&cx(&c), all, &months[2..]).unwrap(),
         vec![2]
+    );
+}
+
+/// A library file reads stretches of two months or more on threads (`v3::scan_parts`, `par_rows`,
+/// NFR-04): every figure is the same as one pass in memory.
+#[test]
+fn threads_give_the_same_figures() {
+    let mem = history();
+    let dir = std::env::temp_dir().join(format!("runout-v3-threads-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("library.db");
+    let _ = std::fs::remove_file(&path);
+    mem.execute("VACUUM INTO ?1", [path.to_str().unwrap()])
+        .unwrap();
+    let file = db::open(&path).unwrap();
+    for (g, vs, at) in [
+        ("week", "prev", None),
+        ("month", "prev", None),
+        ("month", "usual", None),
+        ("month", "last_year", Some("2026-09")),
+        ("year", "prev", None),
+        ("all", "prev", None),
+    ] {
+        let p = period(g, vs, at);
+        assert_eq!(
+            j(report(&cx(&mem), &p).unwrap()),
+            j(report(&cx(&file), &p).unwrap()),
+            "report {g} {vs}"
+        );
+        assert_eq!(
+            j(discovery(&cx(&mem), &p).unwrap()),
+            j(discovery(&cx(&file), &p).unwrap()),
+            "discovery {g} {vs}"
+        );
+        assert_eq!(
+            j(habits(&cx(&mem), &p).unwrap()),
+            j(habits(&cx(&file), &p).unwrap()),
+            "habits {g} {vs}"
+        );
+    }
+    for m in [Measure::Hours, Measure::Artists] {
+        assert_eq!(
+            j(trends(&cx(&mem), m).unwrap()),
+            j(trends(&cx(&file), m).unwrap())
+        );
+    }
+    drop(file);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// On repeat (≥ 5 plays of a track in a day) in How you listen: named after its track, read back
+/// from the first play (`habits` keeps no track name per play, NFR-04).
+#[test]
+fn habits_names_a_repeat() {
+    let c = db::open_in_memory().unwrap();
+    for i in 0..5 {
+        put(
+            &c,
+            Source::Logger,
+            &format!("2026-10-12T1{i}:00:00"),
+            60_000,
+            "Elm",
+            "Six",
+            None,
+            None,
+        );
+    }
+    let h = j(habits(&cx(&c), &period("month", "prev", None)).unwrap());
+    assert_eq!(
+        h["data"]["deep_dives"],
+        json!([{"kind": "repeat", "name": "Six", "by": "Elm", "start_local": "2026-10-12T09:59",
+                "end_local": "2026-10-12T14:00", "tracks": 1, "ms": 300_000, "times": 5}])
     );
 }

@@ -1,7 +1,8 @@
 // SC-09 Insights v3, Your data tab (M10 WI 8), per docs/design/M10-insights-v3.md §4.4/§5 and mockup PNG 8: what Runout
 // knows per source (a coverage strip with its no-data gaps), the import history, "Import a newer export" (the existing
 // 3-step import), and Keep it fresh: the monthly export reminder (off by default, a local note on app open, never network)
-// and the private-session switch, moved here from Settings (same setting: set_logger include_private).
+// and the private-session switch, moved here from Settings (same setting: set_logger include_private); the music database
+// switch (M10 WI 9, set_music_db: off stops lookups and deletes every looked-up label).
 import { Link } from "react-router-dom";
 import { m, useReducedMotion } from "motion/react";
 import * as api from "../api";
@@ -126,6 +127,12 @@ function Fresh({ d }: { d: DataCoverage }) {
         <div className="flex flex-col gap-0.5">
           <Switch label="Leave out private-session plays" on={!lg.include_private} onChange={(v) => write(() => api.setLogger({ include_private: !v }))} />
           <span className="text-muted text-xs">{lg.include_private ? "Private-session plays count in every insight." : `${pl(d.private_excluded, "play")} left out of every insight. On by default.`}</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <Switch label="Look up genres and release years" on={s.music_db} onChange={(v) => write(() => api.setMusicDb(v))} />
+          <span className="text-muted text-xs">{s.music_db
+            ? "Artist and album names only go to MusicBrainz (Wikidata when it has nothing), about one a second. Turning this off stops lookups and deletes every genre, year and country looked up."
+            : "Off: nothing is looked up, and nothing looked up is kept. Genres & decades stays empty."}</span>
         </div>
       </>}
       <span className="text-text-2 text-sm">Spotify takes from a few days up to 30 to prepare an Extended streaming history. You request it on spotify.com, in your account’s privacy settings; Runout can’t do it for you.</span>

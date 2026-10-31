@@ -4,6 +4,7 @@ pub mod capture;
 pub mod cleanup;
 pub mod commands;
 pub mod db;
+pub mod enrich;
 pub mod error;
 pub mod export;
 pub mod importer;
@@ -204,6 +205,7 @@ Settings file: {file}",
                 std::process::exit(1);
             }
             logger::poll::spawn(app.handle().clone());
+            enrich::spawn(app.handle().clone());
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 loop {

@@ -44,7 +44,7 @@ Agents: `rust-core` (WI 2–5), `react-ui` (WI 6–8), `spec-reviewer` (each ste
    - Explore: builder, ready-made questions, saved views (reuse saved filters), Copy as CSV.
    - Your data: coverage strip, import history, the reminder switch, and the private-session switch (moved from where it lives today).
    - **UI done on the mock 25 Oct 2026:** `InsightsExplore.tsx`, `InsightsData.tsx`, the reminder note in `Shell.tsx`; saved views contract in API.md §4.1 (`check.py` `PENDING_RUST` until Rust registers them, WI 10). Tests `insightsexplore.test.tsx`; journeys X1–X2, Y1–Y2.
-9. **Genres & decades (WI 9, gated).** Only after **U-11 = yes**:
+9. **Genres & decades (WI 9).** **U-11 = yes** (26 Oct 2026; BRD source M, TSD §5.4):
    - `spotify-researcher` resolves T6 (licence, rate limit, match rate on real names);
    - then `change-spec` adds the source to BRD §5.1, the allowed host to `check.py` and TSD §5;
    - then `enrich/` (names-only lookups, ≤ 1 request/s, separate tables, delete switch) and the tab.

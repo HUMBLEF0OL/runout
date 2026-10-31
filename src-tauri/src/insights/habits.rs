@@ -15,11 +15,11 @@ use super::terms::{
     stick_rate, stick_window, stuck_by,
 };
 use super::v3::{
-    Ctx, PeriodQuery, Src, artist_item, artist_items, between, by_artist, covered, day, majority,
-    minute, month, month_end, month_start, months, period_coverage, resolve,
+    Ctx, PeriodQuery, Src, artist_item, artist_items, by_artist, covered, day, majority, minute,
+    month, month_end, month_start, months, period_coverage, resolve,
 };
 use super::{Covered, base, pct};
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::importer::events::Source;
 
 /// Discovery: per-month bars go back at least this many months.
@@ -89,9 +89,11 @@ fn stick_outcomes<Tz: TimeZone>(
 ) -> Result<HashMap<String, Option<bool>>> {
     let now = cx.now.naive_utc();
     let mut st = cx.conn.prepare(&format!(
-        "{} SELECT COUNT(*) FROM base WHERE lower(artist_name) = ?1 AND ended_at_utc >= ?2
-           AND ended_at_utc < ?3 AND counts_as_play",
-        base(cx.include_private)
+        // counted up to the stick threshold only (NFR-04: one row lookup per play otherwise)
+        "{} SELECT COUNT(*) FROM (SELECT 1 FROM base WHERE lower(artist_name) = ?1 AND ended_at_utc >= ?2
+           AND ended_at_utc < ?3 AND counts_as_play LIMIT {})",
+        base(cx.include_private),
+        terms::STICK_PLAYS
     ))?;
     let fmt = |t: NaiveDateTime| t.format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let mut out = HashMap::new();
@@ -244,16 +246,33 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
         .collect();
 
     // How you started tracks (export only).
-    let mut st = cx.conn.prepare(&format!(
-        "{} SELECT reason_start, COUNT(*) FROM ev WHERE {} AND source = 'export' GROUP BY 1",
-        Src::All.cte(cx.include_private),
-        between(r.cur)
-    ))?;
+    // counted per reason here, split over threads (NFR-04: a GROUP BY sorts every export row of
+    // the period)
+    let cte = Src::All.cte(cx.include_private);
+    let sql =
+        |w: &str| format!("{cte} SELECT reason_start FROM ev WHERE {w} AND source = 'export'");
+    type Reasons = Vec<(Option<String>, i64)>;
+    fn count(v: &mut Reasons, k: Option<&str>, n: i64) {
+        match v.iter_mut().find(|x| x.0.as_deref() == k) {
+            Some(x) => x.1 += n,
+            None => v.push((k.map(str::to_owned), n)),
+        }
+    }
+    let row = |v: &mut Reasons, r: &rusqlite::Row| -> Result<()> {
+        count(v, super::text_opt(r, 0)?, 1);
+        Ok(())
+    };
+    let reasons: Reasons = super::v3::par_rows(cx, Some(r.cur), &sql, &Reasons::new, &row)?
+        .into_iter()
+        .reduce(|mut a, b| {
+            for (k, n) in b {
+                count(&mut a, k.as_deref(), n);
+            }
+            a
+        })
+        .unwrap_or_default();
     let mut starts: BTreeMap<StartKind, i64> = BTreeMap::new();
-    for row in st.query_map([], |r| {
-        Ok((r.get::<_, Option<String>>(0)?, r.get::<_, i64>(1)?))
-    })? {
-        let (k, n) = row?;
+    for (k, n) in reasons {
         *starts
             .entry(start_kind(k.as_deref().unwrap_or("")))
             .or_default() += n;
@@ -458,6 +477,116 @@ pub fn session_bucket(ms: i64) -> usize {
         .count()
 }
 
+/// One part of the How you listen pass (`par_rows`), merged in row id order.
+#[derive(Default)]
+struct HabitsAcc {
+    export_plays: i64,
+    export_events: i64,
+    finished: i64,
+    ends: BTreeMap<EndKind, i64>,
+    flagged: i64,
+    skipped: i64,
+    hour_flags: [(i64, i64); 24],
+    shuffle_n: i64,
+    shuffle_on: i64,
+    this_pc: i64,
+    platforms: Vec<(Option<String>, i64)>,
+    offline: i64,
+    offline_months: BTreeMap<String, i64>,
+    /// artist key (folded hash) → (max display name, ms, skipped, flagged)
+    artists: HashMap<u64, (String, i64, i64, i64)>,
+    buf: Vec<u8>,
+    /// norm_key → (max track, max artist, max item id, times)
+    bails: HashMap<String, (String, String, Option<i64>, usize)>,
+    far_sum: f64,
+    far_n: i64,
+    plays: Vec<Ev>,
+    /// year → (shuffle on, with a shuffle flag)
+    years: BTreeMap<i32, (i64, i64)>,
+}
+
+impl HabitsAcc {
+    fn merge(mut self, o: HabitsAcc) -> HabitsAcc {
+        self.export_plays += o.export_plays;
+        self.export_events += o.export_events;
+        self.finished += o.finished;
+        for (k, n) in o.ends {
+            *self.ends.entry(k).or_default() += n;
+        }
+        self.flagged += o.flagged;
+        self.skipped += o.skipped;
+        for (a, b) in self.hour_flags.iter_mut().zip(o.hour_flags) {
+            a.0 += b.0;
+            a.1 += b.1;
+        }
+        self.shuffle_n += o.shuffle_n;
+        self.shuffle_on += o.shuffle_on;
+        self.this_pc += o.this_pc;
+        for (k, n) in o.platforms {
+            match self.platforms.iter_mut().find(|x| x.0 == k) {
+                Some(x) => x.1 += n,
+                None => self.platforms.push((k, n)),
+            }
+        }
+        self.offline += o.offline;
+        for (k, n) in o.offline_months {
+            *self.offline_months.entry(k).or_default() += n;
+        }
+        for (k, v) in o.artists {
+            match self.artists.entry(k) {
+                std::collections::hash_map::Entry::Occupied(mut e) => {
+                    let x = e.get_mut();
+                    if v.0 > x.0 {
+                        x.0 = v.0;
+                    }
+                    x.1 += v.1;
+                    x.2 += v.2;
+                    x.3 += v.3;
+                }
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(v);
+                }
+            }
+        }
+        for (k, v) in o.bails {
+            match self.bails.entry(k) {
+                std::collections::hash_map::Entry::Occupied(mut e) => {
+                    let b = e.get_mut();
+                    if v.0 > b.0 {
+                        b.0 = v.0;
+                    }
+                    if v.1 > b.1 {
+                        b.1 = v.1;
+                    }
+                    b.2 = b.2.max(v.2);
+                    b.3 += v.3;
+                }
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(v);
+                }
+            }
+        }
+        self.far_sum += o.far_sum;
+        self.far_n += o.far_n;
+        self.plays.extend(o.plays); // empty: `habits` takes each part's plays first
+        for (k, v) in o.years {
+            let y = self.years.entry(k).or_default();
+            y.0 += v.0;
+            y.1 += v.1;
+        }
+        self
+    }
+}
+
+/// A local time's year, as SQL's `CAST(substr(.., 1, 4) AS INT)`: its leading digits.
+fn year_of(local: &str) -> i32 {
+    local
+        .bytes()
+        .take(4)
+        .take_while(u8::is_ascii_digit)
+        .fold(0i32, |n, b| n * 10 + i32::from(b - b'0'))
+}
+
 /// `get_listening_habits`.
 pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Habits>> {
     let today = cx.today();
@@ -466,11 +595,11 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
     let (_, cov) = period_coverage(cx, &r, 0)?;
     let span = r.cur;
     let cte = Src::All.cte(cx.include_private);
-    let w = between(span);
 
-    // One pass over the period's events (NFR-04: no SQL sort or index-ordered group per figure):
-    // the per-event figures, offline peak, most skipped, quick bails, how far in, and the plays
-    // sessions read (≥ 30 s, up to today, put in end order below).
+    // One pass over the period's events (NFR-04: no SQL sort or index-ordered group per figure; a
+    // span over a year is split over threads, `par_rows`): the per-event figures, offline peak,
+    // most skipped, quick bails, how far in, shuffle by year, and the plays sessions read (≥ 30 s,
+    // up to today, put in end order below).
     let durations: HashMap<String, i64> = cx
         .conn
         .prepare(
@@ -480,31 +609,16 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
         )?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
-    let mut st = cx.conn.prepare(&format!(
-        "{cte} SELECT id, ended_at_utc, local, ms_played, IFNULL(artist_name, ''), IFNULL(album_name, ''),
-                IFNULL(norm_key, ''), item_id, source, IFNULL(track_name, ''), platform, reason_end,
-                skipped, shuffle, offline, counts_as_play
-         FROM ev WHERE {w}"
-    ))?;
     let today_s = day(today);
-    let (mut export_plays, mut export_events, mut finished) = (0i64, 0i64, 0i64);
-    let mut ends: BTreeMap<EndKind, i64> = BTreeMap::new();
-    let (mut flagged, mut skipped) = (0i64, 0i64);
-    let mut hour_flags = [(0i64, 0i64); 24];
-    let (mut shuffle_n, mut shuffle_on) = (0i64, 0i64);
-    let mut this_pc = 0i64;
-    let mut platforms: HashMap<Option<String>, i64> = HashMap::new();
-    let mut offline = 0i64;
-    let mut offline_months: BTreeMap<String, i64> = BTreeMap::new();
-    // artist key (folded hash) → (max display name, ms, skipped, flagged)
-    let mut artists: HashMap<u64, (String, i64, i64, i64)> = HashMap::new();
-    let mut buf = Vec::new();
-    // norm_key → (max track, max artist, max item id, times)
-    let mut bails: HashMap<String, (String, String, Option<i64>, usize)> = HashMap::new();
-    let (mut far_sum, mut far_n) = (0f64, 0i64);
-    let mut plays = vec![];
-    let mut rows = st.query([])?;
-    while let Some(r) = rows.next()? {
+    let sql = |w: &str| {
+        format!(
+            "{cte} SELECT id, ended_at_utc, local, ms_played, IFNULL(artist_name, ''), IFNULL(album_name, ''),
+                    IFNULL(norm_key, ''), item_id, source, IFNULL(track_name, ''), platform, reason_end,
+                    skipped, shuffle, offline, counts_as_play
+             FROM ev WHERE {w}"
+        )
+    };
+    let row = |a: &mut HabitsAcc, r: &rusqlite::Row| -> Result<()> {
         let text =
             |i: usize| -> rusqlite::Result<&str> { Ok(super::text_opt(r, i)?.unwrap_or("")) };
         let ms: i64 = r.get(3)?;
@@ -515,44 +629,51 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
         let local = fast_time(local_s);
         if play {
             if export {
-                let p = super::text_opt(r, 10)?.map(str::to_owned);
-                *platforms.entry(p).or_default() += 1;
+                // copied once per platform, not per play
+                let p = super::text_opt(r, 10)?;
+                match a.platforms.iter_mut().find(|x| x.0.as_deref() == p) {
+                    Some(x) => x.1 += 1,
+                    None => a.platforms.push((p.map(str::to_owned), 1)),
+                }
             } else {
-                this_pc += 1;
+                a.this_pc += 1;
             }
         }
         if let Some(s) = skip {
-            flagged += 1;
-            skipped += s as i64;
+            a.flagged += 1;
+            a.skipped += s as i64;
             if let Some(t) = local {
                 let h = chrono::Timelike::hour(&t) as usize;
-                hour_flags[h].0 += 1;
-                hour_flags[h].1 += s as i64;
+                a.hour_flags[h].0 += 1;
+                a.hour_flags[h].1 += s as i64;
             }
         }
         if let Some(s) = r.get::<_, Option<bool>>(13)? {
-            shuffle_n += 1;
-            shuffle_on += s as i64;
+            a.shuffle_n += 1;
+            a.shuffle_on += s as i64;
+            let y = a.years.entry(year_of(local_s)).or_default();
+            y.0 += s as i64;
+            y.1 += 1;
         }
         let end = super::text_opt(r, 11)?;
         let key = text(6)?;
         let artist = text(4)?;
         if export {
-            export_plays += play as i64;
-            export_events += 1;
-            *ends.entry(end_kind(end.unwrap_or(""))).or_default() += 1;
+            a.export_plays += play as i64;
+            a.export_events += 1;
+            *a.ends.entry(end_kind(end.unwrap_or(""))).or_default() += 1;
             if end == Some("trackdone") {
-                finished += 1;
+                a.finished += 1;
             }
             if play && r.get::<_, Option<bool>>(14)? == Some(true) {
-                offline += 1;
-                *offline_months
+                a.offline += 1;
+                *a.offline_months
                     .entry(local_s.chars().take(7).collect())
                     .or_default() += 1;
             }
             if ms < QUICK_BAIL_MS && end == Some("fwdbtn") && !key.is_empty() {
                 let (track, iid) = (text(9)?, r.get::<_, Option<i64>>(7)?);
-                match bails.get_mut(key) {
+                match a.bails.get_mut(key) {
                     Some(b) => {
                         if track > b.0.as_str() {
                             b.0 = track.to_owned();
@@ -564,7 +685,7 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
                         b.3 += 1;
                     }
                     None => {
-                        bails.insert(
+                        a.bails.insert(
                             key.to_owned(),
                             (track.to_owned(), artist.to_owned(), iid, 1),
                         );
@@ -573,26 +694,28 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
             }
         }
         if !artist.is_empty() {
-            let a = artists
-                .entry(super::v3::folded_hash(&mut buf, &[artist]))
+            let h = super::v3::folded_hash(&mut a.buf, &[artist]);
+            let x = a
+                .artists
+                .entry(h)
                 .or_insert_with(|| (artist.to_owned(), 0, 0, 0));
-            if artist > a.0.as_str() {
-                a.0 = artist.to_owned();
+            if artist > x.0.as_str() {
+                x.0 = artist.to_owned();
             }
-            a.1 += ms;
+            x.1 += ms;
             if let Some(s) = skip {
-                a.2 += s as i64;
-                a.3 += 1;
+                x.2 += s as i64;
+                x.3 += 1;
             }
         }
         if play {
             if let Some(dur) = durations.get(key).filter(|d| **d > 0) {
-                far_sum += (ms as f64 / *dur as f64).min(1.0);
-                far_n += 1;
+                a.far_sum += (ms as f64 / *dur as f64).min(1.0);
+                a.far_n += 1;
             }
             if local_s.get(..10).is_some_and(|d| d <= today_s.as_str()) {
                 let end_t = fast_time(text(1)?).unwrap_or_default();
-                plays.push(Ev {
+                a.plays.push(Ev {
                     id: r.get(0)?,
                     source: if export {
                         Source::Export
@@ -602,7 +725,8 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
                     end: end_t.and_utc(),
                     local: local.unwrap_or(end_t),
                     ms,
-                    track: text(9)?.to_owned(),
+                    // read back for the few repeats only (NFR-04: one copy less per play)
+                    track: String::new(),
                     artist: artist.to_owned(),
                     album: text(5)?.to_owned(),
                     norm_key: key.to_owned(),
@@ -616,10 +740,48 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
                 });
             }
         }
-    }
-    drop(rows);
-    // end order for sessions, sorted here (NFR-04: SQL would sort every wide row)
-    plays.sort_unstable_by_key(|e| (e.end, e.id));
+        Ok(())
+    };
+    let mut parts = super::v3::par_rows(cx, Some(span), &sql, &HabitsAcc::default, &row)?;
+    // each part's plays stay where they are (NFR-04: ~400k wide rows over a whole history)
+    let plays_parts: Vec<Vec<Ev>> = parts
+        .iter_mut()
+        .map(|p| std::mem::take(&mut p.plays))
+        .collect();
+    let acc = parts
+        .into_iter()
+        .reduce(HabitsAcc::merge)
+        .unwrap_or_default();
+    let HabitsAcc {
+        export_plays,
+        export_events,
+        finished,
+        ends,
+        flagged,
+        skipped,
+        hour_flags,
+        shuffle_n,
+        shuffle_on,
+        this_pc,
+        platforms,
+        offline,
+        offline_months,
+        artists,
+        buf: _,
+        bails,
+        far_sum,
+        far_n,
+        plays: _,
+        years: span_years,
+    } = acc;
+    // end order for sessions, sorted here (NFR-04: refs, not the wide rows; SQL would sort every row)
+    let mut keyed: Vec<(i64, u32, i64, &Ev)> = plays_parts
+        .iter()
+        .flatten()
+        .map(|e| (e.end.timestamp(), e.end.timestamp_subsec_nanos(), e.id, e))
+        .collect();
+    keyed.sort_unstable_by_key(|k| (k.0, k.1, k.2));
+    let plays: Vec<&Ev> = keyed.into_iter().map(|k| k.3).collect();
     let mut devices: BTreeMap<DeviceClass, i64> = BTreeMap::new();
     if this_pc > 0 {
         devices.insert(DeviceClass::ThisPc, this_pc);
@@ -688,22 +850,173 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
         });
     }
 
-    // Shuffle by year: the whole history.
-    let by_year = cx
-        .conn
-        .prepare(&format!(
-            // unfiltered: base's filters by hand, on 0009's covering index (NFR-04)
-            "SELECT CAST(substr(COALESCE(ended_at_local, ended_at_utc), 1, 4) AS INT), SUM(shuffle), COUNT(*)
-             FROM listening_event INDEXED BY listening_event_shuffle
-             WHERE shuffle IS NOT NULL AND reconciled_with IS NULL{} GROUP BY 1 ORDER BY 1",
-            cx.private_filter("private_session")
-        ))?
-        .query_map([], |r| Ok(YearPct { year: r.get(0)?, pct: pct(r.get(1)?, r.get(2)?) }))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    // Shuffle by year: the whole history. A period from the first day on has read it already, but
+    // for the days after it (NFR-04: on the time index; local time is at most a day off UTC);
+    // else summed here from 0009's covering index (a GROUP BY on the year sorts every row).
+    let (mut years, y_sql) = if first.is_none_or(|f| span.0 <= f) {
+        let (a, b) = (day(span.0), day(span.1));
+        (
+            span_years,
+            format!(
+                "{cte} SELECT local, shuffle FROM ev WHERE +shuffle IS NOT NULL
+                   AND ended_at_utc >= '{b}' AND substr(local, 1, 10) > '{b}'
+                 UNION ALL SELECT local, shuffle FROM ev WHERE +shuffle IS NOT NULL
+                   AND ended_at_utc < date('{a}', '+1 day') AND substr(local, 1, 10) < '{a}'"
+            ),
+        )
+    } else {
+        (
+            BTreeMap::new(),
+            format!(
+                // unfiltered: base's filters by hand, on 0009's covering index (NFR-04)
+                "SELECT substr(COALESCE(ended_at_local, ended_at_utc), 1, 4), shuffle
+                 FROM listening_event INDEXED BY listening_event_shuffle
+                 WHERE shuffle IS NOT NULL AND reconciled_with IS NULL{}",
+                cx.private_filter("private_session")
+            ),
+        )
+    };
+    {
+        let mut st = cx.conn.prepare(&y_sql)?;
+        let mut rows = st.query([])?;
+        while let Some(r) = rows.next()? {
+            let e = years.entry(year_of(super::text(r, 0)?)).or_default();
+            e.0 += r.get::<_, i64>(1)?;
+            e.1 += 1;
+        }
+    }
+    let by_year: Vec<YearPct> = years
+        .into_iter()
+        .map(|(year, (on, n))| YearPct {
+            year,
+            pct: pct(on, n),
+        })
+        .collect();
     let far_sum = Some(far_sum);
 
-    // Sessions and deep dives (all plays), start to finish (library albums with a track list).
-    let sessions = heuristics::sessions(&plays);
+    // Deep dives, on repeat and start to finish side by side (NFR-04: each walks every play).
+    let fmt = |t: NaiveDateTime| minute(&t.format("%Y-%m-%dT%H:%M:%S").to_string());
+    let dives_of = |sessions: &[heuristics::Session]| -> Vec<DeepDive> {
+        sessions
+            .iter()
+            .flat_map(|s| {
+                let n_plays = |d: &heuristics::Dive| {
+                    s.plays
+                        .iter()
+                        .filter(|e| {
+                            e.local >= d.start
+                                && e.local <= d.end
+                                && match d.kind {
+                                    DiveKind::Album => e.album.eq_ignore_ascii_case(&d.name),
+                                    DiveKind::Artist => e.artist.eq_ignore_ascii_case(&d.name),
+                                }
+                        })
+                        .count()
+                };
+                heuristics::deep_dives(s)
+                    .into_iter()
+                    .map(move |d| DeepDive {
+                        kind: match d.kind {
+                            DiveKind::Artist => DeepKind::Artist,
+                            DiveKind::Album => DeepKind::Album,
+                        },
+                        times: (d.kind == DiveKind::Album)
+                            .then(|| (n_plays(&d) / d.tracks.max(1)).max(1) as i64),
+                        name: d.name.clone(),
+                        by: d.by.clone(),
+                        start_local: fmt(d.start),
+                        end_local: fmt(d.end),
+                        tracks: d.tracks,
+                        ms: d.ms,
+                    })
+            })
+            .collect()
+    };
+    // (first play's id, the repeat): its track name is read back after
+    let repeats_of = || -> Vec<(Option<i64>, DeepDive)> {
+        let repeats = heuristics::on_repeat(plays.iter().copied());
+        // each repeat's plays, in end order (only the repeats' days and tracks are kept)
+        let wanted: HashSet<(NaiveDate, &str)> = repeats
+            .iter()
+            .map(|r| (r.date, r.norm_key.as_str()))
+            .collect();
+        let mut by_day_key: HashMap<(NaiveDate, &str), Vec<&Ev>> = HashMap::new();
+        if !wanted.is_empty() {
+            for e in plays.iter().copied() {
+                let k = (e.date(), e.norm_key.as_str());
+                if wanted.contains(&k) {
+                    by_day_key.entry(k).or_default().push(e);
+                }
+            }
+        }
+        repeats
+            .into_iter()
+            .map(|rep| {
+                let its = by_day_key
+                    .get(&(rep.date, rep.norm_key.as_str()))
+                    .cloned()
+                    .unwrap_or_default();
+                let first = its.first().map(|e| e.id);
+                (
+                    first,
+                    DeepDive {
+                        kind: DeepKind::Repeat,
+                        name: rep.track.clone(),
+                        by: rep.artist.clone(),
+                        start_local: fmt(its
+                            .first()
+                            .map_or(rep.date.and_hms_opt(0, 0, 0).expect("midnight"), |e| {
+                                e.local - TimeDelta::milliseconds(e.ms)
+                            })),
+                        end_local: fmt(its
+                            .last()
+                            .map_or(rep.date.and_hms_opt(0, 0, 0).expect("midnight"), |e| {
+                                e.local
+                            })),
+                        tracks: 1,
+                        ms: its.iter().map(|e| e.ms).sum(),
+                        times: Some(rep.times as i64),
+                    },
+                )
+            })
+            .collect()
+    };
+    // Sessions (all plays) and their deep dives, start to finish (library albums with a track
+    // list), while on repeat counts the days.
+    let lost = |_| AppError::internal("A listening read stopped.");
+    let (sessions, mut dives, repeats, start_to_finish) = std::thread::scope(|sc| {
+        let r = sc.spawn(repeats_of);
+        // already in end order
+        let sessions = heuristics::sessions_in_order(
+            plays
+                .iter()
+                .copied()
+                .filter(|e| terms::is_play(e))
+                .collect(),
+        );
+        let (d, stf) = std::thread::scope(|sc| {
+            let d = sc.spawn(|| dives_of(&sessions));
+            let stf = start_to_finish(cx.conn, &sessions);
+            (d.join(), stf)
+        });
+        Ok::<_, AppError>((sessions, d.map_err(lost)?, r.join().map_err(lost)?, stf?))
+    })?;
+
+    let mut track = cx
+        .conn
+        // unfiltered: names a row id the filtered session pass already chose
+        .prepare("SELECT IFNULL(track_name, '') FROM listening_event WHERE id = ?1")?;
+    for (id, mut d) in repeats {
+        if let Some(id) = id {
+            d.name = track.query_row([id], |r| r.get(0))?;
+        }
+        dives.push(d);
+    }
+    dives.sort_by(|a, b| {
+        b.ms.cmp(&a.ms)
+            .then_with(|| a.start_local.cmp(&b.start_local))
+    });
+    dives.truncate(DIVES_MAX);
     let mut lengths: Vec<i64> = sessions.iter().map(|s| s.span_ms()).collect();
     lengths.sort_unstable();
     let typical_ms = terms::median(&lengths.iter().map(|x| *x as f64).collect::<Vec<_>>())
@@ -719,81 +1032,6 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
     for l in &lengths {
         spread[session_bucket(*l)] += 1;
     }
-    let fmt = |t: NaiveDateTime| minute(&t.format("%Y-%m-%dT%H:%M:%S").to_string());
-    let mut dives: Vec<DeepDive> = sessions
-        .iter()
-        .flat_map(|s| {
-            let n_plays = |d: &heuristics::Dive| {
-                s.plays
-                    .iter()
-                    .filter(|e| {
-                        e.local >= d.start
-                            && e.local <= d.end
-                            && match d.kind {
-                                DiveKind::Album => e.album.eq_ignore_ascii_case(&d.name),
-                                DiveKind::Artist => e.artist.eq_ignore_ascii_case(&d.name),
-                            }
-                    })
-                    .count()
-            };
-            heuristics::deep_dives(s)
-                .into_iter()
-                .map(move |d| DeepDive {
-                    kind: match d.kind {
-                        DiveKind::Artist => DeepKind::Artist,
-                        DiveKind::Album => DeepKind::Album,
-                    },
-                    times: (d.kind == DiveKind::Album)
-                        .then(|| (n_plays(&d) / d.tracks.max(1)).max(1) as i64),
-                    name: d.name.clone(),
-                    by: d.by.clone(),
-                    start_local: fmt(d.start),
-                    end_local: fmt(d.end),
-                    tracks: d.tracks,
-                    ms: d.ms,
-                })
-        })
-        .collect();
-    let repeats = heuristics::on_repeat(&plays);
-    let mut by_day_key: HashMap<(NaiveDate, &str), Vec<&Ev>> = HashMap::new();
-    if !repeats.is_empty() {
-        for e in &plays {
-            by_day_key
-                .entry((e.date(), e.norm_key.as_str()))
-                .or_default()
-                .push(e);
-        }
-    }
-    for rep in repeats {
-        let its = by_day_key
-            .get(&(rep.date, rep.norm_key.as_str()))
-            .cloned()
-            .unwrap_or_default();
-        dives.push(DeepDive {
-            kind: DeepKind::Repeat,
-            name: rep.track.clone(),
-            by: rep.artist.clone(),
-            start_local: fmt(its
-                .first()
-                .map_or(rep.date.and_hms_opt(0, 0, 0).expect("midnight"), |e| {
-                    e.local - TimeDelta::milliseconds(e.ms)
-                })),
-            end_local: fmt(its
-                .last()
-                .map_or(rep.date.and_hms_opt(0, 0, 0).expect("midnight"), |e| {
-                    e.local
-                })),
-            tracks: 1,
-            ms: its.iter().map(|e| e.ms).sum(),
-            times: Some(rep.times as i64),
-        });
-    }
-    dives.sort_by(|a, b| {
-        b.ms.cmp(&a.ms)
-            .then_with(|| a.start_local.cmp(&b.start_local))
-    });
-    dives.truncate(DIVES_MAX);
-    let start_to_finish = start_to_finish(cx.conn, &sessions)?;
 
     let data = Habits {
         export_plays,
@@ -833,8 +1071,32 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
         deep_dives: dives,
         start_to_finish,
     };
+    drop(sessions);
+    drop(plays);
+    // freed off the reply's path (NFR-04: ~1.6M strings)
+    std::thread::spawn(move || drop(plays_parts));
     covered(cx, data, cov, false)
 }
+
+/// Item ids mixed into a hash cheaply (local keys only; NFR-04).
+#[derive(Default)]
+struct MixHash(u64);
+
+impl std::hash::Hasher for MixHash {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.0 = (self.0.rotate_left(8) ^ u64::from(*b)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        }
+    }
+    fn write_i64(&mut self, n: i64) {
+        self.0 = (n as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+}
+
+type IdSet = HashSet<i64, std::hash::BuildHasherDefault<MixHash>>;
 
 /// Library albums with a track list, played start to finish in a session (≥ 1 time).
 fn start_to_finish(
@@ -868,7 +1130,18 @@ fn start_to_finish(
     }
     // Only sessions holding one of the album's tracks can hold them all (NFR-04: thousands of albums
     // × thousands of sessions otherwise).
-    let heard: Vec<HashSet<i64>> = sessions.iter().map(heuristics::Session::item_ids).collect();
+    // each session's listed tracks only (NFR-04: ~400k plays), in cheaply hashed sets
+    let listed: IdSet = albums.values().flat_map(|a| a.2.iter().copied()).collect();
+    let heard: Vec<IdSet> = sessions
+        .iter()
+        .map(|s| {
+            s.plays
+                .iter()
+                .filter_map(|e| e.item_id)
+                .filter(|id| listed.contains(id))
+                .collect()
+        })
+        .collect();
     let mut with_track: HashMap<i64, Vec<usize>> = HashMap::new();
     for (i, ids) in heard.iter().enumerate() {
         for id in ids {
@@ -884,7 +1157,8 @@ fn start_to_finish(
             let times = with_track
                 .get(first)?
                 .iter()
-                .filter(|&&i| heuristics::played_all(&tracks, &heard[i]))
+                // as `heuristics::played_all`
+                .filter(|&&i| !tracks.is_empty() && tracks.iter().all(|t| heard[i].contains(t)))
                 .count();
             (times > 0).then_some(StartToFinish {
                 item_id,

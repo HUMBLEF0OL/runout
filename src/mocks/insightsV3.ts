@@ -5,7 +5,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import raw from "../../docs/design/prototype/mock-data.json";
 import type {
-  AppError, Compare, Compared, Coverage, CoverageClass, CoverageGap, DataCoverage, Discovery, DiscoveryRow, ExploreQuery, ExploreResult, ExploreView,
+  AppError, Compare, Compared, Covered, GenresDecades, Coverage, CoverageClass, CoverageGap, DataCoverage, Discovery, DiscoveryRow, ExploreQuery, ExploreResult, ExploreView,
   Fingerprint, Grain, Habits, PeriodQuery, PeriodReport, Range, Records, Sentence, Source, Status, TopRow, Trends,
 } from "../api";
 import { dev } from "./devState";
@@ -413,4 +413,25 @@ export function insightsV3(find: Find, freshness: () => unknown) {
     get_records: records, explore: exploreQ, get_data_coverage: dataCoverage,
     list_explore_views: () => views, save_explore_view: saveView, delete_explore_view: ({ id }: { id: number }) => { views = views.filter((v) => v.id !== id); },
   };
+}
+
+/* ------------------------------------------------------------------ Genres & decades (M10 WI 9, source M) */
+// Synthetic genres and shares; `on` = the music database switch (off: lookups stopped, rows deleted).
+const GENRES = ["Spiritual jazz", "Ambient", "Neo-soul", "Indie folk", "Modal jazz", "Electronic", "Trip-hop", "Hard bop", "Art pop", "Dream pop"];
+export function genresDecades(on: boolean, freshness: unknown): Covered<GenresDecades> {
+  const months = Array.from({ length: 24 }, (_, i) => { const d = new Date(Date.UTC(2024, 10 + i, 1)); return d.toISOString().slice(0, 7); });
+  const data: GenresDecades = {
+    lookups: { on, contact_set: true, pending: on && !heavy() ? 42 : 0, last_lookup: on ? "2026-10-19T09:12:00Z" : null },
+    attribution: "Genres from MusicBrainz, CC BY-NC-SA 3.0",
+    genre_count: on ? 38 : 0,
+    top_genres: on ? GENRES.slice(0, heavy() ? 10 : 6).map((name, i) => ({ name, share_pct: [22, 14, 9, 7, 5, 4, 4, 3, 3, 2][i] })) : [],
+    genre_months: { months, rows: on ? GENRES.slice(0, heavy() ? 6 : 4).map((genre, g) => ({ genre, shares: months.map((_, i) => r1(8 + ((i * (g + 3)) % 11) + (g === 0 ? 8 : 0))) })) : [] },
+    decades: on ? [...(heavy() ? [[1950, 3]] : []), [1960, 6], [1970, 11], [1980, 8], [1990, 17], [2000, 15], [2010, 19], [2020, 13]].map(([decade, share_pct]) => ({ decade, share_pct, top_album: { name: `Album of the ${decade}s`, by: "Synthetic Artist" } })) : [],
+    unknown_year_pct: on ? 11 : 100,
+    average_age: on ? { years: 31, year: 1995 } : null,
+    released_this_year_pct: on ? 9 : null,
+    countries: on ? [["US", 34], ["GB", 21], ["IN", 12], ["FR", 8], ["JP", 6], ...(heavy() ? [["DE", 4], ["SE", 3], ["BR", 3], ["NG", 2], ["KR", 2]] : [])].map(([name, share_pct]) => ({ name: name as string, share_pct: share_pct as number })) : [],
+    coverage: on ? { artists_genre_pct: 91, albums_year_pct: 87, artists_country_pct: 78, same_name_pct: 3 } : { artists_genre_pct: 0, albums_year_pct: 0, artists_country_pct: 0, same_name_pct: 0 },
+  };
+  return { data, sources: on ? ["S", "E", "M"] : ["S", "E"], freshness: freshness as Covered<GenresDecades>["freshness"], coverage: { compared_sources: [], desktop_only_since: null, gaps: [], no_compare_reason: null } };
 }

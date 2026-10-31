@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Play } from "../api";
-import { compareOptions, fieldButton, freshnessText, periodFromSearch, periodLabel, periodSearch, periodSpan, ratingClick, playSources, ratingKey, sourceText, stepPeriod, vsName } from "./logic";
+import { compareOptions, fieldButton, freshnessText, periodFromSearch, periodLabel, periodLastYear, periodSearch, periodSpan, ratingClick, playSources, ratingKey, sourceText, stepPeriod, vsName } from "./logic";
 
 const A = "3QJzdZJYIAcoET1GcfpNGi";
 describe("rating", () => {
@@ -95,6 +95,12 @@ describe("Insights period header (M10 design §5)", () => {
     expect(periodLabel({ grain: "custom", vs: "prev", at: null, from: "2025-12-20", to: "2026-01-05" }, T)).toBe("20 Dec 2025 to 5 Jan 2026");
     expect(periodLabel({ grain: "custom", vs: "prev", at: null, from: "2026-03-01", to: "2026-04-15" }, T)).toBe("1 Mar to 15 Apr 2026");
     expect(periodLabel({ grain: "all", vs: "prev", at: null }, T)).toBe("All time");
+  });
+  it("the period's last year comes from the query, not the data", () => {
+    expect(periodLastYear({ grain: "year", vs: "prev", at: "2024" }, T)).toBe(2024);
+    expect(periodLastYear({ grain: "month", vs: "prev", at: "2025-12" }, T)).toBe(2025);
+    expect(periodLastYear({ grain: "custom", vs: "prev", at: null, from: "2025-12-20", to: "2026-01-05" }, T)).toBe(2026);
+    expect(periodLastYear({ grain: "all", vs: "prev", at: null }, T)).toBe(+T.slice(0, 4));
   });
   it("compare choices and what the deltas name", () => {
     expect(compareOptions({ grain: "month", vs: "prev", at: "2026-09" }, T).map((o) => o[1])).toEqual(["vs the month before", "vs Sep 2025", "vs your usual month"]);

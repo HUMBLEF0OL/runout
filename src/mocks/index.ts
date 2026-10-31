@@ -11,7 +11,7 @@ import { invalidate, MOCK } from "../api";
 import { dev, onDevChange } from "./devState";
 import { parseLink } from "../lib/link";
 import { setToday } from "../lib/format";
-import { insightsV3, rangeCoverage } from "./insightsV3";
+import { genresDecades, insightsV3, rangeCoverage } from "./insightsV3";
 
 const D: any = raw;
 const L = D.listening;
@@ -62,7 +62,7 @@ for (const c of D.captures) {
 const tags: Tag[] = [...new Set(items.flatMap((i) => i.tags))].sort().map((name, n) => ({ id: n + 1, name, description: null, item_count: 0 }));
 let savedFilters: SavedFilter[] = D.saved_filters.map((f: any) => ({ id: f.id, name: f.name, definition: f.definition }));
 const settings = {
-  library_path: D.settings.library_path, backup_dir: D.settings.backup_dir, backup_weekly: true, size_warn_mb: 100, artwork_default: false, export_reminder: false,
+  library_path: D.settings.library_path, backup_dir: D.settings.backup_dir, backup_weekly: true, size_warn_mb: 100, artwork_default: false, export_reminder: false, music_db: true,
 };
 const capture = { on: D.settings.capture.on, address: D.settings.capture.address.split(":")[0], port: Number(D.settings.capture.address.split(":")[1]), code: D.settings.capture.code };
 let backups: Backup[] = D.settings.backups.map((b: any) => ({
@@ -380,8 +380,11 @@ const H: Record<string, Handler> = {
   get_settings: () => ({ ...settings }),
   update_settings: ({ patch }) => {
     if ("library_path" in patch || "backup_dir" in patch) fail("validation", "Use the folder pickers to change paths.");
+    if ("music_db" in patch) fail("validation", "Use the music database switch for this setting.");
     return Object.assign(settings, patch) && { ...settings };
   },
+  set_music_db: ({ on }) => { settings.music_db = on; return { ...settings }; },
+  get_genres_decades: () => genresDecades(settings.music_db, freshness()),
   get_capture: () => ({ ...capture }),
   set_capture_enabled: ({ on }) => { capture.on = on; return { ...capture }; },
   new_pairing_code: () => { capture.code = String(100000 + Math.floor(Math.random() * 900000)).replace(/(\d{3})(\d{3})/, "$1 $2"); return { ...capture }; },

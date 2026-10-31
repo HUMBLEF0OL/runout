@@ -68,7 +68,7 @@ describe("Rust transport (VITE_MOCK=0)", () => {
       api.getPeriodReport({ grain: "month", vs: "prev", at: "2026-09" }), api.getTrends("hours"),
       api.getDiscovery({ grain: "year", vs: "prev", at: null }), api.getListeningHabits({ grain: "week", vs: "usual", at: null }),
       api.getRecords(), api.explore({ series: [{ kind: "artist", name: "x" }], from: "2026-01-01", to: "2026-09-30", grain: "month", measure: "hours" }),
-      api.getDataCoverage(),
+      api.getDataCoverage(), api.getGenresDecades({ grain: "year", vs: "prev", at: null }), api.setMusicDb(false),
     ]);
     expect(mockCall).not.toHaveBeenCalled();
     const sent = Object.fromEntries(vi.mocked(invoke).mock.calls.map(([cmd, args]) => [cmd, Object.keys(args ?? {}).sort()]));
@@ -86,7 +86,7 @@ describe("Rust transport (VITE_MOCK=0)", () => {
       get_recent_plays_api: [], library_contains: ["uris"], save_to_spotify_library: ["uris"], remove_from_spotify_library: ["uris"],
       find_cross_playlist_dupes: ["playlistUri"], get_inbox: [], create_inbox: [], check_inbox: [], set_inbox_options: ["followedArtists", "savedAlbums"],
       get_period_report: ["period"], get_trends: ["measure"], get_discovery: ["period"], get_listening_habits: ["period"],
-      get_records: [], explore: ["query"], get_data_coverage: [],
+      get_records: [], explore: ["query"], get_data_coverage: [], get_genres_decades: ["period"], set_music_db: ["on"],
     });
   });
 

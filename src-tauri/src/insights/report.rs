@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{Datelike, Months, NaiveDate, TimeDelta, TimeZone};
-use rusqlite::{ToSql, params_from_iter};
+use rusqlite::{Connection, ToSql, params_from_iter};
 use serde::Serialize;
 
 use super::coverage::{self, Coverage, Model};
@@ -13,9 +13,9 @@ use super::terms::{
     median, streaks,
 };
 use super::v3::{
-    Agg, Ctx, Grain, PeriodQuery, Resolved, Src, aggs, artist_item, artist_name, between,
-    by_artist, covered, daily, day, majority, minute, month, months, period_coverage, played,
-    resolve, show,
+    Agg, AggAcc, ArtistAcc, Ctx, Grain, IdMap, PeriodQuery, Resolved, Src, artist_item,
+    artist_name, between, by_artist, by_artist_rollup, covered, daily, day, majority, minute,
+    month, months, period_coverage, played, resolve, show,
 };
 use super::{Covered, base, pct, rollup};
 use crate::error::Result;
@@ -393,86 +393,228 @@ fn clock_ms<Tz: TimeZone>(cx: &Ctx<Tz>, s: Span, all_time: bool) -> Result<([i64
         }
         return Ok((h, w));
     }
-    // by date and hour text (no strftime per row, NFR-04); the weekday comes from the date
-    let mut st = cx.conn.prepare(&format!(
-        "{} SELECT substr(local, 1, 10), substr(local, 12, 2), SUM(ms_played) FROM ev WHERE {} GROUP BY 1, 2",
-        Src::All.cte(cx.include_private),
-        between(s)
-    ))?;
-    for r in st.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    })? {
-        let (d, hour, ms) = r?;
-        if let (Some(d), Ok(hour)) = (super::v3::parse_day(&d), hour.parse::<usize>())
-            && hour < 24
-        {
-            h[hour] += ms;
-            w[d.weekday().num_days_from_monday() as usize] += ms;
+    let mut acc = ClockAcc::new(s);
+    super::v3::scan_spans(cx, &[s], |p| acc.add(p))?;
+    Ok(acc.finish())
+}
+
+/// `terms::top_tags` of a period as a `scan` figure: base-view time per record (`None` = none).
+#[derive(Clone)]
+struct TagAcc {
+    span: Span,
+    bounds: (u32, u32),
+    per: HashMap<Option<i64>, i64>,
+}
+
+impl TagAcc {
+    fn new(s: Span) -> Self {
+        TagAcc {
+            span: s,
+            bounds: (super::v3::num(s.0), super::v3::num(s.1)),
+            per: HashMap::new(),
         }
     }
-    Ok((h, w))
+
+    fn add(&mut self, p: &super::v3::Pass) -> Result<()> {
+        if p.base && self.bounds.0 <= p.day && p.day <= self.bounds.1 {
+            *self.per.entry(p.item_id()?).or_default() += p.ms;
+        }
+        Ok(())
+    }
+
+    fn merge(&mut self, o: TagAcc) {
+        for (k, v) in o.per {
+            *self.per.entry(k).or_default() += v;
+        }
+    }
+}
+
+/// `clock_ms` over the events as a `scan` figure: base-view time per local date and hour (the
+/// hour from the time text, no strftime per event, NFR-04); the weekday comes from the date.
+#[derive(Clone)]
+struct ClockAcc {
+    span: Span,
+    bounds: (u32, u32),
+    by_day: IdMap<u32, [i64; 24]>,
+}
+
+impl ClockAcc {
+    fn new(s: Span) -> Self {
+        ClockAcc {
+            span: s,
+            bounds: (super::v3::num(s.0), super::v3::num(s.1)),
+            by_day: IdMap::default(),
+        }
+    }
+
+    fn add(&mut self, p: &super::v3::Pass) -> Result<()> {
+        if !p.base || p.day < self.bounds.0 || p.day > self.bounds.1 {
+            return Ok(());
+        }
+        if let Some(Ok(hour)) = p.local()?.get(11..13).map(str::parse::<usize>)
+            && hour < 24
+        {
+            self.by_day.entry(p.day).or_insert([0; 24])[hour] += p.ms;
+        }
+        Ok(())
+    }
+
+    fn merge(&mut self, o: ClockAcc) {
+        for (d, hs) in o.by_day {
+            let e = self.by_day.entry(d).or_insert([0; 24]);
+            for (a, b) in e.iter_mut().zip(hs) {
+                *a += b;
+            }
+        }
+    }
+
+    fn finish(self) -> ([i64; 24], [i64; 7]) {
+        let (mut h, mut w) = ([0i64; 24], [0i64; 7]);
+        for (d, hs) in self.by_day {
+            let Some(d) = NaiveDate::from_ymd_opt((d / 10_000) as i32, d / 100 % 100, d % 100)
+            else {
+                continue;
+            };
+            for (hour, ms) in hs.iter().enumerate() {
+                h[hour] += ms;
+                w[d.weekday().num_days_from_monday() as usize] += ms;
+            }
+        }
+        (h, w)
+    }
 }
 
 /// Plays per window of tracks (`norm_key`) played before the window started (fingerprint Repeat).
-/// Windows don't overlap. One grouped pass per (window, track), then one probe per track for a
-/// play before the first window (NFR-04: per track, not per play).
+/// Windows don't overlap. `RepeatAcc` over its own pass.
+#[cfg(test)]
 pub(crate) fn repeat_plays<Tz: TimeZone>(
     cx: &Ctx<Tz>,
     src: Src,
     spans: &[Span],
 ) -> Result<Vec<i64>> {
-    let mut out = vec![0; spans.len()];
-    if spans.is_empty() {
-        return Ok(out);
-    }
-    let values = spans
-        .iter()
-        .enumerate()
-        .map(|(i, s)| format!("({i}, '{}', '{}')", day(s.0), day(s.1)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let lo = spans.iter().map(|s| s.0).min().expect("non-empty");
-    let hi = spans.iter().map(|s| s.1).max().expect("non-empty");
-    let mut st = cx.conn.prepare(&format!(
-        "{}, sp(i, a, b) AS (VALUES {values})
-         SELECT sp.i, ev.norm_key, COUNT(*) FROM ev JOIN sp ON substr(ev.local, 1, 10) BETWEEN sp.a AND sp.b
-         WHERE {} AND ev.counts_as_play AND ev.norm_key <> '' GROUP BY 1, 2",
-        src.cte(cx.include_private),
-        between((lo, hi))
-    ))?;
-    let mut by_key: HashMap<String, Vec<(usize, i64)>> = HashMap::new();
-    for r in st.query_map([], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    })? {
-        let (i, k, n) = r?;
-        by_key.entry(k).or_default().push((i as usize, n));
-    }
-    let mut before = cx.conn.prepare(&format!(
-        // unfiltered: base filters inline (reconciled out, private per setting); one seek on 0011's index
-        "SELECT EXISTS(SELECT 1 FROM listening_event INDEXED BY listening_event_norm_time
-           WHERE norm_key = ?1 AND ended_at_utc < ?2 AND counts_as_play AND reconciled_with IS NULL{})",
-        cx.private_filter("private_session")
-    ))?;
-    let lo_s = day(lo);
-    for (k, mut v) in by_key {
-        v.sort_by_key(|(i, _)| spans[*i].0);
-        let mut known: bool = before.query_row([&k, &lo_s], |r| r.get(0))?;
-        for (i, n) in v {
-            if known {
-                out[i] += n;
-            }
-            known = true;
+    let mut acc = RepeatAcc::new(src, spans);
+    super::v3::scan_spans(cx, spans, |p| acc.add(p))?;
+    acc.into_parts().count(cx.conn, cx.include_private)
+}
+
+/// `repeat_plays` as a `scan` figure: the windows' plays summed per track here (NFR-04: SQL's
+/// GROUP BY would sort every play), then one probe per track for a play before the first window
+/// (per track, not per play).
+#[derive(Clone)]
+pub(crate) struct RepeatAcc<'c> {
+    src: Src<'c>,
+    spans: Vec<Span>,
+    bounds: Vec<(u32, u32)>,
+    /// quick hash of the track key (retried on a collision) → the key and its plays per window
+    by_key: IdMap<u64, (String, Vec<i64>)>,
+}
+
+impl<'c> RepeatAcc<'c> {
+    pub(crate) fn new(src: Src<'c>, spans: &[Span]) -> Self {
+        RepeatAcc {
+            src,
+            spans: spans.to_vec(),
+            bounds: spans
+                .iter()
+                .map(|s| (super::v3::num(s.0), super::v3::num(s.1)))
+                .collect(),
+            by_key: IdMap::default(),
         }
     }
-    Ok(out)
+
+    pub(crate) fn add(&mut self, p: &super::v3::Pass) -> Result<()> {
+        if !p.play || !self.src.has(p) {
+            return Ok(());
+        }
+        let d = p.day;
+        let Some(i) = self.bounds.iter().position(|(a, b)| *a <= d && d <= *b) else {
+            return Ok(());
+        };
+        let Some(k) = p.norm_key()?.filter(|k| !k.is_empty()) else {
+            return Ok(());
+        };
+        self.plays_of(k)[i] += 1;
+        Ok(())
+    }
+
+    /// The plays per window of track `k`, added when new.
+    fn plays_of(&mut self, k: &str) -> &mut Vec<i64> {
+        let mut h = super::v3::quick_hash(&[Some(k)]);
+        loop {
+            match self.by_key.get(&h) {
+                Some(e) if e.0 == k => break,
+                Some(_) => h = h.wrapping_add(0x9e37_79b9_7f4a_7c15),
+                None => {
+                    self.by_key
+                        .insert(h, (k.to_owned(), vec![0; self.spans.len()]));
+                    break;
+                }
+            }
+        }
+        &mut self.by_key.get_mut(&h).expect("found or inserted").1
+    }
+
+    /// Adds another part's events (`scan_parts`).
+    pub(crate) fn merge(&mut self, o: RepeatAcc) {
+        for (k, v) in o.by_key.into_values() {
+            for (a, b) in self.plays_of(&k).iter_mut().zip(v) {
+                *a += b;
+            }
+        }
+    }
+
+    /// Its windows and tracks, owned (for `RepeatParts::count` on another connection).
+    pub(crate) fn into_parts(self) -> RepeatParts {
+        RepeatParts {
+            spans: self.spans,
+            tracks: self.by_key.into_values().collect(),
+        }
+    }
+}
+
+/// `RepeatAcc`'s windows and each track's plays per window, owned.
+pub(crate) struct RepeatParts {
+    spans: Vec<Span>,
+    tracks: Vec<(String, Vec<i64>)>,
+}
+
+impl RepeatParts {
+    /// Repeat plays per window: plays of tracks heard before (an earlier window or any play before
+    /// the first one).
+    pub(crate) fn count(self, conn: &Connection, include_private: bool) -> Result<Vec<i64>> {
+        let mut out = vec![0; self.spans.len()];
+        let Some(lo) = self.spans.iter().map(|s| s.0).min() else {
+            return Ok(out);
+        };
+        let mut order: Vec<usize> = (0..self.spans.len()).collect();
+        order.sort_by_key(|i| self.spans[*i].0);
+        let mut before = conn.prepare(&format!(
+            // unfiltered: base filters inline (reconciled out, private per setting); one seek on 0011's index
+            "SELECT EXISTS(SELECT 1 FROM listening_event INDEXED BY listening_event_norm_time
+               WHERE norm_key = ?1 AND ended_at_utc < ?2 AND counts_as_play AND reconciled_with IS NULL{})",
+            if include_private {
+                ""
+            } else {
+                " AND private_session = 0"
+            }
+        ))?;
+        let lo_s = day(lo);
+        // in key order, so the seeks walk the index once (NFR-04: one per track)
+        let mut tracks = self.tracks;
+        tracks.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        for (k, v) in tracks {
+            let mut known: bool = before.query_row([&k, &lo_s], |r| r.get(0))?;
+            for &i in &order {
+                if v[i] > 0 {
+                    if known {
+                        out[i] += v[i];
+                    }
+                    known = true;
+                }
+            }
+        }
+        Ok(out)
+    }
 }
 
 /// Group key and name columns of one kind (as `listening::rank` groups).
@@ -695,23 +837,199 @@ struct Group {
 
 impl Group {
     /// `MAX(name)`, `MAX(by)`, `MAX(item_id)` and the sums, as SQL aggregates them (BINARY order).
-    fn add(&mut self, name: Option<&str>, by: Option<&str>, play: bool, ms: i64, iid: Option<i64>) {
+    fn add(&mut self, name: Option<&str>, by: Option<&str>, plays: i64, ms: i64, iid: Option<i64>) {
         if let Some(n) = name.filter(|n| *n > self.name.as_str()) {
             self.name = n.to_owned();
         }
         if let Some(b) = by.filter(|b| *b > self.by.as_str()) {
             self.by = b.to_owned();
         }
-        self.plays += play as i64;
+        self.plays += plays;
         self.ms += ms;
         self.iid = self.iid.max(iid);
     }
 }
 
-/// Most played of a period (not all time) for the three kinds in one pass over the period, the
-/// compared window and the sparkline months (NFR-04: a GROUP BY sort per kind and window
-/// otherwise). Same rows, moves and sparks as `most_played`: rows and sparks over the base view,
-/// moves over like for like (`Src::Like`, which may hold reconciled desktop rows).
+/// One distinct set of names, track key and record among a Most played pass's events, summed per
+/// window: [shown (base, period), like for like in the period, before] as (events, plays, ms), and
+/// ms per sparkline month (base). Most events repeat one, so the per-kind groups are built from
+/// these (NFR-04: one hash per event instead of one per kind and window).
+#[derive(Clone)]
+struct Combo {
+    artist: Option<String>,
+    album: Option<String>,
+    track: Option<String>,
+    norm: Option<String>,
+    iid: Option<i64>,
+    sums: [(i64, i64, i64); 3],
+    spark: Vec<i64>,
+}
+
+/// Most played of a period (not all time) for the three kinds as a `scan` figure: the period, the
+/// compared window and the sparkline months in one pass (NFR-04: a GROUP BY sort per kind and
+/// window otherwise). Same rows, moves and sparks as `most_played`: rows and sparks over the base
+/// view, moves over like for like (`Src::Like`, which may hold reconciled desktop rows).
+#[derive(Clone)]
+struct MostAcc<'c> {
+    like: Src<'c>,
+    base_like: bool,
+    ranked: Option<Span>,
+    cur: Span,
+    bounds: (u32, u32),
+    pv: Option<(u32, u32)>,
+    spark: Option<Span>,
+    month_ix: IdMap<u32, usize>,
+    n_spark: usize,
+    combos: IdMap<u64, Combo>,
+}
+
+impl<'c> MostAcc<'c> {
+    fn new(
+        r: &Resolved,
+        cov: &'c Coverage,
+        prev: Option<Span>,
+        spark_months: &[NaiveDate],
+    ) -> Self {
+        let ranked = prev.filter(|_| cov.no_compare_reason.is_none());
+        let num = super::v3::num;
+        MostAcc {
+            like: Src::Like(cov),
+            base_like: Src::Like(cov).is_base(),
+            ranked,
+            cur: r.cur,
+            bounds: (num(r.cur.0), num(r.cur.1)),
+            pv: ranked.map(|p| (num(p.0), num(p.1))),
+            spark: spark_months
+                .first()
+                .zip(spark_months.last())
+                .map(|(a, b)| (*a, super::v3::month_end(*b))),
+            month_ix: spark_months
+                .iter()
+                .enumerate()
+                .map(|(i, m)| (m.year() as u32 * 100 + m.month(), i))
+                .collect(),
+            n_spark: spark_months.len(),
+            combos: IdMap::default(),
+        }
+    }
+
+    /// The windows it reads.
+    fn spans(&self) -> Vec<Span> {
+        std::iter::once(self.cur)
+            .chain(self.spark)
+            .chain(self.ranked)
+            .collect()
+    }
+
+    fn add(&mut self, p: &super::v3::Pass) -> Result<()> {
+        let d = p.day;
+        let in_like = self.like.has(p);
+        let in_cur = self.bounds.0 <= d && d <= self.bounds.1;
+        let si = self.month_ix.get(&(d / 100)).copied().filter(|_| p.base);
+        let to = [
+            p.base && in_cur,
+            !self.base_like && in_like && in_cur && self.ranked.is_some(),
+            in_like && self.pv.is_some_and(|w| w.0 <= d && d <= w.1),
+        ];
+        if !to.iter().any(|x| *x) && si.is_none() {
+            return Ok(());
+        }
+        let (artist, album, track, norm, iid) = (
+            p.artist()?,
+            p.album()?,
+            p.track()?,
+            p.norm_key()?,
+            p.item_id()?,
+        );
+        let n = self.n_spark;
+        let c = self.combo([artist, album, track, norm], iid);
+        for (on, sum) in to.iter().zip(&mut c.sums) {
+            if *on {
+                sum.0 += 1;
+                sum.1 += p.play as i64;
+                sum.2 += p.ms;
+            }
+        }
+        if let Some(i) = si {
+            if c.spark.is_empty() {
+                c.spark = vec![0; n];
+            }
+            c.spark[i] += p.ms;
+        }
+        Ok(())
+    }
+
+    /// The combo of these names, track key and record, added when new.
+    fn combo(
+        &mut self,
+        [artist, album, track, norm]: [Option<&str>; 4],
+        iid: Option<i64>,
+    ) -> &mut Combo {
+        let mut key =
+            super::v3::quick_hash(&[artist, album, track, norm]) ^ iid.unwrap_or(-1) as u64;
+        // a quick hash, checked against the texts (a collision moves on to the next key)
+        loop {
+            match self.combos.get(&key) {
+                Some(c)
+                    if c.iid == iid
+                        && c.artist.as_deref() == artist
+                        && c.album.as_deref() == album
+                        && c.track.as_deref() == track
+                        && c.norm.as_deref() == norm =>
+                {
+                    break;
+                }
+                Some(_) => key = key.wrapping_add(0x9e37_79b9_7f4a_7c15),
+                None => {
+                    self.combos.insert(
+                        key,
+                        Combo {
+                            artist: artist.map(str::to_owned),
+                            album: album.map(str::to_owned),
+                            track: track.map(str::to_owned),
+                            norm: norm.map(str::to_owned),
+                            iid,
+                            sums: Default::default(),
+                            spark: vec![],
+                        },
+                    );
+                    break;
+                }
+            }
+        }
+        self.combos.get_mut(&key).expect("found or inserted")
+    }
+
+    /// Adds another part's events (`scan_parts`).
+    fn merge(&mut self, o: MostAcc) {
+        let n = self.n_spark;
+        for c in o.combos.into_values() {
+            let m = self.combo(
+                [
+                    c.artist.as_deref(),
+                    c.album.as_deref(),
+                    c.track.as_deref(),
+                    c.norm.as_deref(),
+                ],
+                c.iid,
+            );
+            for (a, b) in m.sums.iter_mut().zip(c.sums) {
+                (a.0, a.1, a.2) = (a.0 + b.0, a.1 + b.1, a.2 + b.2);
+            }
+            if !c.spark.is_empty() {
+                if m.spark.is_empty() {
+                    m.spark = vec![0; n];
+                }
+                for (a, b) in m.spark.iter_mut().zip(c.spark) {
+                    *a += b;
+                }
+            }
+        }
+    }
+}
+
+/// Most played of a period (not all time): `MostAcc` over its own pass.
+#[cfg(test)]
 fn most_played_pass<Tz: TimeZone>(
     cx: &Ctx<Tz>,
     r: &Resolved,
@@ -719,110 +1037,72 @@ fn most_played_pass<Tz: TimeZone>(
     prev: Option<Span>,
     spark_months: &[NaiveDate],
 ) -> Result<[Vec<TopRow>; 3]> {
-    let ranked = prev.filter(|_| cov.no_compare_reason.is_none());
-    let base_like = Src::Like(cov).is_base();
-    let like_source = match cov.compared_sources.as_slice() {
-        ["S"] => Some("logger"),
-        ["E"] => Some("export"),
-        _ => None,
-    };
-    let num = |d: NaiveDate| d.year() as u32 * 10_000 + d.month() * 100 + d.day();
-    let cur = (num(r.cur.0), num(r.cur.1));
-    let pv = ranked.map(|p| (num(p.0), num(p.1)));
-    let spark = spark_months
-        .first()
-        .zip(spark_months.last())
-        .map(|(a, b)| (*a, super::v3::month_end(*b)));
-    // windows to read: the period with the sparkline months, and the compared one unless it overlaps
-    let mut wins: Vec<Span> = vec![spark.map_or(r.cur, |s| (r.cur.0.min(s.0), r.cur.1.max(s.1)))];
-    if let Some(p) = ranked {
-        if p.1 < wins[0].0 || p.0 > wins[0].1 {
-            wins.push(p);
-        } else {
-            wins[0] = (wins[0].0.min(p.0), wins[0].1.max(p.1));
-        }
-    }
-    let month_ix: HashMap<u32, usize> = spark_months
-        .iter()
-        .enumerate()
-        .map(|(i, m)| (m.year() as u32 * 100 + m.month(), i))
-        .collect();
-    // [kind] → group key (as SQL groups: lower(artist), lower(album), norm_key) → group: the shown
-    // rows (base, period), like for like in the period (when that isn't the base view) and before
-    let mut shown: [HashMap<Option<String>, Group>; 3] = Default::default();
-    let mut now_like: [HashMap<Option<String>, Group>; 3] = Default::default();
-    let mut before: [HashMap<Option<String>, Group>; 3] = Default::default();
-    // [kind] → spark key (as `sparks` matches rows) → ms per spark month
-    let mut sp: [HashMap<String, Vec<i64>>; 3] = Default::default();
-    for w in wins {
-        let mut st = cx.conn.prepare(&format!(
-            // unfiltered: base and like for like at once; `reconciled_with IS NULL` = base (insights::base)
-            "WITH ev AS NOT MATERIALIZED (SELECT e.*, COALESCE(e.ended_at_local, substr(e.ended_at_utc, 1, 19)) AS local
-               FROM listening_event e WHERE 1{})
-             SELECT local, ms_played, counts_as_play, artist_name, album_name, track_name, norm_key,
-                    item_id, reconciled_with IS NULL, source FROM ev WHERE {}",
-            cx.private_filter("e.private_session"),
-            between(w)
-        ))?;
-        let mut rows = st.query([])?;
-        while let Some(row) = rows.next()? {
-            let Some(d) = super::v3::day_num(super::text(row, 0)?) else {
-                continue;
-            };
-            let in_base = row.get::<_, bool>(8)?;
-            let in_like = match like_source {
-                Some(s) => super::text(row, 9)? == s,
-                None => in_base,
-            };
-            let in_cur = cur.0 <= d && d <= cur.1;
-            let si = month_ix.get(&(d / 100)).copied().filter(|_| in_base);
-            let to = [
-                in_base && in_cur,
-                !base_like && in_like && in_cur && ranked.is_some(),
-                in_like && pv.is_some_and(|p| p.0 <= d && d <= p.1),
-            ];
-            if !to.iter().any(|x| *x) && si.is_none() {
-                continue;
-            }
-            let ms: i64 = row.get(1)?;
-            let play = row.get::<_, i64>(2)? != 0;
-            let artist = super::text_opt(row, 3)?;
-            let album = super::text_opt(row, 4)?;
-            let track = super::text_opt(row, 5)?;
-            let norm = super::text_opt(row, 6)?;
-            let iid: Option<i64> = row.get(7)?;
-            if to.iter().any(|x| *x) {
-                let keys = [
-                    artist.map(str::to_ascii_lowercase),
-                    album.map(str::to_ascii_lowercase),
-                    norm.map(str::to_owned),
-                ];
-                let names = [artist, album, track];
-                let bys = [None, artist, artist];
-                for k in 0..3 {
-                    for (on, map) in
-                        to.iter()
-                            .zip([&mut shown[k], &mut now_like[k], &mut before[k]])
-                    {
-                        if *on {
-                            map.entry(keys[k].clone())
-                                .or_default()
-                                .add(names[k], bys[k], play, ms, iid);
-                        }
-                    }
+    let mut acc = MostAcc::new(r, cov, prev, spark_months);
+    super::v3::scan_spans(cx, &acc.spans(), |p| acc.add(p))?;
+    most_rows(cx, acc, spark_months)
+}
+
+/// The Most played rows of a finished `MostAcc`.
+fn most_rows<Tz: TimeZone>(
+    cx: &Ctx<Tz>,
+    acc: MostAcc,
+    spark_months: &[NaiveDate],
+) -> Result<[Vec<TopRow>; 3]> {
+    let MostAcc {
+        ranked,
+        base_like,
+        combos,
+        ..
+    } = acc;
+    // [kind] → group key (as SQL groups: lower(artist), lower(album), norm_key; hashed) → group:
+    // the shown rows, like for like in the period (when that isn't the base view) and before
+    let mut shown: [IdMap<Option<u64>, Group>; 3] = Default::default();
+    let mut now_like: [IdMap<Option<u64>, Group>; 3] = Default::default();
+    let mut before: [IdMap<Option<u64>, Group>; 3] = Default::default();
+    // [kind] → spark key (as `sparks` matches rows: lower(artist), lower(album), lower(track) and
+    // lower(artist); hashed) → ms per spark month
+    let mut sp: [IdMap<u64, Vec<i64>>; 3] = Default::default();
+    let mut buf = Vec::new();
+    let fold = super::v3::folded_hash;
+    for c in combos.into_values() {
+        let (artist, album, track) = (c.artist.as_deref(), c.album.as_deref(), c.track.as_deref());
+        let keys = [
+            artist.map(|a| fold(&mut buf, &[a])),
+            album.map(|a| fold(&mut buf, &[a])),
+            c.norm.as_deref().map(super::v3::exact_hash),
+        ];
+        let names = [artist, album, track];
+        let bys = [None, artist, artist];
+        for k in 0..3 {
+            for (sum, map) in c
+                .sums
+                .iter()
+                .zip([&mut shown[k], &mut now_like[k], &mut before[k]])
+            {
+                if sum.0 > 0 {
+                    map.entry(keys[k])
+                        .or_default()
+                        .add(names[k], bys[k], sum.1, sum.2, c.iid);
                 }
             }
-            if let Some(i) = si {
-                let lower = |x: Option<&str>| x.unwrap_or("").to_ascii_lowercase();
-                let sk = [
-                    lower(artist),
-                    lower(album),
-                    format!("{}\u{1f}{}", lower(track), lower(artist)),
-                ];
-                for (k, key) in sk.into_iter().enumerate() {
-                    sp[k]
-                        .entry(key)
-                        .or_insert_with(|| vec![0; spark_months.len()])[i] += ms;
+        }
+        if !c.spark.is_empty() {
+            let (a, b, t) = (
+                artist.unwrap_or(""),
+                album.unwrap_or(""),
+                track.unwrap_or(""),
+            );
+            let sk = [
+                fold(&mut buf, &[a]),
+                fold(&mut buf, &[b]),
+                fold(&mut buf, &[t, a]),
+            ];
+            for (k, key) in sk.into_iter().enumerate() {
+                let v = sp[k]
+                    .entry(key)
+                    .or_insert_with(|| vec![0; spark_months.len()]);
+                for (x, ms) in v.iter_mut().zip(&c.spark) {
+                    *x += ms;
                 }
             }
         }
@@ -836,7 +1116,7 @@ fn most_played_pass<Tz: TimeZone>(
         .conn
         .prepare("SELECT type, rating, status FROM item WHERE id = ?1")?;
     // `rankings`: keys with time in the window, by time then key, the first MOVE_DEPTH
-    let ranking = |kind: Kind, g: &HashMap<Option<String>, Group>| -> Vec<String> {
+    let ranking = |kind: Kind, g: &IdMap<Option<u64>, Group>| -> Vec<String> {
         let mut v: Vec<(i64, String)> = g
             .values()
             .filter(|g| !g.name.is_empty() && g.ms > 0)
@@ -890,12 +1170,8 @@ fn most_played_pass<Tz: TimeZone>(
                 }
             };
             let spark_key = match kind {
-                Kind::Track => format!(
-                    "{}\u{1f}{}",
-                    g.name.to_ascii_lowercase(),
-                    g.by.to_ascii_lowercase()
-                ),
-                _ => g.name.to_ascii_lowercase(),
+                Kind::Track => fold(&mut buf, &[&g.name, &g.by]),
+                _ => fold(&mut buf, &[&g.name]),
             };
             let spark = sp[k].get(&spark_key).map_or_else(
                 || vec![0.0; spark_months.len()],
@@ -929,20 +1205,19 @@ fn left_top10<Tz: TimeZone>(
 ) -> Result<Option<(String, usize)>> {
     let to = start.with_day(1).expect("day 1") - TimeDelta::days(1);
     let from = (to.with_day(1).expect("day 1")) - Months::new(23);
-    // each month's top 10 in SQL (a window), so only those rows load
-    let mut st = cx.conn.prepare(&format!(
-        "SELECT month, artist FROM (SELECT month, artist, ROW_NUMBER() OVER (PARTITION BY month
-           ORDER BY ms DESC, artist) AS k FROM (SELECT month, artist, SUM(ms_played) AS ms
-           FROM listening_month_artist WHERE month BETWEEN '{}' AND '{}' AND events > 0 AND artist <> ''{}
-           GROUP BY 1, 2)) WHERE k <= {LINE_LEFT_TOP}",
-        month(from),
-        month(to),
-        cx.private_filter("private_session")
-    ))?;
+    // each month's top 10 by time, then name (as SQL's ROW_NUMBER over `ms DESC, artist`)
     let mut by: BTreeMap<String, HashSet<String>> = BTreeMap::new();
-    for r in st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
-        let (m, a) = r?;
-        by.entry(m).or_default().insert(a);
+    let rows = super::v3::month_artists(cx, &month(from), &month(to))?;
+    for chunk in rows.chunk_by(|x, y| x.0 == y.0) {
+        let mut v: Vec<&super::v3::MonthArtist> = chunk.iter().collect();
+        v.sort_by(|x, y| y.2.cmp(&x.2).then_with(|| x.1.cmp(&y.1)));
+        by.insert(
+            chunk[0].0.clone(),
+            v.into_iter()
+                .take(LINE_LEFT_TOP)
+                .map(|x| x.1.clone())
+                .collect(),
+        );
     }
     let tops: Vec<HashSet<String>> = months(from, to)
         .into_iter()
@@ -1013,6 +1288,90 @@ pub(crate) fn new_artists_compared(
     )
 }
 
+/// Every `scan` figure of a period report, read in one pass (`scan_parts`).
+#[derive(Clone)]
+struct Figures<'c> {
+    /// like for like over the period and compared windows; the period's own (when like for like
+    /// isn't the base view); the period on this PC
+    aggs: [Option<AggAcc<'c>>; 3],
+    /// the period's artists (when not from the rollup); on this PC
+    artists: [Option<ArtistAcc<'c>>; 2],
+    clock_cur: Option<ClockAcc>,
+    clock_base: ClockAcc,
+    /// Repeat: period and average together; or the period, and the average apart
+    reps: [Option<RepeatAcc<'c>>; 3],
+    tags: Option<TagAcc>,
+    most: Option<MostAcc<'c>>,
+}
+
+impl Figures<'_> {
+    fn spans(&self) -> Vec<Span> {
+        let mut spans: Vec<Span> = vec![self.clock_base.span];
+        for a in self.aggs.iter().flatten() {
+            spans.extend(&a.spans);
+        }
+        spans.extend(self.artists.iter().flatten().map(|a| a.span));
+        spans.extend(self.clock_cur.as_ref().map(|c| c.span));
+        for a in self.reps.iter().flatten() {
+            spans.extend(&a.spans);
+        }
+        spans.extend(self.tags.as_ref().map(|t| t.span));
+        spans.extend(self.most.iter().flat_map(|m| m.spans()));
+        spans
+    }
+
+    fn add(&mut self, p: &super::v3::Pass) -> Result<()> {
+        for a in self.aggs.iter_mut().flatten() {
+            a.add(p)?;
+        }
+        for a in self.artists.iter_mut().flatten() {
+            a.add(p)?;
+        }
+        if let Some(c) = &mut self.clock_cur {
+            c.add(p)?;
+        }
+        self.clock_base.add(p)?;
+        for a in self.reps.iter_mut().flatten() {
+            a.add(p)?;
+        }
+        if let Some(t) = &mut self.tags {
+            t.add(p)?;
+        }
+        if let Some(m) = &mut self.most {
+            m.add(p)?;
+        }
+        Ok(())
+    }
+
+    fn merge(&mut self, o: Self) {
+        for (a, b) in self.aggs.iter_mut().zip(o.aggs) {
+            if let (Some(a), Some(b)) = (a, b) {
+                a.merge(b);
+            }
+        }
+        for (a, b) in self.artists.iter_mut().zip(o.artists) {
+            if let (Some(a), Some(b)) = (a, b) {
+                a.merge(b);
+            }
+        }
+        if let (Some(a), Some(b)) = (&mut self.clock_cur, o.clock_cur) {
+            a.merge(b);
+        }
+        self.clock_base.merge(o.clock_base);
+        for (a, b) in self.reps.iter_mut().zip(o.reps) {
+            if let (Some(a), Some(b)) = (a, b) {
+                a.merge(b);
+            }
+        }
+        if let (Some(a), Some(b)) = (&mut self.tags, o.tags) {
+            a.merge(b);
+        }
+        if let (Some(a), Some(b)) = (&mut self.most, o.most) {
+            a.merge(b);
+        }
+    }
+}
+
 /// `get_period_report`.
 pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<PeriodReport>> {
     let today = cx.today();
@@ -1025,25 +1384,115 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     let shown = (r.cur.0, end);
     let vs: Vec<Span> = r.vs.clone().unwrap_or_default();
     let all_time = r.grain == Grain::All;
+    let like = Src::Like(&cov);
+    let basis = if on_pc { Src::Desktop } else { Src::All };
+
+    // One pass over the events the figures below read (NFR-04: the period, the compared windows,
+    // the last 6 months, the sparkline months and the average's months read once together, not
+    // once per figure). Each figure keeps to its own windows and view (`Src::has`).
+    let cur_vs: Vec<Span> = std::iter::once(r.cur).chain(vs.iter().copied()).collect();
+    let agg_like = (!all_time && !hidden).then(|| AggAcc::new(like, &cur_vs));
+    let agg_all =
+        (!all_time && (hidden || !like.is_base())).then(|| AggAcc::new(Src::All, &[r.cur]));
+    let agg_pc = on_pc.then(|| AggAcc::new(Src::Desktop, &[r.cur]));
+    let artists_all =
+        (!by_artist_rollup(cx, Src::All, r.cur, first)).then(|| ArtistAcc::new(Src::All, r.cur));
+    let artists_pc = on_pc.then(|| ArtistAcc::new(Src::Desktop, r.cur));
+    let clock_cur = (!all_time).then(|| ClockAcc::new(r.cur));
+    let clock_base = ClockAcc::new((end - Months::new(6) + TimeDelta::days(1), end));
+    // Repeat now and in the average's months: one figure from the first of those months to the
+    // period's end when both count every event (the days between are a window read only to know
+    // which tracks were heard before the period).
+    let avg_spans = average_spans(r.cur.0, end);
+    let cur_repeat = first.is_some_and(|f| f < r.cur.0);
+    let rep_merged = match avg_spans.as_deref() {
+        Some(ms) if cur_repeat && !on_pc => {
+            let mut spans = ms.to_vec();
+            let gap = ms[ms.len() - 1].1 + TimeDelta::days(1);
+            if gap < r.cur.0 {
+                spans.push((gap, r.cur.0 - TimeDelta::days(1)));
+            }
+            spans.push(r.cur);
+            Some(RepeatAcc::new(Src::All, &spans))
+        }
+        _ => None,
+    };
+    let merged = rep_merged.is_some();
+    let rep_cur = (cur_repeat && !merged).then(|| RepeatAcc::new(basis, &[r.cur]));
+    let rep_avg = avg_spans
+        .as_deref()
+        .filter(|_| !merged)
+        .map(|ms| RepeatAcc::new(Src::All, ms));
+    let tags = (!all_time).then(|| TagAcc::new(r.cur));
+    let prev = r.single_vs().or_else(|| vs.first().copied());
+    let spark_months = months(month_start_minus(end, 11), end);
+    let most = (!all_time).then(|| MostAcc::new(&r, &cov, prev, &spark_months));
+    let figs = Figures {
+        aggs: [agg_like, agg_all, agg_pc],
+        artists: [artists_all, artists_pc],
+        clock_cur,
+        clock_base,
+        reps: [rep_merged, rep_cur, rep_avg],
+        tags,
+        most,
+    };
+    let spans = figs.spans();
+    let mut parts = super::v3::scan_parts(cx, &spans, figs, &|f, p| f.add(p))?.into_iter();
+    let mut figs = parts.next().expect("one part at least");
+    for o in parts {
+        figs.merge(o);
+    }
+    let Figures {
+        aggs: [agg_like, agg_all, agg_pc],
+        artists: [artists_all, artists_pc],
+        clock_cur,
+        clock_base,
+        reps: [rep_merged, rep_cur, rep_avg],
+        tags: tags_acc,
+        most: most_acc,
+    } = figs;
+    // Repeat now and in the average's months: one seek per track, on another connection while the
+    // figures below are read (NFR-04).
+    let (rep_merged, rep_cur, rep_avg) = (
+        rep_merged.map(RepeatAcc::into_parts),
+        rep_cur.map(RepeatAcc::into_parts),
+        rep_avg.map(RepeatAcc::into_parts),
+    );
+    let n_avg = avg_spans.as_ref().map_or(0, Vec::len);
+    let rep_job = move |conn: &Connection, include_private: bool| -> Result<(i64, Vec<i64>)> {
+        let mut now = 0;
+        let avg = match (rep_merged, rep_avg) {
+            (Some(p), _) => {
+                let v = p.count(conn, include_private)?;
+                now = v[v.len() - 1];
+                v[..n_avg].to_vec()
+            }
+            (None, avg) => {
+                if let Some(p) = rep_cur {
+                    now = p.count(conn, include_private)?[0];
+                }
+                match avg {
+                    Some(p) => p.count(conn, include_private)?,
+                    None => vec![],
+                }
+            }
+        };
+        Ok((now, avg))
+    };
+    let repeats = super::v3::Aside::run(cx, rep_job);
 
     // Basic counts: the period, then like for like (FR-048).
-    let like = Src::Like(&cov);
     // like for like: the same pass gives the timeline's days (`daily` over `like`)
     let mut like_days = None;
+    let cur_all = agg_all.map(|a| a.finish().0[0]);
     let (all, like_aggs): (Agg, Option<(Agg, Vec<Agg>)>) = if all_time {
         (super::v3::aggs_all(cx)?, None)
-    } else if hidden {
-        (aggs(cx, Src::All, &[r.cur])?[0], None)
-    } else {
-        let spans: Vec<Span> = std::iter::once(r.cur).chain(vs.iter().copied()).collect();
-        let (v, days) = super::v3::aggs_days(cx, like, &spans)?;
+    } else if let Some(acc) = agg_like {
+        let (v, days) = acc.finish();
         like_days = Some(days);
-        let all = if like.is_base() {
-            v[0]
-        } else {
-            aggs(cx, Src::All, &[r.cur])?[0]
-        };
-        (all, Some((v[0], v[1..].to_vec())))
+        (cur_all.unwrap_or(v[0]), Some((v[0], v[1..].to_vec())))
+    } else {
+        (cur_all.unwrap_or_default(), None)
     };
     let pick = |f: fn(&Agg) -> f64| {
         like_aggs
@@ -1057,7 +1506,6 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     let new_artists = new_artists_compared(&heard, &cov, r.cur, &vs);
 
     // Days listened, streak and covered days: this PC only past the export (design §4.4).
-    let basis = if on_pc { Src::Desktop } else { Src::All };
     let class = |d: NaiveDate| {
         if !on_pc {
             model.class(d)
@@ -1178,9 +1626,11 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     };
 
     // When you listened: the period vs the last 6 months.
-    let (hours, weekdays) = clock_ms(cx, r.cur, all_time)?;
-    let base_span = (end - Months::new(6) + TimeDelta::days(1), end);
-    let (baseline, _) = clock_ms(cx, base_span, false)?;
+    let (hours, weekdays) = match clock_cur {
+        Some(c) => c.finish(),
+        None => clock_ms(cx, r.cur, all_time)?,
+    };
+    let (baseline, _) = clock_base.finish();
     let busiest = hours
         .iter()
         .enumerate()
@@ -1189,7 +1639,10 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         .map(|(h, ms)| (h, pct(*ms, hours.iter().sum())));
 
     // Artists of the period, new ones first heard in it.
-    let artists = by_artist(cx, Src::All, r.cur, first)?;
+    let artists = match artists_all {
+        Some(a) => a.out,
+        None => by_artist(cx, Src::All, r.cur, first)?,
+    };
     let mut ranked: Vec<(&String, &(i64, i64))> = artists.iter().collect();
     ranked.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.cmp(b.0)));
     let new_here: HashMap<&str, &FirstHeard> = heard
@@ -1231,14 +1684,15 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
 
     // Fingerprint now (basis as days listened) and the 12-month average.
     let basis_artists;
-    let (fp_artists, fp_agg) = if on_pc {
-        basis_artists = by_artist(cx, basis, r.cur, first)?;
-        (&basis_artists, aggs(cx, basis, &[r.cur])?[0])
-    } else {
-        (&artists, all)
+    let (fp_artists, fp_agg) = match (artists_pc, agg_pc) {
+        (Some(a), Some(g)) => {
+            basis_artists = a.out;
+            (&basis_artists, g.finish().0[0])
+        }
+        _ => (&artists, all),
     };
     let new_keys: HashSet<&str> = new_here.keys().copied().collect();
-    let parts = FpParts {
+    let mut parts = FpParts {
         ms: fp_agg.ms,
         artist_ms: fp_artists.values().map(|v| v.0).collect(),
         new_ms: fp_artists
@@ -1249,13 +1703,14 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         days_listened: days_listened_now,
         covered_days,
         plays: fp_agg.plays,
-        repeat_plays: if first.is_some_and(|f| f < r.cur.0) {
-            repeat_plays(cx, basis, &[r.cur])?[0]
-        } else {
-            0
-        },
+        repeat_plays: 0,
     };
-    let average = average_fingerprint(cx, &model, &heard, r.cur.0, end)?;
+    let (repeat_plays, avg_repeats) = repeats.join()?;
+    parts.repeat_plays = repeat_plays;
+    let average = match avg_spans.as_deref() {
+        Some(ms) => average_fingerprint(cx, &model, &heard, ms, &avg_repeats)?,
+        None => None,
+    };
 
     // Lines (design §5.1).
     let top_names: Vec<(String, Option<NaiveDate>)> = ranked
@@ -1290,18 +1745,14 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         record_day,
     };
 
-    let (tag_rows, tag_cov) = if all_time {
-        top_tags_all(cx)?
-    } else {
-        terms::top_tags(cx.conn, cx.include_private, r.cur.0, r.cur.1, 6)?
+    let (tag_rows, tag_cov) = match tags_acc {
+        Some(t) => terms::tag_shares(cx.conn, t.per, 6)?,
+        None => top_tags_all(cx)?,
     };
-    let prev = r.single_vs().or_else(|| vs.first().copied());
-    let spark_months = months(month_start_minus(end, 11), end);
     let most = |k| most_played(cx, &r, &cov, k, all_time, prev, &spark_months);
-    let [artists, albums, tracks] = if all_time {
-        [most(Kind::Artist)?, most(Kind::Album)?, most(Kind::Track)?]
-    } else {
-        most_played_pass(cx, &r, &cov, prev, &spark_months)?
+    let [artists, albums, tracks] = match most_acc {
+        Some(acc) => most_rows(cx, acc, &spark_months)?,
+        None => [most(Kind::Artist)?, most(Kind::Album)?, most(Kind::Track)?],
     };
     let private_excluded = if cx.include_private {
         0
@@ -1377,36 +1828,17 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
 
 /// `terms::top_tags` over all time from the 0005 rollup (per record, then its links and tags).
 fn top_tags_all<Tz: TimeZone>(cx: &Ctx<Tz>) -> Result<(Vec<TagShare>, f64)> {
-    let p = cx.private_filter("private_session");
-    let rows = format!(
-        "WITH r AS (SELECT item_id AS iid, SUM(ms_played) AS ms FROM listening_rollup
-                    WHERE events > 0 AND item_id <> 0{p} GROUP BY 1){},
-              rt AS (SELECT r.iid, r.ms, t.name FROM r JOIN src ON src.s = r.iid
-                     JOIN item_tag it ON it.item_id = src.t JOIN tag t ON t.id = it.tag_id GROUP BY r.iid, t.id)",
-        super::SRC
-    );
-    let total: i64 = cx.conn.query_row(
-        &format!("SELECT IFNULL(SUM(ms_played), 0) FROM listening_rollup WHERE events > 0{p}"),
-        [],
-        |r| r.get(0),
-    )?;
-    let tagged: i64 = cx.conn.query_row(
-        &format!("{rows} SELECT IFNULL(SUM(ms), 0) FROM (SELECT DISTINCT iid, ms FROM rt)"),
-        [],
-        |r| r.get(0),
-    )?;
     let mut st = cx.conn.prepare(&format!(
-        "{rows} SELECT name, SUM(ms) AS ms FROM rt GROUP BY name ORDER BY ms DESC, name LIMIT 6"
+        "SELECT NULLIF(item_id, 0), ms_played FROM listening_rollup WHERE events > 0{}",
+        cx.private_filter("private_session")
     ))?;
-    let out = st
-        .query_map([], |r| {
-            Ok(TagShare {
-                tag: r.get(0)?,
-                share_pct: pct(r.get(1)?, tagged),
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok((out, pct(tagged, total)))
+    let mut per: HashMap<Option<i64>, i64> = HashMap::new();
+    let mut rows = st.query([])?;
+    while let Some(r) = rows.next()? {
+        *per.entry(r.get(0)?).or_default() += r.get::<_, i64>(1)?;
+    }
+    drop(rows);
+    terms::tag_shares(cx.conn, per, 6)
 }
 
 /// First day of the month `n` months before `d`'s.
@@ -1414,22 +1846,30 @@ fn month_start_minus(d: NaiveDate, n: u32) -> NaiveDate {
     super::v3::month_start(d) - Months::new(n)
 }
 
+/// The 12 calendar months before the period's first month, as spans; `None` when they start after
+/// `end` (the period's last day up to today).
+fn average_spans(start: NaiveDate, end: NaiveDate) -> Option<Vec<Span>> {
+    let to = super::v3::month_start(start) - TimeDelta::days(1);
+    let from = month_start_minus(to, 11);
+    (from <= end).then(|| {
+        months(from, to)
+            .into_iter()
+            .map(|m| (m, super::v3::month_end(m)))
+            .collect()
+    })
+}
+
 /// Your own 12-month average: the mean of each measure over the 12 calendar months before the
-/// period's first month (months without listening left out); `None` when there are none.
+/// period's first month (`spans`, from `average_spans`; months without listening left out), with
+/// their Repeat plays (`repeats`, per span); `None` when there are none.
 fn average_fingerprint<Tz: TimeZone>(
     cx: &Ctx<Tz>,
     model: &Model,
     heard: &[FirstHeard],
-    start: NaiveDate,
-    today: NaiveDate,
+    spans: &[Span],
+    repeats: &[i64],
 ) -> Result<Option<Fingerprint>> {
-    let to = super::v3::month_start(start) - TimeDelta::days(1);
-    let from = month_start_minus(to, 11);
-    if from > today {
-        return Ok(None);
-    }
-    let ms = months(from, to);
-    let spans: Vec<Span> = ms.iter().map(|m| (*m, super::v3::month_end(*m))).collect();
+    let (from, to) = (spans[0].0, spans[spans.len() - 1].1);
     let mut st = cx.conn.prepare(&format!(
         "SELECT month, artist, SUM(ms_played) FROM listening_month_artist
          WHERE month BETWEEN '{}' AND '{}' AND events > 0 AND artist <> ''{} GROUP BY 1, 2",
@@ -1453,7 +1893,6 @@ fn average_fingerprint<Tz: TimeZone>(
         .iter()
         .map(|f| (f.artist.as_str(), f.local.format("%Y-%m").to_string()))
         .collect();
-    let repeats = repeat_plays(cx, Src::All, &spans)?;
     let mut fps = vec![];
     for (i, (a, b)) in spans.iter().enumerate() {
         let m = month(*a);

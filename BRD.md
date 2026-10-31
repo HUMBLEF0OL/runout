@@ -31,6 +31,8 @@
 | P6 | Phone capture moves to the Runout Inbox playlist (D33, FR-046, user decision 20 Oct 2026): works on any network; the iOS Shortcut over home Wi-Fi (FR-018) becomes an optional fallback and leaves the MVP release criteria. |
 | P7 | Last.fm relay dropped from future candidates (D34, user decision 21 Oct 2026); replaced by deep listening analytics built into Runout on its own logged and imported plays. |
 | P8 | Deep listening analytics moved from future candidates into scope as milestone M10 (D35, user decision 24 Oct 2026): period reports with coverage-aware comparisons, trends, discovery, listening behaviour, records, an explorer and a data-coverage view, all computed locally from sources U, S and E (FR-047, FR-048; design in docs/design/M10-insights-v3.md). Genres, release decades and artist countries need an open music database and wait for the user's approval (U-11, O8). |
+| P9 | Genres and decades approved (U-11 = yes, user decision 26 Oct 2026; O8 resolved; D35, NFR-07): Runout may send artist and album names only to an open music database (MusicBrainz, Wikidata as fallback) over HTTPS, at most 1 request per second, to add genres, release decades and artist countries to the deep analytics. New data source M in 5.1; its results are kept in separate tables and deleted with one switch that also stops lookups (docs/design/M10-insights-v3.md section 7). |
+| P10 | Source M lookups take names only from sources U, S and E in library.db, never from Spotify-provided data (source A), so Spotify Content is not sent to another service (S8, S10; review of M10 WI 9, 31 Oct 2026). |
 
 ### 0.2 Changes in Version 0.6 (design-first delivery)
 
@@ -122,7 +124,7 @@ Spotify plays the music; Runout manages the user’s relationship with that musi
 | Real listening story | Lifetime history: desktop plays live; all devices (including phone) up to the latest Spotify data export. Time per artist, skips, patterns, year in review. |
 | Opinions vs habits | “Rated 5★ but played twice”; “played 80 times, never rated”. |
 | Cleaner playlists | Find duplicates and dead weight (from Release 2, read-only); decide keep/cut, preview, apply and undo (Release 3). |
-| Ownership and privacy | Everything local; no account, no cloud, no cost; export any time. |
+| Ownership and privacy | Everything local; only artist and album names go to an open music database for genres and decades, and that can be switched off; no account, no cloud, no cost; export any time. |
 
 ## 2. Business Objectives
 
@@ -180,8 +182,8 @@ A listener who regularly discovers music on desktop and phone, wants to explore 
 - iOS quick-capture through an Apple Shortcut.
 - Desktop listening logger via the Windows media session (SMTC).
 - Import of Spotify Extended Streaming History and Account Data exports (music only).
-- Listening and collection insights derived only from sources U, S and E (section 5).
-- Deep listening analytics (period reports with coverage-aware comparisons, trends, discovery, listening behaviour, records, an explorer and a data-coverage view), computed locally from sources U, S and E (M10, D35).
+- Listening and collection insights derived only from sources U, S and E, with genre, release-decade and artist-country labels from source M (section 5).
+- Deep listening analytics (period reports with coverage-aware comparisons, trends, discovery, listening behaviour, records, an explorer and a data-coverage view), computed locally from sources U, S and E, with genres, release decades and artist countries from an open music database (source M) (M10, D35).
 - Read-only playlist analysis (R2) and Playlist Studio write-back for owned/collaborative playlists (R3).
 - Spotify Web API features listed in Release 3, in Development Mode.
 - Local storage, export, backup (max 3 copies), restore, delete.
@@ -201,7 +203,6 @@ A listener who regularly discovers music on desktop and phone, wants to explore 
 - Paid APIs, paid databases, paid subscriptions to the app.
 ### 4.4 Future candidates (not committed)
 
-- Open music database enrichment for the deep listening analytics (MusicBrainz, Wikidata): genres, release decades and artist countries. It sends artist and album names off the PC, so it needs the user's approval first (U-11, O8). The analytics themselves moved into scope as M10 (D35).
 - Progressive web app (PWA) companion served over local Wi-Fi.
 - Cross-device sync via user-owned storage (iCloud Drive / OneDrive file).
 - Custom fields; per-track tracking inside albums.
@@ -211,7 +212,7 @@ A listener who regularly discovers music on desktop and phone, wants to explore 
 
 ### 5.1 Sources
 
-Every piece of data belongs to one of four sources. The source decides what the application may store and what it may analyse.
+Every piece of data belongs to one of five sources. The source decides what the application may store and what it may analyse.
 
 | Source | Contents | Release | May store? | May analyse? |
 |---|---|---|---|---|
@@ -219,8 +220,9 @@ Every piece of data belongs to one of four sources. The source decides what the 
 | S — Desktop logger (Windows SMTC) | Title, artist, album, ms played, play state of desktop plays | R2 | Yes | Yes |
 | E — Spotify data exports | Extended Streaming History and Account Data (playlists) delivered by Spotify to the user | R2 | Yes (minimized) | Yes — accepted risk, see 11.1 |
 | A — Spotify Platform (Web API, oEmbed) | Metadata, artwork, playlists, top items, recent plays | MVP (embed), R3 (API) | Only temporarily, kept current; never for embeds | No — display and user actions only |
+| M — Open music database (MusicBrainz, Wikidata) | Genres, release year and artist country, looked up by artist and album name. Only those names are sent, never anything about the user. The names come only from library.db data of sources U, S and E (listening events and user items), never from Spotify-provided data (source A, the Web API or oEmbed) | R2 (M10) | Yes, in separate tables; one switch deletes them and stops lookups | Yes — only as labels on insights from U, S and E |
 
-Separation rule: Insights may be computed only from sources U, S and E. Source A data is displayed and used to perform user-requested actions; it never feeds statistics, trends or profiles (Spotify Developer Policy III.13).
+Separation rule: Insights may be computed only from sources U, S and E; source M only adds genre, release-decade and artist-country labels to them. Source A data is displayed and used to perform user-requested actions; it never feeds statistics, trends or profiles (Spotify Developer Policy III.13).
 
 ### 5.2 Promotion rule
 
@@ -418,7 +420,7 @@ Priority: P0 must have for the release; P1 should have; P2 could have.
 | FR-044 | Follow Spotify design guidelines wherever Spotify metadata or artwork is shown. | MVP/R3 | P0 |
 | FR-045 | Record local usage counters (app opens, page visits, capture duration) for the success metrics; never transmitted. | MVP | P1 |
 | FR-046 | Runout Inbox: create a private “Runout Inbox” playlist on connect (re-create only on request); import its tracks into the backlog as “name needed” per 5.2; save a batch from one album as the album; remove imported tracks from the Inbox; optional import of newly saved albums and followed artists. | R3 | P1 |
-| FR-047 | Deep listening analytics: period reports, trends, discovery, listening behaviour, records, an explorer and a data-coverage view, computed locally from sources U, S and E only; heuristics are labelled as estimates; scores are never shared or exported. | R2 | P1 |
+| FR-047 | Deep listening analytics: period reports, trends, discovery, listening behaviour, records, an explorer and a data-coverage view, computed locally from sources U, S and E only, with genre, decade and country labels from source M; heuristics are labelled as estimates; scores are never shared or exported. | R2 | P1 |
 | FR-048 | Coverage-aware comparisons: a comparison between two periods uses only sources that cover both periods; gaps in the data are shown as no data, never as silence. | R2 | P0 |
 
 ## 8. Key User Journeys
@@ -541,13 +543,13 @@ A local relational database with no server (SQLite is the leading candidate; fin
 
 | ID | Requirement | Acceptance expectation |
 |---|---|---|
-| NFR-01 | Local-first | All core functions work offline; only embeds, short-link resolution and R3 features need internet. |
+| NFR-01 | Local-first | All core functions work offline; only embeds, short-link resolution, R3 features and open music database lookups (source M) need internet. |
 | NFR-02 | No hosting | No cloud server required. |
 | NFR-03 | No paid dependencies | Free tools and libraries only. |
 | NFR-04 | Performance | On a reference dataset of 10,000 records and 500,000 listening events, on a typical Windows laptop: search and filter results < 200 ms; screen navigation < 500 ms; import of 10 years of history < 60 s; app start < 3 s. |
 | NFR-05 | Data integrity | Interrupted operations never corrupt the library. |
 | NFR-06 | Recovery | A backup restores and verifies successfully. |
-| NFR-07 | Privacy | No telemetry; no remote transmission of personal data. |
+| NFR-07 | Privacy | No telemetry; no remote transmission of personal data. Besides Spotify, the only thing sent off the PC is artist and album names to the open music database (source M, 5.1), over HTTPS, at most 1 request per second, with a switch that stops lookups and deletes the results. |
 | NFR-08 | Credential security | Spotify tokens stored in Windows Credential Manager; never in the database, logs or exports. |
 | NFR-09 | Graceful degradation | Expired login, lapsed Premium, API errors or offline state never block core features; the cause is shown clearly. |
 | NFR-10 | Write safety | No change reaches Spotify without explicit confirmation and a preview. |
@@ -592,7 +594,7 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 
 - Release 2 (which uses export data) ships before any Spotify registration and needs none.
 - Export-derived insights never combine with, enrich, or are enriched by Web API data. This includes Playlist Studio, which uses only the user’s ratings and tags.
-- Insights are displayed only to the user; nothing is shared or transmitted.
+- Insights are displayed only to the user; nothing is shared or transmitted. Only artist and album names go to the open music database (source M); never plays, insights or anything about the user.
 - Optional: the user may ask Spotify developer support for guidance (O7). If guidance is restrictive, Release 3 remains usable while Spotify-connected, with Listening Log insights disabled, or Release 3 is dropped.
 ## 12. Risks and Mitigations
 
@@ -659,7 +661,7 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 | M6 Integration: MVP release | MVP screens on real data, installer | MVP criteria pass on the installed build; 2 weeks of daily use measured against section 15, reviewed as the MVP’s final sign-off (runs in parallel with M7, D32) | 4–6 h agentic, plus U-3/U-4; 2 weeks of daily use (U-5) in parallel, not blocking M7 |
 | M7 Integration: R2 and R3 | Listening, insights and Spotify screens on real data; Runout Inbox (phone capture) | R2 and R3 criteria pass | 3–4 h agentic |
 | M8 Future candidates | Selected items from 4.4 | Per item | As needed |
-| M10 Deep listening insights | Insights v3 (FR-047, FR-048): logger stores track length, shuffle and running intervals; rollups; Report, Trends, Discovery, How you listen, Records, Explore and Your data tabs; Genres & decades only after U-11 | docs/MILESTONES.md M10 acceptance passes on the installed build with the user's real history | 6 to 10 h agentic; WI 9 only after U-11 |
+| M10 Deep listening insights | Insights v3 (FR-047, FR-048): logger stores track length, shuffle and running intervals; rollups; Report, Trends, Discovery, How you listen, Records, Explore and Your data tabs; Genres & decades (U-11 approved 26 Oct 2026) | docs/MILESTONES.md M10 acceptance passes on the installed build with the user's real history | 6 to 10 h agentic; WI 9 approved (U-11) |
 
 ## 15. Business Success Metrics
 
@@ -725,7 +727,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | D32 | Does daily use gate R2/R3 integration? | No (user decision 20 Oct 2026). M7 starts once M6 code, installer and U-3/U-4 pass. U-5 (2 weeks of daily use, section 15 metrics) runs in parallel and is the MVP’s final sign-off; findings feed fixes, not a gate |
 | D33 | How is music captured from the phone? | Through a private “Runout Inbox” Spotify playlist that Runout creates on connect and empties as it imports (R3), because a Wi-Fi listener needs the phone and PC on the same network. The iOS Shortcut stays as an optional fallback (user decision 20 Oct 2026) |
 | D34 | Is phone listening history relayed through Last.fm? | No (user decision 21 Oct 2026). Last.fm-style deep analytics are a future candidate built into Runout on its own data (desktop logger and data export, sources U, S, E); no Last.fm account or scrobbling |
-| D35 | Are deep listening analytics built? | Yes (user decision 24 Oct 2026, M10): Last.fm-depth insights computed locally from sources U, S and E, with coverage-aware comparisons. Not built: BPM, energy and mood (no permitted source), mainstream scores and comparisons with other people (no other listeners), discovery source (not in the export), a free-text question box (needs an AI model; NFR-03, NFR-07). Genres, decades and artist countries only if the user approves an open music database (U-11, O8). |
+| D35 | Are deep listening analytics built? | Yes (user decision 24 Oct 2026, M10): Last.fm-depth insights computed locally from sources U, S and E, with coverage-aware comparisons. Not built: BPM, energy and mood (no permitted source), mainstream scores and comparisons with other people (no other listeners), discovery source (not in the export), a free-text question box (needs an AI model; NFR-03, NFR-07). Genres, release decades and artist countries come from an open music database (MusicBrainz, Wikidata as fallback; source M), approved by the user 26 Oct 2026 (U-11, O8): artist and album names only, over HTTPS, at most 1 request per second, results kept apart and deleted with one switch that also stops lookups. |
 
 ## 18. Remaining Open Items
 
@@ -738,13 +740,13 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | O5 | Spotify cache expiry. Resolved: 7 days (TSD §5.2; built in M5, swept at startup and daily). | Resolved by technical design | Done |
 | O6 | iOS capture transport: local-network listener or shared file | Resolved: local-network listener (docs/TSD.md §5.1) | Done |
 | O7 | Optional: ask Spotify developer support about export-data analysis in a registered app (11.1) | User | Before M5 |
-| O8 | May Runout send artist and album names to an open music database (MusicBrainz, Wikidata) to add genres, release decades and artist countries to the deep analytics? Breaks "nothing leaves the PC except to Spotify" and adds a data source to section 5.1. | User (U-11), then agent (TSD T6: licence, rate limit, match rate) | Before M10 WI 9 |
+| O8 | May Runout send artist and album names to an open music database (MusicBrainz, Wikidata) to add genres, release decades and artist countries to the deep analytics? Resolved: yes (user, 26 Oct 2026, U-11): names only, added as source M in 5.1, NFR-07 updated. Licence and rate limit verified; match rate still to be measured (TSD T6). | Resolved by the user (U-11); agent measures the match rate (TSD T6) | Done |
 
 ## 19. Final Product Definition
 
 Runout is a local-first music organization, exploration and reflection tool that works alongside Spotify. It lets one listener manage albums, tracks and artists; maintain a backlog; document opinions; track exploration; rediscover music; understand their lifetime listening from their own data; and refine their own Spotify playlists safely.
 
-Its value is not playing music. Its value is helping the user remember, organize, explore and understand their musical life, while keeping personal data local, staying within Spotify’s rules, and adding no recurring cost.
+Its value is not playing music. Its value is helping the user remember, organize, explore and understand their musical life, while keeping personal data local (only artist and album names go to an open music database, and the user can switch that off), staying within Spotify’s rules, and adding no recurring cost.
 
 ## 20. References
 

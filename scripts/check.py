@@ -13,7 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TAURI = ROOT / "src-tauri"
-ALLOWED_HOSTS = {"open.spotify.com", "spotify.link", "api.spotify.com", "accounts.spotify.com", "127.0.0.1", "localhost"}
+ALLOWED_HOSTS = {"open.spotify.com", "spotify.link", "api.spotify.com", "accounts.spotify.com", "127.0.0.1", "localhost",
+                 "musicbrainz.org", "www.wikidata.org"}  # open music database, source M (U-11, TSD §5.4)
 HOOK = "--hook" in sys.argv
 # Parallel sessions/agents building at once hit "paging file is too small" (os error 1455, 20 Oct 2026).
 os.environ.setdefault("CARGO_BUILD_JOBS", "2")
@@ -375,6 +376,40 @@ def check_insights_no_cache():
         print("--- insights no cache: FAIL\n" + "\n".join(bad))
 
 
+def check_net_hosts_parity():
+    # TSD §7: net.rs ALLOWED_HOSTS must equal check.py ALLOWED_HOSTS minus the local hosts.
+    m = re.search(r"ALLOWED_HOSTS: \[&str; \d+\] = \[(.*?)\];", (TAURI / "src" / "net.rs").read_text(encoding="utf-8"), re.S)
+    rust = set(re.findall(r'"([^"]+)"', m.group(1))) if m else set()
+    want = ALLOWED_HOSTS - {"127.0.0.1", "localhost"}
+    if rust != want:
+        failures.append("net hosts parity")
+        print(f"--- net hosts parity: FAIL only in net.rs {sorted(rust - want)}, only in check.py {sorted(want - rust)}")
+
+
+def check_enrich_no_spotify():
+    # TSD §5.4 / BRD §5.1 M: names sent to the open music database come from U/S/E only, never source A.
+    d = TAURI / "src" / "enrich"
+    bad = [f"{p.relative_to(ROOT)}: {w}" for p in (d.rglob("*.rs") if d.exists() else [])
+           for w in ("spotify_cache", "cache::", "spotify::") if w in p.read_text(encoding="utf-8")]
+    if bad:
+        failures.append("enrich no spotify")
+        print("--- enrich no spotify: FAIL", *bad, sep="\n")
+
+
+def check_migrations_numbered():
+    # TSD §3: MIGRATIONS[i] sets user_version i + 1, so file numbers must be 0001..N with no gap and
+    # one file per number. A gap (two tracks reserving numbers) would skip a migration on upgrade.
+    f = TAURI / "src" / "db" / "mod.rs"
+    if not f.exists():
+        return
+    names = re.findall(r'include_str!\("\.\./\.\./migrations/(\d{4})_[^"]+\.sql"\)', f.read_text(encoding="utf-8"))
+    files = sorted(p.name[:4] for p in (TAURI / "migrations").glob("*.sql"))
+    want = [f"{i:04d}" for i in range(1, len(names) + 1)]
+    if names != want or files != want:
+        failures.append("migrations numbered")
+        print("--- migrations numbered: FAIL", f"MIGRATIONS {names}", f"files {files}", f"want {want}", sep="\n")
+
+
 def check_listening_event_reads():
     # G-20 / audit 4f53129: listening_event reads go through insights::base (reconciled rows out,
     # private sessions per setting). A direct read needs `// unfiltered: <reason>` on the line or up to 2 lines above.
@@ -707,6 +742,11 @@ def check_deferrals_tracked():
             refs = re.findall(r"\b([GU]-\d+)\b", line)
             if not any(r.startswith("U-") or r in rows for r in refs):
                 bad.append(f"docs/MILESTONES.md:{i}: open acceptance line names no Known gaps G-n or U-n")
+    # a "ponytail: no ... yet" comment defers a feature: it must cite a Known gaps G-n (M10 WI 9 review)
+    for p in [*(TAURI / "src").rglob("*.rs"), *(ROOT / "src").rglob("*.ts"), *(ROOT / "src").rglob("*.tsx")]:
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"ponytail: no\b.*\byet\b", line) and not any(g in rows for g in re.findall(r"\bG-\d+\b", line)):
+                bad.append(f"{p.relative_to(ROOT)}:{i}: deferral comment names no Known gaps G-n")
     if bad:
         failures.append("deferrals tracked")
         print("--- deferrals tracked: FAIL\n" + "\n".join(bad))
@@ -933,6 +973,10 @@ def check_control_consistency():
         for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
             if re.search(r"aria-pressed=\{[^}]+\}[^>]*>\{[^}]*\?", line):
                 bad.append(f"{f.relative_to(ROOT)}:{i}: aria-pressed button with a changing label (use Switch or a fixed label)")
+            # M10 WI 9 review: DESIGN §5 "btn-danger: destructive"; a delete styled btn-light read as a safe action.
+            for cls in re.findall(r"<button[^>]*className=\"([^\"]*)\"[^>]*>[^<{]*\b(?:delete|discard)\b[^<]*</button>", line, re.I):
+                if "btn-danger" not in cls.split():
+                    bad.append(f"{f.relative_to(ROOT)}:{i}: a delete/discard button must be btn-danger (DESIGN §5)")
     # Spotify's compact player cuts off its play button below 280 px (measured on a real album, 24 Oct 2026) (M9 Home, then Rediscover artwork
     # mode on the 150 px tile grid): the artwork set's columns must never go below that.
     art = re.search(r"\.tiles\.art\s*\{[^}]*minmax\((\d+)px", css)
@@ -993,6 +1037,9 @@ check_settings_paths()
 check_restore_marker_guards()
 check_db_swap_closes_logger_run()
 check_insights_no_cache()
+check_net_hosts_parity()
+check_enrich_no_spotify()
+check_migrations_numbered()
 check_spotify_rules()
 check_boundary_values_kept()
 check_cache_schema_in_tsd()

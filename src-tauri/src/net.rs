@@ -9,11 +9,14 @@ use reqwest::{Client, Method, RequestBuilder, Response, Url, redirect};
 use crate::error::{AppError, Result};
 
 /// TSD §7. Keep in sync with `ALLOWED_HOSTS` in `scripts/check.py`.
-pub const ALLOWED_HOSTS: [&str; 4] = [
+pub const ALLOWED_HOSTS: [&str; 6] = [
     "open.spotify.com",
     "spotify.link",
     "api.spotify.com",
     "accounts.spotify.com",
+    // Open music database, source M: artist/album names only (U-11, TSD §5.4).
+    "musicbrainz.org",
+    "www.wikidata.org",
 ];
 pub const MAX_REDIRECTS: usize = 5;
 pub const TIMEOUT: Duration = Duration::from_secs(5);
@@ -169,6 +172,8 @@ mod tests {
             "https://spotify.link/abc",
             "https://api.spotify.com/v1/me",
             "https://accounts.spotify.com/api/token",
+            "https://musicbrainz.org/ws/2/artist?query=x",
+            "https://www.wikidata.org/w/api.php",
         ] {
             assert!(check(ok).is_ok(), "{ok}");
         }

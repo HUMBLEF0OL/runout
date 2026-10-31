@@ -16,7 +16,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M7 Integration: R2 and R3 | integration | R2, R3 | CAP-18–34, 36 | U-10 done | done 22 Oct 2026 (build + 8 review rounds 21 Oct; live runs 21–22 Oct) |
 | M8 Stabilization & UI Polish | stabilization | all | — | — | per plan (taste skill UI + gap fixes) |
 | M9 Interactive UI refinement | UI | all | — | — | per screen (Settings done 24 Oct 2026) |
-| M10 Deep listening insights (Insights v3) | feature (design → integration) | R2 | CAP-37–44 | U-11 (WI 9 only) | ready 24 Oct 2026; 6–10 h agentic |
+| M10 Deep listening insights (Insights v3) | feature (design → integration) | R2 | CAP-37–44 | U-11 (WI 9 only; yes, 26 Oct 2026) | ready 24 Oct 2026; 6–10 h agentic |
 
 ### Status (24 Oct 2026)
 - **M10 designed 24 Oct 2026** (D35, user goal "finalize the design and put it in M10"): deep listening insights, Last.fm depth, computed locally from U, S, E. Design + definitions [design/M10-insights-v3.md](design/M10-insights-v3.md), mockup and 8 tab screens in `docs/design/`, plan [plans/M10-deep-insights.md](plans/M10-deep-insights.md). Data audit found G-45 (skip rate understated) and G-46 (comparisons mix coverage), both owned by M10. Genres & decades waits on **U-11**. **M10 is ready to start**: entry (M9 Home + Insights done) met 24 Oct 2026; next is WI 1, the API contract. It runs alongside M9's Item screen.
@@ -293,7 +293,7 @@ Acceptance
 6. **UI Report + header:** grain, period stepper, compare choice, deep links; all Report cards and states.
 7. **UI Trends, Discovery, How you listen, Records.**
 8. **UI Explore + Your data:** builder, ready-made questions, saved views, Copy as CSV; coverage strip, import history, export reminder.
-9. **Genres & decades (gated):** only after U-11 = yes and T6 resolved; new source, allowed host, `enrich/`, the tab. Dropped if U-11 = no.
+9. **Genres & decades (approved: U-11 = yes, 26 Oct 2026):** source M (BRD §5.1), allowed hosts `musicbrainz.org` and `www.wikidata.org` (TSD §5.4, §7), `enrich/` (migration `0012`, one switch deletes and stops lookups), the tab with the MusicBrainz credit. T6 match rate (≥ 85% of listening time) is still open; record it before closing M10.
 10. **Integration + record:** real commands, installed-build hand-check on the user's history, journeys, spec review, SOURCE_MAP, KB, DESIGN §6.
 
 ### Acceptance
@@ -306,5 +306,5 @@ Acceptance
 - [ ] Heuristics (eras, arcs, "took time from", sessions, start-to-finish) are labelled as estimates in the UI; fingerprint scores are never exported or copied.
 - [ ] Installed-build run on the user's real history: 10 figures hand-checked against SQL, recorded here.
 - [ ] Keyboard journeys for the new tabs pass with focus rings and accessible names; loading, empty, error and heavy states render; reduced motion respected.
-- [ ] Genres & decades: built after U-11 = yes and T6, or recorded as dropped after U-11 = no (open until U-11).
+- [ ] Genres & decades: built (U-11 = yes, 26 Oct 2026); only artist and album names leave the PC, to the two allowed hosts; the switch deletes every `enrich` row and stops lookups; T6 match rate recorded.
 - [ ] `python scripts/check.py` and `node scripts/journeys.mjs` pass; `spec-reviewer` finds nothing open.

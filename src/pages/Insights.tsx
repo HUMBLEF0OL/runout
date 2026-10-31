@@ -22,14 +22,15 @@ import { Habits } from "./InsightsHabits";
 import { Records } from "./InsightsRecords";
 import { Explore } from "./InsightsExplore";
 import { YourData } from "./InsightsData";
+import { Genres } from "./InsightsGenres";
 import { EASE } from "../lib/motion";
 
-type Tab = "report" | "trends" | "discovery" | "habits" | "records" | "explore" | "data" | "collection" | "take" | "year";
-/** Line tabs in the design's order (§8): the listening tabs, then the existing ones. Genres & decades waits on U-11: no tab. */
+type Tab = "report" | "trends" | "discovery" | "habits" | "records" | "genres" | "explore" | "data" | "collection" | "take" | "year";
+/** Line tabs in the design's order (§8): the listening tabs, then the existing ones. Genres & decades: U-11 = yes (26 Oct 2026). */
 const TABS: [Tab, string][] = [["report", "Report"], ["trends", "Trends"], ["discovery", "Discovery"], ["habits", "How you listen"], ["records", "Records"],
-  ["explore", "Explore"], ["data", "Your data"], ["collection", "Collection"], ["take", "Your take"], ["year", "Year in review"]];
+  ["genres", "Genres & decades"], ["explore", "Explore"], ["data", "Your data"], ["collection", "Collection"], ["take", "Your take"], ["year", "Year in review"]];
 /** Tabs that read a period, so they show the header; Trends, Records and Explore cover your whole history or set their own. */
-const PERIOD_TABS = new Set<Tab>(["report", "discovery", "habits"]);
+const PERIOD_TABS = new Set<Tab>(["report", "discovery", "habits", "genres"]);
 /** A share as a ring that fills once (skip rate, phone share). */
 function Ring({ share }: { share: number }) {
   const reduce = useReducedMotion();
@@ -212,6 +213,7 @@ export default function Insights() {
           {tab === "discovery" && <Discovery key={search} q={q} today={day0} />}
           {tab === "habits" && <Habits key={search} q={q} today={day0} />}
           {tab === "records" && <Records today={day0} />}
+          {tab === "genres" && <Genres key={search} q={q} today={day0} />}
           {tab === "explore" && <Explore today={day0} />}
           {tab === "data" && <YourData today={day0} />}
           {tab === "collection" && <Collection />}

@@ -123,6 +123,8 @@ pub fn handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + 
         get_trends,
         get_discovery,
         get_listening_habits,
+        get_genres_decades,
+        set_music_db,
         get_records,
         explore,
         get_data_coverage,
@@ -766,6 +768,26 @@ pub fn get_listening_habits(st: St<'_>, period: PeriodQuery) -> Result<Covered<H
     v3(&st, |cx| habits::habits(cx, &period))
 }
 
+/// Genres & decades (M10 WI 9, source M): labels from the `enrich` tables on S/E listening time.
+#[tauri::command(async)]
+pub fn get_genres_decades(
+    st: St<'_>,
+    period: PeriodQuery,
+) -> Result<Covered<crate::enrich::genres::GenresDecades>> {
+    v3(&st, |cx| crate::enrich::genres::genres_decades(cx, &period))
+}
+
+/// The music database switch (TSD §5.4): off stops lookups and deletes every `enrich` row.
+#[tauri::command(async)]
+pub fn set_music_db(st: St<'_>, on: bool) -> Result<Settings> {
+    let (_, s) = st.edit_settings(|s| {
+        s.music_db = on;
+        Ok(())
+    })?;
+    crate::enrich::set_switch(&mut st.db.lock().unwrap(), on)?;
+    Ok(s)
+}
+
 #[tauri::command(async)]
 pub fn get_records(st: St<'_>) -> Result<Covered<Records>> {
     v3(&st, history::records)
@@ -1225,6 +1247,7 @@ mod tests {
             ("get_trends", json!({"measure": "artists"})),
             ("get_discovery", period.clone()),
             ("get_listening_habits", period.clone()),
+            ("get_genres_decades", period.clone()),
             ("get_records", json!({})),
             ("explore", explore.clone()),
             ("get_data_coverage", json!({})),
@@ -1259,6 +1282,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(s["export_reminder"], json!(true));
+        let e = call(&w, "update_settings", json!({"patch": {"music_db": false}})).unwrap_err();
+        assert_eq!(e["code"], json!("validation"));
+        let s = call(&w, "set_music_db", json!({"on": false})).unwrap();
+        assert_eq!(s["music_db"], json!(false));
 
         // R3 (API.md §5): disconnected → status says so, every other command is spotify_auth
         // the Inbox state is settings only: answered disconnected, no request

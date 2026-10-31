@@ -1,6 +1,8 @@
 //! `get_take_insights`: your ratings and backlog set against what you play (TSD §4.9, §4.13).
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
-use rusqlite::{Connection, params};
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use rusqlite::Connection;
 use serde::Serialize;
 
 use super::{SRC, Sourced, base, sourced, utc};
@@ -57,44 +59,128 @@ pub fn take(
     include_private: bool,
     now: DateTime<Utc>,
 ) -> Result<Sourced<TakeInsights>> {
-    // One statement, so the events are scanned once (NFR-04): `per` = counted plays and latest
-    // local time per linked record, `stats` = the same per record it counts for (`SRC`).
-    // Rows: (list, id, number, text); list 3 = unfinished albums (played, total as text).
+    // `per` = counted plays and latest local play time per linked record, summed over one unsorted
+    // scan and the lists picked here (NFR-04: SQL's GROUP BY sorts every linked event).
     // TSD §4.9: unfinished only for albums whose track list is in the library (`on_album` links).
-    let sql = format!(
-        "{}{SRC}, per AS (SELECT item_id AS s, SUM(counts_as_play) AS plays,
-                     MAX(CASE WHEN counts_as_play THEN local END) AS last
-                   FROM base WHERE +item_id IS NOT NULL GROUP BY +item_id),
-           stats AS (SELECT src.t AS item_id, SUM(per.plays) AS plays, MAX(per.last) AS last
-                     FROM src JOIN per ON per.s = src.s GROUP BY src.t)
-         SELECT * FROM (SELECT 0, i.id, s.plays, '' FROM item i JOIN stats s ON s.item_id = i.id
-           WHERE i.rating IS NULL AND s.plays >= ?1 ORDER BY s.plays DESC, i.id LIMIT {LIMIT})
-         UNION ALL SELECT * FROM (SELECT 1, i.id, 0, i.added_at FROM item i
-           LEFT JOIN stats s ON s.item_id = i.id
-           WHERE i.in_backlog = 1 AND i.status = 'planned' AND i.type IN ('album', 'track')
-             AND COALESCE(s.plays, 0) = 0 ORDER BY i.added_at, i.id LIMIT {LIMIT})
-         UNION ALL SELECT * FROM (SELECT 2, i.id, i.rating, s.last FROM item i
-           JOIN stats s ON s.item_id = i.id
-           WHERE i.rating >= ?2 AND s.last IS NOT NULL AND s.last < ?3 ORDER BY s.last, i.id LIMIT {LIMIT})
-         UNION ALL SELECT * FROM (SELECT 3, l.to_id, COUNT(p.s), CAST(COUNT(*) AS TEXT)
-           FROM item_link l JOIN item a ON a.id = l.to_id AND a.type = 'album'
-           LEFT JOIN per p ON p.s = l.from_id AND p.plays > 0
-           WHERE l.kind = 'on_album' GROUP BY l.to_id HAVING COUNT(p.s) < COUNT(*)
-           ORDER BY COUNT(p.s) DESC, l.to_id)",
-        base(include_private)
-    );
-    let forgotten = utc(now - TimeDelta::days(FORGOTTEN_DAYS));
-    let mut st = conn.prepare(&sql)?;
-    let rows = st
-        .query_map(params![PLAYED_OFTEN, TOP_RATED_MIN, forgotten], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, i64>(1)?,
-                r.get::<_, f64>(2)?,
-                r.get::<_, String>(3)?,
-            ))
+    let mut per: HashMap<i64, (i64, Option<String>)> = HashMap::new();
+    {
+        let mut st = conn.prepare(&format!(
+            "{} SELECT item_id, counts_as_play, local FROM base WHERE +item_id IS NOT NULL",
+            base(include_private)
+        ))?;
+        let mut rows = st.query([])?;
+        while let Some(r) = rows.next()? {
+            let e = per.entry(r.get(0)?).or_default();
+            if r.get::<_, i64>(1)? != 0 {
+                e.0 += 1;
+                let local = super::text(r, 2)?;
+                if e.1.as_deref().is_none_or(|l| local > l) {
+                    e.1 = Some(local.to_owned());
+                }
+            }
+        }
+    }
+    // `stats` = the same per record it counts for (`SRC`: itself, its album and artists)
+    let mut stats: HashMap<i64, (i64, Option<String>)> = HashMap::new();
+    {
+        let mut st = conn.prepare(&format!("WITH x AS (SELECT 1){SRC} SELECT s, t FROM src"))?;
+        let mut rows = st.query([])?;
+        while let Some(r) = rows.next()? {
+            let (s, t): (i64, i64) = (r.get(0)?, r.get(1)?);
+            if let Some((plays, last)) = per.get(&s) {
+                let e = stats.entry(t).or_default();
+                e.0 += plays;
+                if last.as_ref() > e.1.as_ref() {
+                    e.1.clone_from(last);
+                }
+            }
+        }
+    }
+    struct It {
+        id: i64,
+        rating: Option<f64>,
+        backlog: bool,
+        planned: bool,
+        album_or_track: bool,
+        album: bool,
+        added_at: String,
+    }
+    let items: Vec<It> = conn
+        .prepare("SELECT id, rating, in_backlog, status = 'planned', type, added_at FROM item")?
+        .query_map([], |r| {
+            let kind: String = r.get(4)?;
+            Ok(It {
+                id: r.get(0)?,
+                rating: r.get(1)?,
+                backlog: r.get(2)?,
+                planned: r.get(3)?,
+                album_or_track: kind == "album" || kind == "track",
+                album: kind == "album",
+                added_at: r.get(5)?,
+            })
         })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+        .collect::<rusqlite::Result<_>>()?;
+    let forgotten = utc(now - TimeDelta::days(FORGOTTEN_DAYS));
+    // Rows: (list, id, number, text); list 3 = unfinished albums (played, total as text).
+    type Row = (i64, i64, f64, String);
+    let mut rows: Vec<Row> = vec![];
+    let top = |mut v: Vec<Row>, rows: &mut Vec<Row>| {
+        v.truncate(LIMIT as usize);
+        rows.extend(v);
+    };
+    // 0: played often, not rated (most played first)
+    let mut v: Vec<Row> = items
+        .iter()
+        .filter(|i| i.rating.is_none())
+        .filter_map(|i| stats.get(&i.id).map(|s| (i, s.0)))
+        .filter(|(_, plays)| *plays >= PLAYED_OFTEN)
+        .map(|(i, plays)| (0, i.id, plays as f64, String::new()))
+        .collect();
+    v.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.1.cmp(&b.1)));
+    top(v, &mut rows);
+    // 1: planned in the backlog, never played (oldest first)
+    let mut v: Vec<(&It, Row)> = items
+        .iter()
+        .filter(|i| i.backlog && i.planned && i.album_or_track)
+        .filter(|i| stats.get(&i.id).map_or(0, |s| s.0) == 0)
+        .map(|i| (i, (1, i.id, 0.0, i.added_at.clone())))
+        .collect();
+    v.sort_by(|a, b| a.0.added_at.cmp(&b.0.added_at).then(a.0.id.cmp(&b.0.id)));
+    top(v.into_iter().map(|x| x.1).collect(), &mut rows);
+    // 2: rated high, last played before the forgotten date (longest ago first)
+    let mut v: Vec<Row> = items
+        .iter()
+        .filter_map(|i| {
+            let rating = i.rating.filter(|r| *r >= TOP_RATED_MIN)?;
+            let last = stats.get(&i.id)?.1.as_ref().filter(|l| **l < forgotten)?;
+            Some((2, i.id, rating, last.clone()))
+        })
+        .collect();
+    v.sort_by(|a, b| a.3.cmp(&b.3).then(a.1.cmp(&b.1)));
+    top(v, &mut rows);
+    // 3: albums with some of their linked tracks unplayed (most played first)
+    let albums: HashSet<i64> = items.iter().filter(|i| i.album).map(|i| i.id).collect();
+    let mut by_album: BTreeMap<i64, (i64, i64)> = BTreeMap::new();
+    {
+        let mut st =
+            conn.prepare("SELECT from_id, to_id FROM item_link WHERE kind = 'on_album'")?;
+        let mut links = st.query([])?;
+        while let Some(r) = links.next()? {
+            let (from, to): (i64, i64) = (r.get(0)?, r.get(1)?);
+            if albums.contains(&to) {
+                let e = by_album.entry(to).or_default();
+                e.0 += per.get(&from).is_some_and(|p| p.0 > 0) as i64;
+                e.1 += 1;
+            }
+        }
+    }
+    let mut v: Vec<Row> = by_album
+        .into_iter()
+        .filter(|(_, (played, total))| played < total)
+        .map(|(id, (played, total))| (3, id, played as f64, total.to_string()))
+        .collect();
+    v.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.1.cmp(&b.1)));
+    rows.extend(v);
     let (mut rated_vs_played, mut never_played_backlog, mut loved_but_forgotten) =
         (Vec::new(), Vec::new(), Vec::new());
     let mut unfinished_albums = Vec::new();

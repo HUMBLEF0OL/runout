@@ -14,7 +14,7 @@ use chrono::{DateTime, Datelike, Months, NaiveDate, NaiveDateTime, TimeDelta, Ut
 use rusqlite::Connection;
 use serde::Serialize;
 
-use super::{SRC, base, pct};
+use super::{base, pct};
 use crate::error::Result;
 use crate::importer::events::Source;
 
@@ -845,19 +845,33 @@ pub fn top_tags(
     to: NaiveDate,
     n: usize,
 ) -> Result<(Vec<TagShare>, f64)> {
-    // per record first, then its tags (NFR-04: a tag join per play is far slower)
+    // time per record, then its tags (NFR-04: a tag join per play is far slower, and SQL's GROUP BY
+    // per record sorts every play)
     let mut st = conn.prepare(&format!(
-        "{} SELECT item_id, SUM(ms_played) FROM base WHERE {} GROUP BY +item_id",
+        "{} SELECT item_id, ms_played FROM base WHERE {}",
         base(include_private),
         local_between()
     ))?;
+    let mut per: HashMap<Option<i64>, i64> = HashMap::new();
+    let mut rows = st.query([day(from), day(to)])?;
+    while let Some(r) = rows.next()? {
+        *per.entry(r.get(0)?).or_default() += r.get::<_, i64>(1)?;
+    }
+    drop(rows);
+    tag_shares(conn, per, n)
+}
+
+/// `top_tags` from listening time per record (`None` = no record): the top `n` tags as % of
+/// tagged time, and tagged ÷ all time (%).
+pub fn tag_shares(
+    conn: &Connection,
+    per: HashMap<Option<i64>, i64>,
+    n: usize,
+) -> Result<(Vec<TagShare>, f64)> {
     let tags = item_tags(conn)?;
     let (mut total, mut tagged) = (0i64, 0i64);
     let mut by_tag: HashMap<&str, i64> = HashMap::new();
-    for r in st.query_map([day(from), day(to)], |r| {
-        Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, i64>(1)?))
-    })? {
-        let (id, ms) = r?;
+    for (id, ms) in per {
         total += ms;
         if let Some(ts) = id.and_then(|id| tags.get(&id)) {
             tagged += ms;
@@ -879,18 +893,61 @@ pub fn top_tags(
     Ok((rows, pct(tagged, total)))
 }
 
-/// Each record's tags: its own, its album's and artist's (`insights::SRC`), each tag once.
+/// Each record's tags: its own, its album's and artist's (`insights::SRC`: itself, its `on_album`
+/// and `by_artist` links, and its album's artists), each tag once. The links are followed here
+/// (NFR-04: SQL's UNIONs and DISTINCT sort every record-tag pair).
 pub fn item_tags(conn: &Connection) -> Result<HashMap<i64, Vec<String>>> {
-    let mut st = conn.prepare(&format!(
-        "WITH x AS (SELECT 1){SRC} SELECT DISTINCT src.s, t.id, t.name FROM src
-         JOIN item_tag it ON it.item_id = src.t JOIN tag t ON t.id = it.tag_id"
-    ))?;
-    let mut out: HashMap<i64, Vec<String>> = HashMap::new();
-    for r in st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(2)?)))? {
-        let (id, name) = r?;
-        out.entry(id).or_default().push(name);
+    let names: HashMap<i64, String> = conn
+        .prepare("SELECT id, name FROM tag")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut own: HashMap<i64, Vec<i64>> = HashMap::new();
+    for r in conn
+        .prepare("SELECT item_id, tag_id FROM item_tag")?
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?
+    {
+        let (i, t) = r?;
+        own.entry(i).or_default().push(t);
     }
-    Ok(out)
+    let links: Vec<(i64, i64, bool)> = conn
+        .prepare("SELECT from_id, to_id, kind = 'on_album' FROM item_link WHERE kind IN ('on_album', 'by_artist')")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut artists_of: HashMap<i64, Vec<i64>> = HashMap::new();
+    for (from, to, on_album) in &links {
+        if !on_album {
+            artists_of.entry(*from).or_default().push(*to);
+        }
+    }
+    let mut ids: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut add = |s: i64, t: i64| {
+        if let Some(ts) = own.get(&t) {
+            let v = ids.entry(s).or_default();
+            for x in ts {
+                if !v.contains(x) {
+                    v.push(*x);
+                }
+            }
+        }
+    };
+    for s in own.keys() {
+        add(*s, *s);
+    }
+    for (from, to, on_album) in &links {
+        add(*from, *to);
+        if *on_album {
+            for a in artists_of.get(to).into_iter().flatten() {
+                add(*from, *a);
+            }
+        }
+    }
+    Ok(ids
+        .into_iter()
+        .map(|(s, v)| {
+            let tags = v.iter().filter_map(|t| names.get(t).cloned()).collect();
+            (s, tags)
+        })
+        .collect())
 }
 
 // Test events: export, local = UTC, a play unless `ms` says otherwise.
