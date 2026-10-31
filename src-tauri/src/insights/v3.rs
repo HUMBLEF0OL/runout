@@ -472,11 +472,7 @@ pub(crate) fn day_num(d: &str) -> Option<u32> {
 }
 
 /// `aggs` plus `(ms, plays)` per local date inside the windows (as `daily`, same events).
-pub fn aggs_days<Tz: TimeZone>(
-    cx: &Ctx<Tz>,
-    src: Src,
-    spans: &[Span],
-) -> Result<(Vec<Agg>, Days)> {
+pub fn aggs_days<Tz: TimeZone>(cx: &Ctx<Tz>, src: Src, spans: &[Span]) -> Result<(Vec<Agg>, Days)> {
     let mut out = vec![Agg::default(); spans.len()];
     if spans.is_empty() {
         return Ok((out, BTreeMap::new()));

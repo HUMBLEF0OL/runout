@@ -13,7 +13,7 @@ Facts for M10 WI 9 Genres & decades (design [M10-insights-v3.md](../design/M10-i
 - **Rate limit:** at most **1 request per second per IP** on average (a client over the rate gets **all** requests refused with **503** until it drops back, not just the excess); global cap 300 req/s; "never make more than ONE call per second" or the IP may be blocked. Do not schedule bulk lookups at a fixed clock time; spread background work. Do not poll for changes. — **Documented**, 2026-10-26, https://wiki.musicbrainz.org/MusicBrainz_API/Rate_Limiting and https://wiki.musicbrainz.org/MusicBrainz_API
 - **User-Agent:** required, "with enough information ... to contact the application maintainers", format `Application name/<version> ( contact-url )` or `( contact-email )`. Blank, `Java`, `Python-urllib`, `Jakarta Commons-HttpClient` count as "anonymous" and share a throttled pool. — **Documented**, 2026-10-26, Rate_Limiting page.
 - **No auth / no key** for reads; JSON via `fmt=json` (or `Accept: application/json`). — **Documented**, 2026-10-26, MusicBrainz_API page.
-- **Latency:** search requests took ~1–5 s each on 26 Oct 2026 (probe below), so the real pace is under 1 req/s anyway; a first fill of 150 artists (search + lookup each) took __PROBE_MIN__ min. — **Verified**, 2026-10-26.
+- **Latency:** search requests took ~1–5 s each on 26 Oct 2026 (probe below), so the real pace is under 1 req/s anyway; the time for a first fill of 150 artists (search + lookup each) is not measured yet (T6). — **Verified** (per-request latency) / **Open** (first-fill time), 2026-10-26.
 
 ## Endpoints (all `https://musicbrainz.org/ws/2/`, host `musicbrainz.org` only)
 - **Artist search (name only):** `GET /ws/2/artist?query=<lucene>&limit=5&fmt=json` (limit 1–100, default 25). Results carry `score` (0–100), `name`, `sort-name`, `aliases`, `country`, `area`, `life-span`, and community `tags` (no `genres` in search results). Quote the name (`"..."`) and escape Lucene specials, or pass `dismax=true`. — **Verified**, 2026-10-26 (probe), https://wiki.musicbrainz.org/MusicBrainz_API/Search
@@ -29,7 +29,7 @@ Facts for M10 WI 9 Genres & decades (design [M10-insights-v3.md](../design/M10-i
 ## Match rate on the user's real library (probe, 26 Oct 2026)
 Copy of the live `library.db` (temp dir, read-only, outside the repo; deleted after); events with `reconciled_with IS NULL`; top 150 artists by listening time; names only, HTTPS, ≤ 1 req/s, own User-Agent. "Confident" = an exact name or alias match (case, accents and punctuation folded) that is the top result with score ≥ 90 and no second artist of the same name; "same name" = the exact name is the top hit but other artists share it (name-only can't pick). Aggregates only; no names or values recorded.
 
-__PROBE_RESULTS__
+**Open (T6):** results not recorded yet. The probe must be re-run (with the user's approval to use their artist names) and only the aggregate rates written here.
 
 ## Gotchas
 - A name-only search can't tell apart artists who share a name: keep them as a separate "same name" class (pick the top-scored, or show as unknown) rather than guessing silently.

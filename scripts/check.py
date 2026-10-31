@@ -137,6 +137,26 @@ def check_no_oembed_or_tokens_logged():
         print("--- no secrets in logs: FAIL\n" + "\n".join(bad))
 
 
+def check_no_debug_output():
+    # Review M10 WI 9-spec: uncommitted perf probes (eprintln!("LAP ..")) broke cargo fmt and would
+    # print timings in the app. Non-test Rust prints nothing; lib.rs's non-Windows fatal_box is the one exception.
+    bad = [f"{p.relative_to(ROOT)}:{i}" for p in (TAURI / "src").rglob("*.rs") if p.name != "lib.rs"
+           for i, line in enumerate(re.split(r"#\[cfg\(test\)\]\s*mod tests\b", p.read_text(encoding="utf-8"))[0].splitlines(), 1)
+           if re.search(r"\b(e?println|dbg)!\(", line)]
+    if bad:
+        failures.append("no debug output")
+        print("--- no debug output: FAIL (no eprintln!/println!/dbg! outside tests)\n" + "\n".join(bad))
+
+
+def check_kb_placeholders():
+    # Review M10 WI 9-spec: open-music-db.md kept __PROBE_MIN__ under a **Verified** tag.
+    bad = [f"{p.relative_to(ROOT)}:{i}" for p in (ROOT / "docs/kb").glob("*.md")
+           for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if re.search(r"__[A-Z_]+__", line)]
+    if bad:
+        failures.append("kb placeholders")
+        print("--- kb placeholders: FAIL (fill or remove)\n" + "\n".join(bad))
+
+
 def check_spotify_rules():
     # M5 plan rules (BRD 11.1, D27; TSD §7; KB client-ID decision) for src-tauri/src/spotify/:
     # Playlist Studio etc. never touch listening data or exported playlists; nothing logs; no
@@ -712,6 +732,10 @@ def check_source_map():
                 rel = f.relative_to(ROOT).as_posix()
                 if not any(rel == m or rel.startswith(m + "/") for m in mapped):
                     bad.append(f"unmapped: {rel}")
+    # M10 WI 5 review: 0011 hid behind the directory row; every migration is named in it.
+    sm = (ROOT / "docs/SOURCE_MAP.md").read_text(encoding="utf-8")
+    bad += [f"migration not named in SOURCE_MAP: {f.stem}" for f in sorted((TAURI / "migrations").glob("*.sql"))
+            if f"`{f.stem}`" not in sm]
     if bad:
         failures.append("source map")
         print("--- source map: FAIL\n" + "\n".join(bad))
@@ -961,6 +985,8 @@ if (ROOT / "package.json").exists():
     run("vitest", "npx vitest run --passWithNoTests", ROOT)
 check_hosts()
 check_no_oembed_or_tokens_logged()
+check_no_debug_output()
+check_kb_placeholders()
 check_one_item_summary()
 check_events()
 check_settings_paths()

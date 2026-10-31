@@ -108,6 +108,7 @@ fn configure(conn: &mut Connection) -> Result<(), AppError> {
     // 64 MB page cache (default 2 MB): random dedupe_hash index inserts at 500k events ran ~3x
     // slower without it (NFR-04 import, M4 WI 9). A ceiling, filled only as pages are read.
     conn.pragma_update(None, "cache_size", -65536)?;
+    conn.pragma_update(None, "mmap_size", 1i64 << 30)?;
     conn.busy_timeout(Duration::from_secs(5))?;
     migrate(conn)
 }
@@ -226,6 +227,23 @@ mod tests {
             .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 1, "re-running migrations must not touch data");
+    }
+
+    /// 0011 (M10 WI 5): `listening_event_norm` is replaced by `listening_event_norm_time`, which
+    /// report.rs names with INDEXED BY (a missing index there is a query error, not a slow query).
+    #[test]
+    fn v11_swaps_the_norm_index() {
+        let c = open_in_memory().unwrap();
+        let idx: Vec<String> = c
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'listening_event_norm%'",
+            )
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(idx, ["listening_event_norm_time"]);
     }
 
     #[test]
