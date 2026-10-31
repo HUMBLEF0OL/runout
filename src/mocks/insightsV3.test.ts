@@ -53,6 +53,9 @@ describe("Insights v3 mocks (API.md §4.1, FR-048 coverage rule)", () => {
     const sep = await getPeriodReport({ grain: "month", vs: "prev", at: "2026-09" });
     expect(sep.coverage.desktop_only_since).toBeNull();
     expect(streak(sep)).not.toMatch(/on this PC/);
+    const all = await getPeriodReport({ grain: "all", vs: "prev", at: null }); // all time: all-device dates only (design §4.4)
+    expect(all.coverage.desktop_only_since).not.toBeNull();
+    expect(streak(all)).not.toMatch(/on this PC/);
   });
 
   it("list_plays with a date keeps that local day only (Trends calendar)", async () => {

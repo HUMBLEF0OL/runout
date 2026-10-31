@@ -1379,11 +1379,22 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     let r = resolve(q, today, first)?;
     let (model, cov) = period_coverage(cx, &r, STREAK_BACK_DAYS + 31)?;
     let hidden = cov.no_compare_reason.is_some();
-    let on_pc = cov.desktop_only_since.is_some();
+    let all_time = r.grain == Grain::All;
+    // Design §4.4: past the export, a bounded period counts this PC ("on this PC"); all time
+    // counts all-device dates only (the export's first to last date).
+    let on_pc = cov.desktop_only_since.is_some() && !all_time;
     let end = r.cur.1.min(today);
     let shown = (r.cur.0, end);
+    let dev_span = model
+        .export
+        .filter(|_| all_time && cov.desktop_only_since.is_some())
+        .map(|(a, b)| (a.max(shown.0), b.min(end)));
+    // days listened, streak and the fingerprint read these dates
+    let (fig, fig_src) = match dev_span {
+        Some(s) => (s, Src::All),
+        None => (shown, if on_pc { Src::Desktop } else { Src::All }),
+    };
     let vs: Vec<Span> = r.vs.clone().unwrap_or_default();
-    let all_time = r.grain == Grain::All;
     let like = Src::Like(&cov);
     let basis = if on_pc { Src::Desktop } else { Src::All };
 
@@ -1394,10 +1405,11 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     let agg_like = (!all_time && !hidden).then(|| AggAcc::new(like, &cur_vs));
     let agg_all =
         (!all_time && (hidden || !like.is_base())).then(|| AggAcc::new(Src::All, &[r.cur]));
-    let agg_pc = on_pc.then(|| AggAcc::new(Src::Desktop, &[r.cur]));
+    let fig_own = on_pc || dev_span.is_some();
+    let agg_pc = fig_own.then(|| AggAcc::new(fig_src, &[fig]));
     let artists_all =
         (!by_artist_rollup(cx, Src::All, r.cur, first)).then(|| ArtistAcc::new(Src::All, r.cur));
-    let artists_pc = on_pc.then(|| ArtistAcc::new(Src::Desktop, r.cur));
+    let artists_pc = fig_own.then(|| ArtistAcc::new(fig_src, fig));
     let clock_cur = (!all_time).then(|| ClockAcc::new(r.cur));
     let clock_base = ClockAcc::new((end - Months::new(6) + TimeDelta::days(1), end));
     // Repeat now and in the average's months: one figure from the first of those months to the
@@ -1507,7 +1519,12 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
 
     // Days listened, streak and covered days: this PC only past the export (design §4.4).
     let class = |d: NaiveDate| {
-        if !on_pc {
+        if dev_span.is_some() {
+            match model.class(d) {
+                CoverageClass::AllDevices => CoverageClass::AllDevices,
+                _ => CoverageClass::NoData,
+            }
+        } else if !on_pc {
             model.class(d)
         } else if model.ran(d) {
             CoverageClass::ThisPc
@@ -1515,23 +1532,23 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
             CoverageClass::NoData
         }
     };
-    let look = end - TimeDelta::days(STREAK_BACK_DAYS);
-    let basis_days = daily(cx, basis, (look.min(r.cur.0), end))?;
+    let look = fig.1 - TimeDelta::days(STREAK_BACK_DAYS);
+    let basis_days = daily(cx, basis, (look.min(fig.0), fig.1))?;
     let played_days = played(&basis_days);
-    let streak = if end >= r.cur.0 {
-        streaks(look, end, &played_days, class).1
+    let streak = if fig.1 >= fig.0 {
+        streaks(look, fig.1, &played_days, class).1
     } else {
         0
     };
-    let covered_days = shown
+    let covered_days = fig
         .0
         .iter_days()
-        .take_while(|d| *d <= shown.1)
+        .take_while(|d| *d <= fig.1)
         .filter(|d| class(*d) != CoverageClass::NoData)
         .count() as i64;
-    let days_listened_now = played_days.range(shown.0..=shown.1.max(shown.0)).count() as i64;
+    let days_listened_now = played_days.range(fig.0..=fig.1.max(fig.0)).count() as i64;
     let mut days_listened = c(|a| a.days as f64, round0);
-    if on_pc {
+    if fig_own {
         days_listened.value = days_listened_now as f64;
     }
     let finished_pct = all.finished_pct().map(|v| {

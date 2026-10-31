@@ -456,10 +456,12 @@ pub enum ArcKind {
     Constant,
 }
 
-/// An artist's share of the time in a run of `(artist ms, all ms)` months.
-pub fn window_share(m: &[(i64, i64)]) -> f64 {
+/// An artist's share of the time in a run of `(artist ms, all ms)` months. A month with no time at
+/// all (`(0, 0)`: no data, design §4.4) adds nothing; a run of only such months has no share
+/// (`None`): unknown, never silence.
+pub fn window_share(m: &[(i64, i64)]) -> Option<f64> {
     let (a, t) = m.iter().fold((0, 0), |(a, t), x| (a + x.0, t + x.1));
-    if t == 0 { 0.0 } else { a as f64 / t as f64 }
+    (t > 0).then(|| a as f64 / t as f64)
 }
 
 /// Constant: in the top 20 in ≥ 75% of the years.
@@ -473,6 +475,9 @@ pub fn is_constant(years_in_top: usize, years: usize) -> bool {
 ///   after it, and some listening before it;
 /// - rising: last-3-month share > 0 and ≥ 2× the 6 months before;
 /// - fading: the 6 months before ≥ 3%, the last 3 ≤ 0.5× that.
+///
+/// Months with no time at all are no data (design §4.4): left out of every window, never quiet;
+/// rising and fading need data on both sides.
 pub fn arc(months: &[(i64, i64)], constant: bool) -> Option<ArcKind> {
     let n = months.len();
     if back_again_at(months).is_some() {
@@ -481,33 +486,41 @@ pub fn arc(months: &[(i64, i64)], constant: bool) -> Option<ArcKind> {
     if n >= ARC_RECENT + ARC_BEFORE {
         let recent = window_share(&months[n - ARC_RECENT..]);
         let before = window_share(&months[n - ARC_RECENT - ARC_BEFORE..n - ARC_RECENT]);
-        if recent > 0.0 && recent >= RISING * before {
-            return Some(ArcKind::Rising);
-        }
-        if before >= FADING_PAST && recent <= FADING * before {
-            return Some(ArcKind::Fading);
+        if let Some((recent, before)) = recent.zip(before) {
+            if recent > 0.0 && recent >= RISING * before {
+                return Some(ArcKind::Rising);
+            }
+            if before >= FADING_PAST && recent <= FADING * before {
+                return Some(ArcKind::Fading);
+            }
         }
     }
     constant.then_some(ArcKind::Constant)
 }
 
 /// Back again's months: `(first quiet month, comeback month)` as indexes into `months`, or `None`.
+/// A no-data month (no time at all) neither counts toward the quiet run nor breaks it, as a
+/// no-data day in a streak (design §4.4).
 pub fn back_again_at(months: &[(i64, i64)]) -> Option<(usize, usize)> {
     let n = months.len();
     let share = |i: usize| window_share(&months[i..=i]);
     let recent_from = n.saturating_sub(ARC_RECENT);
-    let back = (recent_from..n).find(|&i| share(i) >= BACK_AGAIN)?;
+    let back = (recent_from..n).find(|&i| share(i).is_some_and(|s| s >= BACK_AGAIN))?;
     // step over recent non-quiet months before the comeback, then count the quiet run
     let mut end = back;
-    while end > recent_from && share(end - 1) >= BACK_QUIET {
+    while end > recent_from && share(end - 1).is_none_or(|s| s >= BACK_QUIET) {
         end -= 1;
     }
-    let mut start = end;
-    while start > 0 && share(start - 1) < BACK_QUIET {
+    let (mut start, mut quiet) = (end, 0);
+    while start > 0 && share(start - 1).is_none_or(|s| s < BACK_QUIET) {
         start -= 1;
+        quiet += usize::from(share(start).is_some());
     }
-    (end - start >= BACK_QUIET_MONTHS && months[..start].iter().any(|m| m.0 > 0))
-        .then_some((start, back))
+    // the run starts at its first quiet month with data
+    while start < end && share(start).is_none() {
+        start += 1;
+    }
+    (quiet >= BACK_QUIET_MONTHS && months[..start].iter().any(|m| m.0 > 0)).then_some((start, back))
 }
 
 /// "May have taken time from" (estimate): for a fading artist, the others whose share rose most
@@ -530,8 +543,12 @@ pub fn moved_most(
         .filter(|(a, m)| a.as_str() != artist && m.len() >= ARC_RECENT + ARC_BEFORE)
         .map(|(a, m)| {
             let n = m.len();
+            // no data on either side: no move (design §4.4)
             let rise = window_share(&m[n - ARC_RECENT..])
-                - window_share(&m[n - ARC_RECENT - ARC_BEFORE..n - ARC_RECENT]);
+                .zip(window_share(
+                    &m[n - ARC_RECENT - ARC_BEFORE..n - ARC_RECENT],
+                ))
+                .map_or(0.0, |(r, b)| r - b);
             (sign * rise, a.as_str())
         })
         .filter(|(r, _)| *r > 0.0)
@@ -738,6 +755,31 @@ mod tests {
                 artists: vec!["r".into()]
             }]
         );
+        // a no-data month (no time at all, as history.rs builds it) inside an era doesn't split it
+        // lifetime q 3/7, r 4/7: each holds 100% of its months (≥ 1.5 × lifetime)
+        let months: Vec<_> = ["q", "q", "q", "r", "r", "", "r", "r"]
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                let ms = if a.is_empty() { 0 } else { 100 };
+                month(&format!("2026-{:02}", i + 1), &[(a, ms)])
+            })
+            .collect();
+        assert_eq!(
+            eras(&months),
+            vec![
+                Era {
+                    from: "2026-01".into(),
+                    to: "2026-03".into(),
+                    artists: vec!["q".into()]
+                },
+                Era {
+                    from: "2026-04".into(),
+                    to: "2026-08".into(),
+                    artists: vec!["r".into()]
+                },
+            ]
+        );
         assert!(eras(&[]).is_empty());
     }
 
@@ -786,6 +828,34 @@ mod tests {
         assert_eq!(arc(&flat, false), None);
         assert!(is_constant(3, 4) && !is_constant(2, 4) && !is_constant(0, 0));
 
+        // No-data months (no time at all, design §4.4) are unknown, never silence.
+        let gap = |m: &mut Vec<(i64, i64)>, r: std::ops::Range<usize>| m[r].fill((0, 0));
+        // 5% in the 6 months before, the last 3 no data: not fading (was: share 0 → Fading)
+        let mut unknown_now = months(|_| 50);
+        gap(&mut unknown_now, 33..36);
+        assert_eq!(window_share(&unknown_now[33..]), None);
+        assert_eq!(arc(&unknown_now, false), None);
+        // 3% now, the 6 months before no data: not rising
+        let mut unknown_before = months(|i| if i >= 33 { 30 } else { 0 });
+        gap(&mut unknown_before, 27..33);
+        assert_eq!(arc(&unknown_before, false), None);
+        // a no-data month inside a window only drops out of it: 2 data months at 5%, 1 no data = 5%
+        let mut part = months(|_| 50);
+        gap(&mut part, 34..35);
+        assert_eq!(window_share(&part[33..]), Some(0.05));
+        // heard in 0–4, 5–33 no data, 3% in 34: the "quiet" run is unknown, not back again
+        let mut back_unknown = back.clone();
+        gap(&mut back_unknown, 5..34);
+        assert_eq!(back_again_at(&back_unknown), None);
+        assert_eq!(arc(&back_unknown, false), None);
+        // 20 quiet data months after 9 no-data ones (5–13): back again, quiet from 14;
+        // with only 17 quiet data months it isn't (14–16 no data too)
+        let mut back_holes = back.clone();
+        gap(&mut back_holes, 5..14);
+        assert_eq!(back_again_at(&back_holes), Some((14, 34)));
+        gap(&mut back_holes, 14..17);
+        assert_eq!(back_again_at(&back_holes), None);
+
         let artists: HashMap<String, Vec<(i64, i64)>> = [
             ("fader", fading.clone()),
             ("big", months(|i| if i >= 33 { 100 } else { 0 })), // +10 points
@@ -796,6 +866,13 @@ mod tests {
         .map(|(a, m)| (a.to_owned(), m))
         .collect();
         assert_eq!(took_time_from("fader", &artists), vec!["big", "small"]);
+        // an artist with no data in the windows moved nowhere (was: −3 points from no data)
+        let mut both = artists.clone();
+        let mut none_now = months(|_| 30);
+        gap(&mut none_now, 33..36);
+        both.insert("unknown".into(), none_now);
+        assert_eq!(moved_most("big", &both, false)[0], "fader");
+        assert!(!moved_most("big", &both, false).contains(&"unknown".to_owned()));
         // the other way round: who fell most (for a rising artist), the fader first
         assert_eq!(moved_most("big", &artists, false)[0], "fader");
     }

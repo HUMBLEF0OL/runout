@@ -111,7 +111,7 @@ export function Report({ q, today, onPeriod }: { q: PeriodQuery; today: string; 
   if (rep.loading) return <ReportSkel />;
   if (rep.error) return <ErrorBanner error={rep.error} title="Couldn’t load the report." onRetry={rep.reload} />;
   const res = rep.data!, r = res.data;
-  const pc = !!res.coverage.desktop_only_since;
+  const pc = !!res.coverage.desktop_only_since && q.grain !== "all"; // design §4.4: all time counts all-device dates only
   const name = vsName(q, r.period.vs_from);
   const unit = unitOf(q.grain);
   if (!r.tiles.plays.value && !r.tiles.ms.value) return <>
@@ -295,7 +295,7 @@ function Ratio({ r, name, res }: { r: PeriodReport; name: string; res: Res }) {
 /** Listening fingerprint (design §4.2): five 0–100 measures against your own 12-month average. On screen only. */
 const AXES: [keyof Fingerprint, string][] = [["regularity", "Regularity"], ["discovery", "Discovery"], ["focus", "Focus"], ["variety", "Variety"], ["repeat", "Repeat"]];
 function Print({ r, label: period, res, pc }: { r: PeriodReport; label: string; res: Res; pc: boolean }) {
-  const label = pc ? `${period}, on this PC` : period; // API.md §4: fingerprint.now counts source S while desktop_only_since is set
+  const label = pc ? `${period}, on this PC` : period; // API.md §4.1: fingerprint.now counts source S while desktop_only_since is set (not for all time)
   const reduce = useReducedMotion();
   const { now, average } = r.fingerprint;
   const [cx, cy, R] = [160, 128, 84];

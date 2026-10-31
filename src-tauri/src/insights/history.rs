@@ -318,7 +318,11 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
         let n = m.len();
         let recent = window_share(&m[n - ARC_RECENT..]);
         let before = window_share(&m[n - ARC_RECENT - ARC_BEFORE..n - ARC_RECENT]);
-        let change = (before > 0.0).then(|| ((recent / before - 1.0) * 100.0).round());
+        let change = recent
+            .zip(before.filter(|b| *b > 0.0))
+            .map(|(r, b)| ((r / b - 1.0) * 100.0).round());
+        // arc() gave rising or fading only with data on both sides (no-data months, design §4.4)
+        let recent = recent.unwrap_or(0.0);
         let at = |i: usize| Some(month(arc_months[i]));
         let (since, quiet_from, change_pct, related, order) = match kind {
             ArcKind::Rising => (
@@ -339,7 +343,7 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
                 let (q, b) = back_again_at(m).expect("arc said back again");
                 (at(b), at(q), None, vec![], recent)
             }
-            ArcKind::Constant => (None, None, None, vec![], window_share(m)),
+            ArcKind::Constant => (None, None, None, vec![], window_share(m).unwrap_or(0.0)),
         };
         let mut related_names = vec![];
         for r in related {

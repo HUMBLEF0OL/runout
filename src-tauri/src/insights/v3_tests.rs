@@ -234,13 +234,14 @@ fn texts(lines: &Value) -> Vec<String> {
 }
 
 #[test]
-fn september_report_compares_export_only() {
+fn september_report_hides_a_partly_covered_august() {
     let c = history();
     let r = j(report(&cx(&c), &period("month", "prev", Some("2026-09"))).unwrap());
-    // the desktop log starts 2 Sep, after August began: export only on both sides
+    // August starts before the first play (10 Aug): not fully covered, so no delta (FR-048)
     assert_eq!(
         r["coverage"],
-        json!({"compared_sources": ["E"], "desktop_only_since": null, "gaps": [], "no_compare_reason": null})
+        json!({"compared_sources": [], "desktop_only_since": null, "gaps": [],
+               "no_compare_reason": "Your history starts on 10 Aug 2026, so the period compared isn't fully covered."})
     );
     assert_eq!(r["sources"], json!(["U", "S", "E"]));
     let d = &r["data"];
@@ -250,38 +251,41 @@ fn september_report_compares_export_only() {
                "vs_to": "2026-08-31", "prev_at": "2026-08", "next_at": "2026-10", "days": 30})
     );
     let t = &d["tiles"];
-    // value: S1 + S2 + S4 + S5 + L2 (L1 reconciled); now: export rows; before: A1 + A2
+    // value: S1 + S2 + S4 + S5 + L2 (L1 reconciled); August isn't fully covered: no now / before
     assert_eq!(
         t["ms"],
-        json!({"value": 432_000.0, "now": 312_000.0, "before": 300_000.0})
+        json!({"value": 432_000.0, "now": null, "before": null})
     );
-    assert_eq!(t["plays"], json!({"value": 2.0, "now": 1.0, "before": 2.0}));
+    assert_eq!(
+        t["plays"],
+        json!({"value": 2.0, "now": null, "before": null})
+    );
     assert_eq!(
         t["artists"],
-        json!({"value": 2.0, "now": 1.0, "before": 1.0})
+        json!({"value": 2.0, "now": null, "before": null})
     );
     // Birch (first play S1, export) and Cedar (L2, desktop); like for like counts Birch
     assert_eq!(
         t["new_artists"],
-        json!({"value": 2.0, "now": 1.0, "before": 1.0})
+        json!({"value": 2.0, "now": null, "before": null})
     );
     assert_eq!(
         t["days_listened"],
-        json!({"value": 2.0, "now": 1.0, "before": 2.0})
+        json!({"value": 2.0, "now": null, "before": null})
     );
     assert_eq!(t["streak"], json!(0)); // 30 Sep is a covered day without a play
     assert_eq!(
         t["finished_pct"],
-        json!({"value": 25.0, "now": 25.0, "before": 50.0})
+        json!({"value": 25.0, "now": null, "before": null})
     ); // 1 of 4 / 1 of 2
     let tl = d["timeline"].as_array().unwrap();
     assert_eq!(tl.len(), 30);
     assert_eq!(
         tl[1],
-        json!({"key": "2026-09-02", "ms": 300_000, "before_ms": 0, "coverage": "all_devices"})
+        json!({"key": "2026-09-02", "ms": 300_000, "before_ms": null, "coverage": "all_devices"})
     );
-    assert_eq!(tl[9]["before_ms"], json!(200_000)); // 10 Sep ↔ 10 Aug
-    assert_eq!(tl[19]["ms"], json!(0)); // L2 is desktop: not in the export-only line
+    assert_eq!(tl[9]["before_ms"], json!(null)); // no comparison line
+    assert_eq!(tl[19]["ms"], json!(120_000)); // L2: no comparison, so every source counts
     assert_eq!(
         texts(&d["lines"]),
         vec![
@@ -321,7 +325,7 @@ fn september_report_compares_export_only() {
     );
     let top = &d["most_played"]["artists"];
     assert_eq!(top[0]["name"], json!("Birch"));
-    assert_eq!(top[0]["is_new"], json!(true)); // not in August's export ranking
+    assert_eq!(top[0]["is_new"], json!(false)); // no comparison: no ranking against August
     assert_eq!(top[0]["spark"].as_array().unwrap().len(), 12);
 }
 
@@ -467,7 +471,7 @@ fn discovery_and_habits_for_september() {
     let d = &d["data"];
     assert_eq!(
         d["new_artists"],
-        json!({"value": 2.0, "now": 1.0, "before": 1.0})
+        json!({"value": 2.0, "now": null, "before": null})
     );
     assert_eq!(d["days_per_new"], json!(15.0)); // 30 covered days / 2
     assert_eq!(
@@ -708,8 +712,9 @@ fn all_time_tags_from_the_rollup_match_the_event_count() {
         json!({"rows": [{"tag": "night", "share_pct": 100.0}], "covered_pct": 28.6})
     );
     assert_eq!(all["data"]["tags"], custom["data"]["tags"]);
-    // all time's totals come from the rollups: the same as counting every event
-    for k in ["ms", "plays", "artists", "days_listened", "finished_pct"] {
+    // all time's totals come from the rollups: the same as counting every event (days listened
+    // differs on purpose: all time counts all-device dates only, a custom period past the export this PC)
+    for k in ["ms", "plays", "artists", "finished_pct"] {
         assert_eq!(
             all["data"]["tiles"][k]["value"], custom["data"]["tiles"][k]["value"],
             "{k}"
@@ -869,4 +874,88 @@ fn habits_names_a_repeat() {
         json!([{"kind": "repeat", "name": "Six", "by": "Elm", "start_local": "2026-10-12T09:59",
                 "end_local": "2026-10-12T14:00", "tracks": 1, "ms": 300_000, "times": 5}])
     );
+}
+
+/// Design §4.4: all-time figures use all-device dates only (the export's first to last date), not
+/// "this PC" (found on the real history in M10 WI 10: All time showed 5 days on this PC) and not
+/// the this-PC dates past the export either.
+#[test]
+fn all_time_report_counts_all_device_dates_only() {
+    let c = history();
+    let r = j(report(&cx(&c), &period("all", "prev", None)).unwrap());
+    assert_eq!(r["coverage"]["desktop_only_since"], json!("2026-10-04"));
+    // play dates: 10 Aug, 11 Aug, 2 Sep, 20 Sep, 3 Oct | 10 Oct, 12 Oct past the export (S2, S4, S5 are < 30 s)
+    let t = &r["data"]["tiles"];
+    assert_eq!(t["days_listened"]["value"], json!(5.0));
+    assert_eq!(t["days_listened"]["now"], Value::Null);
+    // the run at the export's last date: 3 Oct alone (2 Oct is an all-device date without plays)
+    assert_eq!(t["streak"], json!(1));
+    let lines = r["data"]["lines"].to_string();
+    assert!(!lines.contains("on this PC"), "{lines}");
+}
+
+/// Every Insights v3 payload as JSON, for the M10 WI 10 contract diff (Rust vs `src/mocks/`) and the
+/// real-history hand-check. Ignored: `RUNOUT_DUMP=<dir> cargo test dump_payloads -- --ignored`;
+/// `RUNOUT_DB=<copy of library.db>` runs on that copy (local zone, now) instead of the fixture.
+/// ponytail: writes files only, no asserts; the diff is done by hand on the dumps.
+#[test]
+#[ignore]
+fn dump_payloads() {
+    let dir = std::path::PathBuf::from(std::env::var("RUNOUT_DUMP").expect("RUNOUT_DUMP"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let month = std::env::var("RUNOUT_MONTH").unwrap_or("2026-09".into());
+    match std::env::var("RUNOUT_DB") {
+        Ok(p) => {
+            let c = db::open(std::path::Path::new(&p)).unwrap();
+            db::rebuild_rollups(&c).unwrap();
+            let cx = Ctx {
+                conn: &c,
+                include_private: false,
+                tz: &chrono::Local,
+                now: Utc::now(),
+            };
+            dump(&cx, &dir, &month);
+        }
+        Err(_) => dump(&cx(&history()), &dir, &month),
+    }
+}
+
+fn dump<Tz: TimeZone>(cx: &Ctx<'_, Tz>, dir: &std::path::Path, month: &str) {
+    let w = |name: &str, v: Value| {
+        std::fs::write(
+            dir.join(format!("{name}.json")),
+            serde_json::to_string_pretty(&v).unwrap(),
+        )
+        .unwrap()
+    };
+    let m = period("month", "prev", Some(month));
+    let all = period("all", "prev", None);
+    w("period_report_month", j(report(cx, &m).unwrap()));
+    w("period_report_all", j(report(cx, &all).unwrap()));
+    w("trends", j(trends(cx, Measure::Hours).unwrap()));
+    w("discovery_month", j(discovery(cx, &m).unwrap()));
+    w("discovery_all", j(discovery(cx, &all).unwrap()));
+    w("habits_month", j(habits(cx, &m).unwrap()));
+    w("habits_all", j(habits(cx, &all).unwrap()));
+    w("records", j(records(cx).unwrap()));
+    w("data_coverage", j(data_coverage(cx).unwrap()));
+    w(
+        "genres_month",
+        j(crate::enrich::genres::genres_decades(cx, &m).unwrap()),
+    );
+    let q: ExploreQuery =
+        serde_json::from_value(json!({"series": [{"kind": "artist", "name": "aster"}],
+        "from": "2026-08-01", "to": "2026-10-31", "grain": "month", "measure": "plays"}))
+        .unwrap();
+    w("explore", j(explore(cx, &q).unwrap()));
+    w("explore_views", j(list_explore_views(cx.conn).unwrap()));
+    for (n, r) in [
+        ("listening_30d", super::Range::Month),
+        ("listening_all", super::Range::All),
+    ] {
+        w(
+            n,
+            j(super::listening::listening(cx.conn, r, false, cx.now).unwrap()),
+        );
+    }
 }

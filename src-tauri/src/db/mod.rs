@@ -20,6 +20,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../../migrations/0010_explore_view.sql"),
     include_str!("../../migrations/0011_insights_perf.sql"),
     include_str!("../../migrations/0012_enrich.sql"),
+    include_str!("../../migrations/0013_repair_0009_indexes.sql"),
 ];
 
 /// Schema version a fully migrated library has.
@@ -232,6 +233,26 @@ mod tests {
 
     /// 0011 (M10 WI 5): `listening_event_norm` is replaced by `listening_event_norm_time`, which
     /// report.rs names with INDEXED BY (a missing index there is a query error, not a slow query).
+    /// 0013 (M10 WI 10): a library that ran a pre-release 0009 without its indexes gets them back;
+    /// habits.rs names them with INDEXED BY, so without them How you listen is a query error.
+    #[test]
+    fn v13_restores_indexes_a_draft_0009_left_out() {
+        let mut c = open_in_memory().unwrap();
+        c.execute_batch(
+            "DROP INDEX listening_event_duration; DROP INDEX listening_event_shuffle; PRAGMA user_version = 12;",
+        )
+        .unwrap();
+        migrate(&mut c).unwrap();
+        let n: i64 = c
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name IN ('listening_event_duration', 'listening_event_shuffle')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 2);
+    }
+
     #[test]
     fn v11_swaps_the_norm_index() {
         let c = open_in_memory().unwrap();

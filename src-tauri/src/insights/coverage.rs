@@ -246,7 +246,9 @@ impl Model {
     /// period: export and desktop (`['S','E']`) or export only (`['E']`) while `cur` ends on or
     /// before the export's last date; desktop only (`['S']`, `desktop_only_since` set) once it reaches
     /// past it, or when there is no export. When no source covers both sides the delta is hidden
-    /// and `no_compare_reason` says why. The loaded window must hold `cur` and `vs`.
+    /// and `no_compare_reason` says why, as when a `vs` period starts before its source covers it
+    /// (the desktop log: `pc_covers`; the export: its first date). The loaded window must hold
+    /// `cur` and `vs`.
     pub fn compare(&self, cur: Span, vs: Option<&[Span]>, today: NaiveDate) -> Coverage {
         let end = cur.1.min(today);
         let desktop_only_since = self
@@ -289,6 +291,17 @@ impl Model {
                 });
             }
             vec!["S"]
+        } else if let Some(from) = self
+            .export
+            .map(|(a, _)| a)
+            .filter(|a| vs.iter().any(|s| s.0 < *a))
+        {
+            // the export doesn't reach back over all of an earlier period: its part before the
+            // first export date is no data, not zero listening (design §4.4)
+            return hidden(format!(
+                "Your history starts on {}, so the period compared isn't fully covered.",
+                show(from)
+            ));
         } else if pc {
             vec!["S", "E"]
         } else {
@@ -554,6 +567,46 @@ mod tests {
         assert_eq!(
             before.no_compare_reason.as_deref(),
             Some("There's no listening before 2 Sep 2026.")
+        );
+    }
+
+    /// FR-048: a `vs` period that starts before the export's first date isn't covered there; it is
+    /// hidden, never compared as zero listening.
+    #[test]
+    fn a_period_partly_before_the_history_hides_the_delta() {
+        let c = db(); // export 1–10 Oct, desktop log from 12 Oct
+        let m = Model::load(&c, &Utc, d("2026-09-01"), d("2026-10-19"), now()).unwrap();
+        let cur = (d("2026-10-08"), d("2026-10-10"));
+        let reason =
+            Some("Your history starts on 1 Oct 2026, so the period compared isn't fully covered.");
+        // prev: 28 Sep–4 Oct, three days of it before the first play
+        let prev = m.compare(
+            cur,
+            Some(&[(d("2026-09-28"), d("2026-10-04"))]),
+            d("2026-10-19"),
+        );
+        assert_eq!(prev.compared_sources, Vec::<&str>::new());
+        assert_eq!(prev.no_compare_reason.as_deref(), reason);
+        // usual: one of its periods partly covered is enough to hide it
+        let usual = [
+            (d("2026-09-29"), d("2026-10-01")),
+            (d("2026-10-02"), d("2026-10-04")),
+        ];
+        assert_eq!(
+            m.compare(cur, Some(&usual), d("2026-10-19"))
+                .no_compare_reason
+                .as_deref(),
+            reason
+        );
+        // starting on the first date is covered
+        assert_eq!(
+            m.compare(
+                cur,
+                Some(&[(d("2026-10-01"), d("2026-10-04"))]),
+                d("2026-10-19")
+            )
+            .compared_sources,
+            ["E"]
         );
     }
 

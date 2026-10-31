@@ -188,8 +188,9 @@ export function insightsV3(find: Find, freshness: () => unknown) {
         const vm = vs1 && addMonths(vs1.from.slice(0, 7), i);
         return { key: m, ms: ds.reduce((a, d) => a + basisMs(d, tb), 0), coverage: majority(ds), before_ms: hidden || !vm ? null : days(vm + "-01", lo(monthEnd(vm), TODAY)).reduce((a, d) => a + basisMs(d, b), 0) };
       });
-    // Design §4.4: past the export's end, days listened, streak and fingerprint count this PC for the whole period.
-    const pc = coverage.desktop_only_since ? measure(r.cur, "S") : all, onPc = coverage.desktop_only_since ? " on this PC" : "";
+    // Design §4.4: past the export's end, days listened, streak and fingerprint count this PC for a bounded period; all time counts all-device dates only.
+    const past = !!coverage.desktop_only_since, onPcOnly = past && q.grain !== "all";
+    const pc = onPcOnly ? measure(r.cur, "S") : past ? measure({ from: r.cur.from, to: EXPORT_END }, "all") : all, onPc = onPcOnly ? " on this PC" : "";
     const lines: Sentence[] = [];
     const bm = before("ms");
     if (bm && like.ms && Math.abs(like.ms / bm - 1) >= 0.1) {
