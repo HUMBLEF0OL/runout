@@ -1257,23 +1257,54 @@ fn biggest_day<Tz: TimeZone>(cx: &Ctx<Tz>, model: &Model) -> Result<Option<(Naiv
     Ok(row.and_then(|(d, ms)| super::v3::parse_day(&d).map(|d| (d, ms))))
 }
 
+/// Each artist key's first desktop play's local date, reconciled twins included (the desktop log's
+/// own record, as `coverage::compared` counts it for `['S']`); empty unless that is the comparison.
+pub(crate) fn pc_first_plays<Tz: TimeZone>(
+    cx: &Ctx<Tz>,
+    cov: &Coverage,
+) -> Result<HashMap<String, NaiveDate>> {
+    if cov.compared_sources != ["S"] {
+        return Ok(HashMap::new());
+    }
+    let mut st = cx.conn.prepare(&format!(
+        // MIN's bare column: `local` of the row with the first end time
+        "{} SELECT lower(artist_name), MIN(ended_at_utc), local FROM ev
+         WHERE counts_as_play AND IFNULL(artist_name, '') <> '' GROUP BY 1",
+        Src::Desktop.cte(cx.include_private)
+    ))?;
+    let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(2)?)))?;
+    let mut out = HashMap::new();
+    for r in rows {
+        let (a, local) = r?;
+        if let Some(d) = super::v3::parse_day(&local) {
+            out.insert(a, d);
+        }
+    }
+    Ok(out)
+}
+
 /// New artists (first play in all stored data in the window): the period, and like for like
-/// (counted when that first play is from a compared source) now and in the comparison windows.
+/// now and in the comparison windows: desktop only (`['S']`) counts one when the desktop log also
+/// played it in that window (`pc_first`, from `pc_first_plays`: an export twin doesn't hide it);
+/// export only when that first play is from the export.
 pub(crate) fn new_artists_compared(
     heard: &[FirstHeard],
+    pc_first: &HashMap<String, NaiveDate>,
     cov: &Coverage,
     cur: Span,
     vs: &[Span],
 ) -> Compared {
-    let allowed = |f: &FirstHeard| match cov.compared_sources.as_slice() {
-        ["S"] => f.source == Source::Logger,
+    let allowed = |f: &FirstHeard, s: Span| match cov.compared_sources.as_slice() {
+        ["S"] => pc_first
+            .get(&f.artist)
+            .is_some_and(|d| (s.0..=s.1).contains(d)),
         ["E"] => f.source == Source::Export,
         _ => true,
     };
     let count = |s: Span, like: bool| {
         heard
             .iter()
-            .filter(|f| (s.0..=s.1).contains(&f.local.date()) && (!like || allowed(f)))
+            .filter(|f| (s.0..=s.1).contains(&f.local.date()) && (!like || allowed(f, s)))
             .count() as f64
     };
     compared(
@@ -1434,7 +1465,7 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     let rep_avg = avg_spans
         .as_deref()
         .filter(|_| !merged)
-        .map(|ms| RepeatAcc::new(Src::All, ms));
+        .map(|ms| RepeatAcc::new(basis, ms));
     let tags = (!all_time).then(|| TagAcc::new(r.cur));
     let prev = r.single_vs().or_else(|| vs.first().copied());
     let spark_months = months(month_start_minus(end, 11), end);
@@ -1515,7 +1546,8 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
 
     // New artists (first play in all stored data in the window).
     let heard = terms::first_heard(cx.conn, cx.include_private)?;
-    let new_artists = new_artists_compared(&heard, &cov, r.cur, &vs);
+    let pc_first = pc_first_plays(cx, &cov)?;
+    let new_artists = new_artists_compared(&heard, &pc_first, &cov, r.cur, &vs);
 
     // Days listened, streak and covered days: this PC only past the export (design §4.4).
     let class = |d: NaiveDate| {
@@ -1582,6 +1614,15 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
             .map(|(_, v)| v.0)
             .sum()
     };
+    // a comparison date its sources don't cover is no data: left out of the ghost line, never 0
+    // (design §4.4); desktop only counts the dates the log ran
+    let vs_has = |x: NaiveDate| {
+        if cov.compared_sources == ["S"] {
+            model.ran(x)
+        } else {
+            model.class(x) != CoverageClass::NoData
+        }
+    };
     let mean = |xs: Vec<i64>| {
         (!xs.is_empty()).then(|| (xs.iter().sum::<i64>() as f64 / xs.len() as f64).round() as i64)
     };
@@ -1603,7 +1644,7 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
                         vs.iter()
                             .map(|s| s.0 + TimeDelta::days(i as i64))
                             .zip(vs.iter())
-                            .filter(|(x, s)| *x <= s.1)
+                            .filter(|(x, s)| *x <= s.1 && vs_has(*x))
                             .map(|(x, _)| vs_days.get(&x).map_or(0, |v| v.0))
                             .collect(),
                     )
@@ -1627,11 +1668,12 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
                             vs.iter()
                                 .filter_map(|s| {
                                     let vm = months(s.0, s.1).get(i).copied()?;
-                                    Some(sum(
-                                        &vs_days,
-                                        vm.max(s.0),
-                                        super::v3::month_end(vm).min(s.1),
-                                    ))
+                                    let (a, b) = (vm.max(s.0), super::v3::month_end(vm).min(s.1));
+                                    // most of the month no data: no point
+                                    let n = a.iter_days().take_while(|d| *d <= b);
+                                    let (has, all) =
+                                        n.fold((0, 0), |(h, t), d| (h + vs_has(d) as i64, t + 1));
+                                    (2 * has >= all).then(|| sum(&vs_days, a, b))
                                 })
                                 .collect(),
                         )
@@ -1725,7 +1767,7 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     let (repeat_plays, avg_repeats) = repeats.join()?;
     parts.repeat_plays = repeat_plays;
     let average = match avg_spans.as_deref() {
-        Some(ms) => average_fingerprint(cx, &model, &heard, ms, &avg_repeats)?,
+        Some(ms) => average_fingerprint(cx, &model, on_pc, &heard, ms, &avg_repeats)?,
         None => None,
     };
 
@@ -1878,34 +1920,44 @@ fn average_spans(start: NaiveDate, end: NaiveDate) -> Option<Vec<Span>> {
 
 /// Your own 12-month average: the mean of each measure over the 12 calendar months before the
 /// period's first month (`spans`, from `average_spans`; months without listening left out), with
-/// their Repeat plays (`repeats`, per span); `None` when there are none.
+/// their Repeat plays (`repeats`, per span); `None` when there are none. `on_pc` (the period is
+/// counted on this PC): the months count desktop plays and the dates the log ran, like for like
+/// with now (FR-048); months the log didn't cover have no time and are left out.
 fn average_fingerprint<Tz: TimeZone>(
     cx: &Ctx<Tz>,
     model: &Model,
+    on_pc: bool,
     heard: &[FirstHeard],
     spans: &[Span],
     repeats: &[i64],
 ) -> Result<Option<Fingerprint>> {
     let (from, to) = (spans[0].0, spans[spans.len() - 1].1);
-    let mut st = cx.conn.prepare(&format!(
-        "SELECT month, artist, SUM(ms_played) FROM listening_month_artist
-         WHERE month BETWEEN '{}' AND '{}' AND events > 0 AND artist <> ''{} GROUP BY 1, 2",
-        month(from),
-        month(to),
-        cx.private_filter("private_session")
-    ))?;
     let mut artists: HashMap<String, Vec<(String, i64)>> = HashMap::new();
-    for r in st.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    })? {
-        let (m, a, v) = r?;
-        artists.entry(m).or_default().push((a, v));
+    if on_pc {
+        for (m, a, v, _) in super::v3::desktop_month_artists(cx, (from, to))?.0 {
+            artists.entry(m).or_default().push((a, v));
+        }
+    } else {
+        let mut st = cx.conn.prepare(&format!(
+            "SELECT month, artist, SUM(ms_played) FROM listening_month_artist
+             WHERE month BETWEEN '{}' AND '{}' AND events > 0 AND artist <> ''{} GROUP BY 1, 2",
+            month(from),
+            month(to),
+            cx.private_filter("private_session")
+        ))?;
+        for r in st.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })? {
+            let (m, a, v) = r?;
+            artists.entry(m).or_default().push((a, v));
+        }
     }
-    let days = daily(cx, Src::All, (from, to))?;
+    let src = if on_pc { Src::Desktop } else { Src::All };
+    let days = daily(cx, src, (from, to))?;
     let first_month: HashMap<&str, String> = heard
         .iter()
         .map(|f| (f.artist.as_str(), f.local.format("%Y-%m").to_string()))
@@ -1933,7 +1985,13 @@ fn average_fingerprint<Tz: TimeZone>(
             covered_days: a
                 .iter_days()
                 .take_while(|d| d <= b)
-                .filter(|d| model.class(*d) != CoverageClass::NoData)
+                .filter(|d| {
+                    if on_pc {
+                        model.ran(*d)
+                    } else {
+                        model.class(*d) != CoverageClass::NoData
+                    }
+                })
                 .count() as i64,
             plays,
             repeat_plays: repeats[i],

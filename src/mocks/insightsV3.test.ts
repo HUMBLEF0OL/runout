@@ -56,6 +56,18 @@ describe("Insights v3 mocks (API.md §4.1, FR-048 coverage rule)", () => {
     const all = await getPeriodReport({ grain: "all", vs: "prev", at: null }); // all time: all-device dates only (design §4.4)
     expect(all.coverage.desktop_only_since).not.toBeNull();
     expect(streak(all)).not.toMatch(/on this PC/);
+    // period.days is on days listened's basis: 2026 counts the desktop log's dates (12 Jul – 18 Oct, gaps out), not the year's
+    const y = await getPeriodReport({ grain: "year", vs: "prev", at: "2026" });
+    expect(y.data.period.days).toBeLessThanOrEqual(99);
+    expect(y.data.tiles.days_listened.value).toBeLessThanOrEqual(y.data.period.days);
+    expect(streak(y)).toContain(`of ${y.data.period.days} days`);
+  });
+
+  it("Home's month bars carry their coverage: no data is never 0 h (design §4.4)", async () => {
+    setDev({ view: "heavy" });
+    const m = (await getListeningInsights("30d")).data.monthly;
+    expect(m).toHaveLength(12);
+    expect(m.every((x) => ["all_devices", "this_pc", "no_data"].includes(x.coverage))).toBe(true);
   });
 
   it("list_plays with a date keeps that local day only (Trends calendar)", async () => {

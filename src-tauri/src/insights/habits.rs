@@ -8,7 +8,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 
 use super::heuristics::{self, ARC_MONTHS, DiveKind, back_again_at};
-use super::report::{Compared, new_artists_compared};
+use super::report::{Compared, new_artists_compared, pc_first_plays};
 use super::terms::{
     self, CoverageClass, DeviceClass, EndKind, Ev, FirstHeard, NowState, QUICK_BAIL_MIN,
     QUICK_BAIL_MS, QUICK_BAIL_TOP, StartKind, device, discovery_now, end_kind, start_kind,
@@ -110,16 +110,37 @@ fn stick_outcomes<Tz: TimeZone>(
     Ok(out)
 }
 
-/// `(month total ms, artist ms)` for `keys` over the 36 arc months ending `to`'s month.
+/// `(artist ms, month total ms)` for `keys` over the 36 arc months ending `to`'s month. `pc` (the
+/// months reach past the export's end): desktop plays only, as `history::trends` (FR-048).
 fn arc_series<Tz: TimeZone>(
     cx: &Ctx<Tz>,
     keys: &[&str],
     to: NaiveDate,
+    pc: bool,
 ) -> Result<HashMap<String, Vec<(i64, i64)>>> {
     let ms = months(
         month_start(to) - chrono::Months::new(ARC_MONTHS as u32 - 1),
         to,
     );
+    let idx: HashMap<String, usize> = ms.iter().enumerate().map(|(i, m)| (month(*m), i)).collect();
+    if pc {
+        let (rows, totals) = super::v3::desktop_month_artists(cx, (ms[0], to))?;
+        let mut out: HashMap<String, Vec<(i64, i64)>> = keys
+            .iter()
+            .map(|k| {
+                let t = ms
+                    .iter()
+                    .map(|m| (0, totals.get(&month(*m)).copied().unwrap_or(0)));
+                ((*k).to_owned(), t.collect())
+            })
+            .collect();
+        for (m, k, v, _) in rows {
+            if let (Some(&i), Some(s)) = (idx.get(&m), out.get_mut(&k)) {
+                s[i].0 = v;
+            }
+        }
+        return Ok(out);
+    }
     let (a, b) = (month(ms[0]), month(to));
     let p = cx.private_filter("private_session");
     let mut totals: HashMap<String, i64> = HashMap::new();
@@ -131,7 +152,6 @@ fn arc_series<Tz: TimeZone>(
         let (m, v) = r?;
         totals.insert(m, v);
     }
-    let idx: HashMap<String, usize> = ms.iter().enumerate().map(|(i, m)| (month(*m), i)).collect();
     let mut out: HashMap<String, Vec<(i64, i64)>> = keys
         .iter()
         .map(|k| {
@@ -183,7 +203,8 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
     let (model, cov) = period_coverage(cx, &r, back)?;
     let vs = r.vs.clone().unwrap_or_default();
     let heard = terms::first_heard(cx.conn, cx.include_private)?;
-    let new_artists = new_artists_compared(&heard, &cov, r.cur, &vs);
+    let pc_first = pc_first_plays(cx, &cov)?;
+    let new_artists = new_artists_compared(&heard, &pc_first, &cov, r.cur, &vs);
     let in_cur: Vec<&FirstHeard> = heard
         .iter()
         .filter(|f| (r.cur.0..=r.cur.1).contains(&f.local.date()))
@@ -290,7 +311,8 @@ pub fn discovery<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<
     // The discovery log: newest first.
     let log_rows: Vec<&FirstHeard> = in_cur.iter().take(LOG_MAX).copied().collect();
     let keys: Vec<&str> = log_rows.iter().map(|f| f.artist.as_str()).collect();
-    let series = arc_series(cx, &keys, today)?;
+    let pc_arcs = model.export.is_some_and(|(_, last)| last < today);
+    let series = arc_series(cx, &keys, today, pc_arcs)?;
     // Plays since the first one = all its plays (nothing counts before an artist's first play), from
     // the 0008 rollup; the last play by the 0004 index from the newest end (NFR-04: no scan per artist).
     let since: HashMap<String, i64> = if keys.is_empty() {

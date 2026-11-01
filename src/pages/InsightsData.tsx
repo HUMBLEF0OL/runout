@@ -14,6 +14,7 @@ import { EASE, RISE } from "../lib/motion";
 
 const DAY = 86_400_000;
 const t0 = (d: string) => Date.parse(d.slice(0, 10) + "T00:00Z");
+/** For local calendar dates (YYYY-MM-DD…). imported_at is a UTC instant: it goes through dayY so it shows the local day. */
 const long = (d: string) => dayY(d.slice(0, 10) + "T00:00");
 
 export function YourData({ today }: { today: string }) {
@@ -96,7 +97,7 @@ function Imports({ res }: { res: Covered<DataCoverage> }) {
           <thead><tr><th scope="col">Imported</th><th scope="col">Covers</th><th scope="col" className="num">New plays</th><th scope="col" className="num">Already had</th></tr></thead>
           <tbody>{rows.map((x) => (
             <tr key={x.id}>
-              <th scope="row" className="font-mono">{long(x.imported_at)}</th>
+              <th scope="row" className="font-mono">{dayY(x.imported_at)}</th>
               <td className="font-mono">{x.from && x.to ? `${long(x.from)} to ${long(x.to)}` : "No music plays"}</td>
               <td className="num font-mono">{num(x.added)}</td>
               <td className="num font-mono">{num(x.already_had)}</td>

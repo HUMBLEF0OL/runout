@@ -332,6 +332,18 @@ def check_mock_conflicts():
         print("--- mock conflicts: FAIL\n" + "\n".join(bad))
 
 
+def check_mock_utc_times():
+    # audit M10: a mock *_at / *_utc time without the trailing Z (API.md §1: times are ISO-8601 UTC) hid a UI that read a
+    # UTC imported_at as a local date. Local times are named *_local; *_at / *_utc literals must end in Z.
+    bad = [f"{p.relative_to(ROOT)}:{t.count(chr(10), 0, m.start()) + 1} {m.group(0)}"
+           for p in (ROOT / "src/mocks").glob("*.ts") if not p.name.endswith(".test.ts")
+           for t in [p.read_text(encoding="utf-8")]
+           for m in re.finditer(r'\b\w+_(?:at|utc)\s*:\s*"\d{4}-\d\d-\d\dT[^"]*(?<!Z)"', t)]
+    if bad:
+        failures.append("mock UTC times")
+        print("--- mock UTC times: FAIL (API.md §1: end *_at / *_utc in Z)\n" + "\n".join(bad))
+
+
 def check_mock_r3_parity():
     # M5 audit round 4: the R3 mocks behave like Rust at the M7 switch (API.md §7, M2 WI 3).
     # Every API.md §5 command but status/connect/disconnect answers spotify_auth when disconnected
@@ -1045,6 +1057,7 @@ check_boundary_values_kept()
 check_cache_schema_in_tsd()
 check_mock_conflicts()
 check_mock_r3_parity()
+check_mock_utc_times()
 check_dropped_cache_columns()
 check_no_snapshot_id_compare_in_docs()
 check_example_usage()

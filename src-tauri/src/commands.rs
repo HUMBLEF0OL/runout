@@ -477,9 +477,9 @@ pub fn restore_backup(st: St<'_>, lg: Lg<'_>, path: String) -> Result<RestoreChe
     let zip = zip_arg(&path)?;
     let mut lg = lg.lock().unwrap(); // logger → db → settings: the logger run can't straddle the swap
     let mut conn = st.db.lock().unwrap();
-    let lib = settings_now(&st).library_path;
+    let s = settings_now(&st);
     lg.swap_db(&mut conn, chrono::Utc::now(), |c| {
-        backup::restore_locked(c, Path::new(&lib), &zip)
+        backup::restore_locked(c, Path::new(&s.library_path), &zip, s.music_db)
     })
 }
 
@@ -780,11 +780,17 @@ pub fn get_genres_decades(
 /// The music database switch (TSD §5.4): off stops lookups and deletes every `enrich` row.
 #[tauri::command(async)]
 pub fn set_music_db(st: St<'_>, on: bool) -> Result<Settings> {
+    // off: the rows go before the setting is saved, so a failed delete leaves the switch on
+    if !on {
+        crate::enrich::set_switch(&mut st.db.lock().unwrap(), false)?;
+    }
     let (_, s) = st.edit_settings(|s| {
         s.music_db = on;
         Ok(())
     })?;
-    crate::enrich::set_switch(&mut st.db.lock().unwrap(), on)?;
+    if on {
+        crate::enrich::set_switch(&mut st.db.lock().unwrap(), true)?;
+    }
     Ok(s)
 }
 

@@ -264,12 +264,25 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
     );
     let arc_from = month(arc_months[0]);
     let arc_to = month(today);
-    let totals_by_month: HashMap<String, i64> =
-        month_totals.iter().map(|(m, t)| (month(*m), *t)).collect();
+    // FR-048 (G-46): once the windows reach past the export's end, an arc compares this PC with
+    // itself (desktop plays on both sides); months the log didn't cover have no time: no data.
+    let pc_arcs = model.export.is_some_and(|(_, last)| last < today);
+    let pc_rows = if pc_arcs {
+        let (rows, totals) = super::v3::desktop_month_artists(cx, (arc_months[0], today))?;
+        Some(MonthArtistsAll { rows, totals })
+    } else {
+        None
+    };
+    let arc_all = pc_rows.as_ref().unwrap_or(&all);
+    let arc_total = |m: &str| arc_all.totals.get(m).copied().unwrap_or(0) as f64;
+    let totals_by_month: HashMap<String, i64> = match &pc_rows {
+        Some(p) => p.totals.clone(),
+        None => month_totals.iter().map(|(m, t)| (month(*m), *t)).collect(),
+    };
     // Arc candidates: the top artists of the arc months, and any back again in the recent ones.
     let recent = month(arc_months[ARC_MONTHS - ARC_RECENT]);
     let mut arc_ms: BTreeMap<&str, i64> = BTreeMap::new();
-    for (m, a, ms, _) in &all.rows {
+    for (m, a, ms, _) in &arc_all.rows {
         if (arc_from.as_str()..=arc_to.as_str()).contains(&m.as_str()) {
             *arc_ms.entry(a.as_str()).or_default() += ms;
         }
@@ -278,14 +291,15 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
     top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
     let mut keep: HashSet<&str> = top.into_iter().take(ARC_CANDIDATES).map(|x| x.0).collect();
     keep.extend(
-        all.rows
+        arc_all
+            .rows
             .iter()
             .filter(|(m, _, ms, _)| {
-                *m >= recent && *ms as f64 >= heuristics::BACK_AGAIN * total_of(m)
+                *m >= recent && *ms as f64 >= heuristics::BACK_AGAIN * arc_total(m)
             })
             .map(|r| r.1.as_str()),
     );
-    let arc_rows = all.by_month(&arc_from, &arc_to, &keep);
+    let arc_rows = arc_all.by_month(&arc_from, &arc_to, &keep);
     let totals: Vec<i64> = arc_months
         .iter()
         .map(|m| totals_by_month.get(&month(*m)).copied().unwrap_or(0))

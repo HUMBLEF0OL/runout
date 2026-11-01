@@ -102,7 +102,10 @@ function Builder({ since, today, first }: { since: string; today: string; first:
   const set = (p: Partial<ExploreQuery>) => setQ((x) => ({ ...x, ...p }));
   const bad = !q.from || !q.to || q.from > q.to;
   const key = JSON.stringify(q);
-  const res = useApi(() => (q.series.length && !bad ? api.explore(q) : Promise.resolve(null)), [key]);
+  // Resolves to the result together with the query it was fetched for: while a new query loads, the old result stays on
+  // screen and must be drawn with its own grain and dates (a week bucket read as a month throws), never with the new q.
+  const res = useApi(() => (q.series.length && !bad ? api.explore(q).then((r) => ({ q, r })) : Promise.resolve(null)), [key]);
+  const shown = res.data;
   const views = useApi(api.listExploreViews);
   const [naming, setNaming] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
@@ -136,12 +139,12 @@ function Builder({ since, today, first }: { since: string; today: string; first:
         {bad ? <p className="text-danger text-sm m-0" role="alert">Choose a start date on or before the end date.</p>
           : !q.series.length ? <p className="text-muted m-0">Add an artist, album or track to see it over time.</p>
           : res.error ? <ErrorBanner error={res.error} title="Couldn’t run that." onRetry={res.reload} />
-          : !res.data ? <div className="skel h-[240px]" aria-busy="true" aria-label="Loading" />
-          : <Result res={res.data} q={q} />}
+          : !shown ? <div className="skel h-[240px]" aria-busy="true" aria-label="Loading" />
+          : <Result key={JSON.stringify(shown.q)} res={shown.r} q={shown.q} />}
       </m.section>
       <div className="flex flex-wrap gap-7 items-start">
         <m.div variants={RISE} custom={1} className="flex-[1_1_380px] min-w-0">
-          <Card title="Ready-made questions" res={res.data ?? undefined}>
+          <Card title="Ready-made questions" res={shown?.r}>
             <ul className="in3-qs">{qs.map((x) => (
               <li key={x.label}><button type="button" className="in3-q" onClick={() => fill(x.query)}>{x.label}</button></li>))}</ul>
             <span className="text-muted text-xs">Each question fills the builder above. There’s no free-text box: it would need an AI model, and nothing leaves this PC.</span>
@@ -157,8 +160,8 @@ function Builder({ since, today, first }: { since: string; today: string; first:
           </Card>
         </m.div>
         <m.div variants={RISE} custom={2} className="flex-[1.4_1_460px] min-w-0">
-          <Card title="Result as a table" res={res.data ?? undefined}>
-            {res.data ? <Table res={res.data} q={q} /> : <span className="text-muted">The table fills in with the chart.</span>}
+          <Card title="Result as a table" res={shown?.r}>
+            {shown ? <Table res={shown.r} q={shown.q} /> : <span className="text-muted">The table fills in with the chart.</span>}
             {naming != null ? (
               <form className="flex flex-wrap gap-2 items-center" onSubmit={save}>
                 <input className="input" aria-label="Name for this view" value={naming} maxLength={100} autoFocus onChange={(e) => setNaming(e.target.value)}
@@ -169,7 +172,7 @@ function Builder({ since, today, first }: { since: string; today: string; first:
             ) : (
               <div className="flex flex-wrap gap-2 items-center">
                 <button type="button" className="btn btn-secondary s" disabled={!q.series.length || bad} onClick={() => setNaming(q.series.map((s) => s.name).join(" and "))}>Save this view</button>
-                <button type="button" className="btn btn-secondary s" disabled={!res.data || copying} onClick={copy}>Copy as CSV</button>
+                <button type="button" className="btn btn-secondary s" disabled={!shown || copying} onClick={copy}>Copy as CSV</button>
               </div>)}
             <span className="text-muted text-xs">Copy as CSV copies hours and plays per {q.grain}, for a spreadsheet.</span>
           </Card>
@@ -264,7 +267,8 @@ function Only({ q, set }: { q: ExploreQuery; set: (p: Partial<ExploreQuery>) => 
 function Result({ res, q }: { res: Covered<ExploreResult>; q: ExploreQuery }) {
   const reduce = useReducedMotion();
   const r = res.data, n = r.buckets.length;
-  const [i, setI] = useState<number | null>(null);
+  const [pick, setI] = useState<number | null>(null);
+  const i = pick == null ? null : Math.min(pick, n - 1); // never past the last bucket
   const gap = gapsOf(r, res.coverage, q);
   const max = Math.max(1e-9, ...r.series.flatMap((s) => s.values.filter((_, j) => gap[j] !== "all")));
   const x = (k: number) => (n < 2 ? 500 : (k / (n - 1)) * 1000);
@@ -278,11 +282,12 @@ function Result({ res, q }: { res: Covered<ExploreResult>; q: ExploreQuery }) {
   }, [[]]).filter((g) => g.length).map((g) => (g.length === 1 ? [g[0], g[0]] : g));
   const half = n < 2 ? 50 : 50 / (n - 1);
   const keyMove = (e: React.KeyboardEvent) => {
-    const k = i ?? -1;
-    const nx = e.key === "ArrowRight" || e.key === "ArrowUp" ? Math.min(n - 1, k + 1) : e.key === "ArrowLeft" || e.key === "ArrowDown" ? Math.max(0, k < 0 ? n - 1 : k - 1)
-      : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
+    // Steps from the shown value (the latest bucket at rest), like the other insight sliders.
+    const step: Record<string, number> = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -12, PageUp: 12 };
+    const k = i ?? n - 1;
+    const nx = e.key in step ? k + step[e.key] : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
     if (nx == null) return;
-    e.preventDefault(); setI(nx);
+    e.preventDefault(); setI(Math.max(0, Math.min(n - 1, nx)));
   };
   const every = Math.max(1, Math.ceil(n / 8)), yearsEvery = Math.max(1, Math.ceil(n / 12 / 8));
   // Long month runs label Januaries with their year; otherwise about 8 evenly spaced labels.
@@ -293,8 +298,8 @@ function Result({ res, q }: { res: Covered<ExploreResult>; q: ExploreQuery }) {
   return <>
     <div className="in3-xplot" role="slider" tabIndex={0} aria-label={`${MEASURES.find((m) => m[0] === q.measure)![1]} per ${q.grain}`}
       aria-valuemin={0} aria-valuemax={n - 1} aria-valuenow={i ?? n - 1} aria-valuetext={at(i ?? n - 1)} onKeyDown={keyMove}
-      onPointerMove={(e) => { const b = e.currentTarget.getBoundingClientRect(); setI(Math.round(((e.clientX - b.left) / b.width) * (n - 1))); }}
-      onPointerLeave={() => setI(null)}>
+      onPointerMove={(e) => { const b = e.currentTarget.getBoundingClientRect(); setI(Math.max(0, Math.min(n - 1, Math.round(((e.clientX - b.left) / b.width) * (n - 1))))); }}
+      onPointerLeave={() => setI(null)} onBlur={() => setI(null)}>
       {/* Revealed left to right by a clip: Motion's pathLength can't be used with non-scaling strokes on a stretched SVG. */}
       <m.svg key={`${q.grain}:${q.measure}:${r.series.length}`} viewBox="0 0 1000 200" preserveAspectRatio="none" aria-hidden
         initial={reduce ? false : { clipPath: "inset(0 100% 0 0)" }} animate={{ clipPath: "inset(0 0% 0 0)" }} transition={{ duration: 0.8, ease: EASE }}>

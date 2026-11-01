@@ -139,7 +139,7 @@ interface RankRow { name: string; by: string; plays: number; hours: number; item
 interface PeriodStats { plays: number; plays_prev: number; ms: number; ms_prev: number; plays_cmp: number; ms_cmp: number; new_artists: number; rated_this_period: number; unrated_plays: number }   // *_cmp / *_prev: like for like over coverage.compared_sources (§4.1); a delta is cmp − prev
 interface ListeningInsights {
   top_artists: RankRow[]; top_albums: RankRow[]; top_tracks: RankRow[];
-  monthly: { month: string; hours: number }[]; heatmap: number[][];
+  monthly: { month: string; hours: number; coverage: CoverageClass }[]; heatmap: number[][];   // coverage: the class most of the month's days up to today have (§4.1); no_data bars are hatched, never 0 h
   skip_rate: number; phone_share: number; totals: PeriodStats & { private_excluded: number; artists_total: number };
 }
 interface CollectionInsights {
@@ -185,7 +185,7 @@ Every definition and threshold: [design/M10-insights-v3.md](design/M10-insights-
 - `compared_sources` = the sources that cover the current **and** the comparison period (the export each date from its first to its last; the desktop log when it ran by the period's first date and on at least one of its dates, the dates it was off being `gaps`): `['S','E']` or `['E']` while the period ends on or before the last export's end; `['S']` once it reaches past it (`desktop_only_since` = the day after the export's last date, which drives the banner "From 3 Oct, only plays on this PC are counted"); `[]` when nothing is compared.
 - `no_compare_reason` is set (and every `Compared.now`/`before`, `before_ms`, `move`, `plays_prev`/`ms_prev` is null or unused) when no source covers both periods: the desktop log wasn't running in the earlier period, there is no listening before it, or the grain is `all`.
 - `gaps` = "no data" stretches (design §4.4) touching the periods shown: hatched in charts, skipped by streaks and Regularity, never silence.
-- Totals that aren't comparisons (`Compared.value`, timeline `ms`) count every source there is, except for a period that reaches past the last export: while `coverage.desktop_only_since` is set, `tiles.days_listened` (its `value` too), `tiles.streak`, `fingerprint.now` and the `streak` sentence count source S for the whole period, so both halves count the same way, and the UI labels them "on this PC" (the sentence says it itself; design §4.4). Not for grain `all`: all-time figures use all-device dates only (design §4.4: the export's first to last date), so there `tiles.days_listened.value`, `tiles.streak` (the run at the export's last date), `fingerprint.now` and the `streak` sentence count every source on those dates and drop the this-PC dates past it; `desktop_only_since` is still set for the banner.
+- Totals that aren't comparisons (`Compared.value`, timeline `ms`) count every source there is, except for a period that reaches past the last export: while `coverage.desktop_only_since` is set, `tiles.days_listened` (its `value` too), `tiles.streak`, `fingerprint.now` and the `streak` sentence count source S for the whole period, and `period.days` counts the dates the desktop log ran, so both halves count the same way, and the UI labels them "on this PC" (the sentence says it itself; design §4.4). Not for grain `all`: all-time figures use all-device dates only (design §4.4: the export's first to last date), so there `tiles.days_listened.value`, `tiles.streak` (the run at the export's last date), `fingerprint.now` and the `streak` sentence count every source on those dates and drop the this-PC dates past it (`period.days` too: the all-device dates); `desktop_only_since` is still set for the banner.
 
 **Estimates** (labelled in the UI as estimates, design §4.2): `eras`, `arcs` (and their `related`), sessions and their start times, `deep_dives`, stick rate, `start_to_finish`, `next_milestone.eta_days`. Fingerprint scores are on screen only: never exported, copied or put in Explore's CSV.
 
@@ -212,7 +212,7 @@ interface PeriodInfo {
   grain: Grain; vs: Compare; from: string; to: string;   // local dates, inclusive (to may be after today)
   vs_from: string | null; vs_to: string | null;          // null for 'usual' and 'all'
   prev_at: string | null; next_at: string | null;        // stepper `at` values; null before the first play / after the current period / custom
-  days: number;                                          // covered days (no-data days left out): the "28 / 30" denominator
+  days: number;                                          // covered days (no-data days left out): the "28 / 30" denominator, on the same basis as tiles.days_listened (below)
 }
 interface PeriodReport {
   period: PeriodInfo; private_excluded: number;

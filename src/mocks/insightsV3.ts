@@ -65,7 +65,8 @@ function measure(s: Span, b: Basis) {
   let ms = 0, listened = 0, covered = 0;
   for (const d of days(s.from, lo(s.to, TODAY))) {
     const v = basisMs(d, b);
-    ms += v; listened += v > 0 ? 1 : 0; covered += cls(d) === "no_data" ? 0 : 1;
+    // covered on the same basis as listened: this PC counts only the dates its log ran (API.md PeriodInfo.days)
+    ms += v; listened += v > 0 ? 1 : 0; covered += cls(d) === "no_data" || (b === "S" && d < DESKTOP_FROM) ? 0 : 1;
   }
   const plays = Math.round(ms / MS_PER_PLAY), artists = Math.round(Math.sqrt(plays) * 6);
   return { ms, plays, artists, new_artists: Math.round(artists * 0.11), days_listened: listened, covered, tracks: Math.round(artists * 3.4), albums: Math.round(artists * 1.6) };
@@ -159,6 +160,8 @@ const majority = (ds: string[]): CoverageClass => {
   const n = { all_devices: 0, this_pc: 0, no_data: 0 }; ds.forEach((d) => n[cls(d)]++);
   return (Object.entries(n).sort((a, b) => b[1] - a[1])[0][0]) as CoverageClass;
 };
+/** Home's month bars (API.md ListeningInsights.monthly): the class most of month `m`'s days up to today have. */
+export const monthCoverage = (m: string): CoverageClass => majority(days(m + "-01", lo(monthEnd(m), TODAY)));
 
 /* ------------------------------------------------------------------ commands */
 export function insightsV3(find: Find, freshness: () => unknown) {
@@ -181,7 +184,9 @@ export function insightsV3(find: Find, freshness: () => unknown) {
     const timeline = daily
       ? days(r.cur.from, lo(r.cur.to, TODAY)).map((d, i) => ({
         key: d, ms: basisMs(d, tb), coverage: cls(d),
-        before_ms: hidden ? null : Math.round(r.vs!.reduce((a, s) => a + basisMs(add(s.from, i), b), 0) / r.vs!.length),
+        // a comparison date its sources don't cover is no data, never 0 (design §4.4)
+        before_ms: hidden ? null : ((vd) => (vd.length ? Math.round(vd.reduce((a, x) => a + basisMs(x, b), 0) / vd.length) : null))(
+          r.vs!.map((s) => add(s.from, i)).filter((x) => cls(x) !== "no_data" && (b !== "S" || x >= DESKTOP_FROM))),
       }))
       : monthsBetween(r.cur.from.slice(0, 7), lo(r.cur.to, TODAY).slice(0, 7)).map((m, i) => {
         const ds = days(hi(m + "-01", r.cur.from), lo(monthEnd(m), TODAY));
@@ -204,7 +209,7 @@ export function insightsV3(find: Find, freshness: () => unknown) {
     }
     const fpNow = fp(r.cur.from, FP_NOW);
     const data: PeriodReport = {
-      period: { grain: q.grain, vs: q.vs, from: r.cur.from, to: r.cur.to, vs_from: vs1?.from ?? null, vs_to: vs1?.to ?? null, prev_at: r.prev_at, next_at: r.next_at, days: all.covered },
+      period: { grain: q.grain, vs: q.vs, from: r.cur.from, to: r.cur.to, vs_from: vs1?.from ?? null, vs_to: vs1?.to ?? null, prev_at: r.prev_at, next_at: r.next_at, days: pc.covered },
       private_excluded: L.private_excluded,
       tiles: {
         ms: c("ms"), plays: c("plays"), artists: c("artists"), new_artists: c("new_artists"), days_listened: { ...c("days_listened"), value: pc.days_listened }, streak: all.ms ? 19 : 0,
@@ -403,7 +408,7 @@ export function insightsV3(find: Find, freshness: () => unknown) {
       export: { from: start(), to: EXPORT_END, plays: exportPlays },
       desktop: { from: DESKTOP_FROM, to: TODAY, plays: Math.round(sum(DESKTOP_FROM, TODAY, desktopMs)), matched: Math.round(sum(DESKTOP_FROM, EXPORT_END, desktopMs)) },
       logger_runs_since: null,
-      imports: [{ id: 1, imported_at: "2026-10-05T10:12", from: start(), to: EXPORT_END, added: exportPlays, already_had: 0 }],
+      imports: [{ id: 1, imported_at: "2026-10-05T04:42:00Z", from: start(), to: EXPORT_END, added: exportPlays, already_had: 0 }],
       private_excluded: L.private_excluded,
     };
     return covered(data, ["S", "E"], { compared_sources: [], desktop_only_since: add(EXPORT_END, 1), gaps: GAPS.filter((g) => g.from >= start()), no_compare_reason: null });

@@ -10,6 +10,7 @@ import { ToastProvider } from "../components/ui";
 import { exportReminderDue } from "../components/logic";
 import { Explore, bucketGaps, exploreCsv, hourSpan, questions } from "./InsightsExplore";
 import { YourData } from "./InsightsData";
+import { dayY } from "../lib/format";
 
 const res = (values: number[][], names = ["Massive Attack", "Floating Points"]): ExploreResult => ({
   buckets: ["2025", "2026"], export_only: false,
@@ -115,5 +116,53 @@ describe("Your data tab", () => {
     expect((screen.getByRole("switch", { name: "Remind me to request a new export" }) as HTMLInputElement).checked).toBe(false);
     await act(async () => { fireEvent.click(sw); });
     expect(spy).toHaveBeenCalledWith({ include_private: true });
+  });
+});
+
+describe("Explore chart across query changes (audit M10)", () => {
+  const slider = () => screen.findByRole("slider", { name: /^Hours per / }, { timeout: 3000 });
+  const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 400)); });
+  it("switching Week to Month draws the old result with its own grain, never crashes", async () => {
+    wrap(<Explore today="2026-10-24" />);
+    await slider();
+    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "Week" })); });
+    await settle(); // past the mock delay, so the week result itself is on screen
+    expect((await screen.findByRole("slider", { name: "Hours per week" }, { timeout: 3000 })).getAttribute("aria-valuetext")).toMatch(/^Week of /);
+    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "Month" })); });
+    await settle();
+    expect((await screen.findByRole("slider", { name: "Hours per month" }, { timeout: 3000 })).getAttribute("aria-valuetext")).toMatch(/^Oct 2026: /);
+  });
+  it("a keyboard pick resets when the query changes", async () => {
+    wrap(<Explore today="2026-10-24" />);
+    const s = await slider();
+    fireEvent.keyDown(s, { key: "End" });
+    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "Year" })); });
+    await settle();
+    const y = await screen.findByRole("slider", { name: "Hours per year" }, { timeout: 3000 });
+    expect(+y.getAttribute("aria-valuenow")!).toBeLessThanOrEqual(+y.getAttribute("aria-valuemax")!);
+    expect(y.getAttribute("aria-valuetext")).not.toMatch(/undefined/);
+  });
+  it("ArrowRight at rest stays on the latest bucket; ArrowLeft steps back one; blur resets", async () => {
+    wrap(<Explore today="2026-10-24" />);
+    const s = await slider();
+    const last = s.getAttribute("aria-valuemax");
+    fireEvent.keyDown(s, { key: "ArrowRight" });
+    expect(s.getAttribute("aria-valuenow")).toBe(last);
+    expect(s.getAttribute("aria-valuetext")).toMatch(/^Oct 2026: /);
+    fireEvent.keyDown(s, { key: "ArrowLeft" });
+    expect(s.getAttribute("aria-valuetext")).toMatch(/^Sep 2026: /);
+    fireEvent.keyDown(s, { key: "PageDown" });
+    expect(+s.getAttribute("aria-valuenow")!).toBe(Math.max(0, +last! - 13)); // clamped at the first bucket
+    fireEvent.blur(s);
+    expect(screen.getByText(/^Point at the chart/)).toBeTruthy();
+  });
+});
+
+describe("Your data imports (audit M10)", () => {
+  it("shows imported_at, a UTC instant, as its local day", async () => {
+    wrap(<YourData today="2026-10-24" />);
+    const at = (await api.getDataCoverage()).data.imports[0].imported_at;
+    expect(at).toMatch(/Z$/); // API.md §1
+    expect(await screen.findByRole("rowheader", { name: dayY(at) }, { timeout: 3000 })).toBeTruthy();
   });
 });

@@ -363,6 +363,18 @@ fn a_week_past_the_export_compares_this_pc_only() {
             "Your busiest hour was 21:00: 100% of your time.",
         ]
     );
+    // the ghost line: 5–9 and 11 Oct are no data on this PC (not silence); 17 ↔ 10 Oct is L3
+    let tl = d["timeline"].as_array().unwrap();
+    assert_eq!(tl[0]["before_ms"], json!(null));
+    assert_eq!(tl[6]["before_ms"], json!(null));
+    assert_eq!(tl[5]["before_ms"], json!(240_000));
+    // the 12-month average is on the same basis as now (this PC): only September has desktop
+    // plays (L1 counts: the desktop's own record), so the average is September on this PC: both
+    // log days played, both artists new, variety 300k : 120k = 0.598 / ln 2 → 86
+    assert_eq!(
+        d["fingerprint"]["average"],
+        json!({"regularity": 100.0, "discovery": 100.0, "focus": 100.0, "variety": 86.0, "repeat": 0.0})
+    );
     // October against September: the log only started on 2 Sep, so nothing is compared
     let r = j(report(&cx(&c), &period("month", "prev", None)).unwrap());
     assert_eq!(r["coverage"]["compared_sources"], json!([]));
@@ -387,6 +399,63 @@ fn a_week_past_the_export_compares_this_pc_only() {
     assert_eq!(r["data"]["timeline"].as_array().unwrap().len(), 3); // Aug, Sep, Oct
     let e = report(&cx(&c), &period("month", "prev", Some("2026-9"))).unwrap_err();
     assert_eq!(e.code, Code::Validation);
+}
+
+/// FR-048 (G-46): new artists in a desktop-only comparison count the desktop log's first plays,
+/// reconciled twins included (both sides count the same way as the ms tile).
+#[test]
+fn new_artists_before_count_desktop_first_plays_in_the_export() {
+    let c = history();
+    let mut q = period("custom", "prev", None);
+    q.from = Some("2026-10-04".into());
+    q.to = Some("2026-11-04".into());
+    let r = j(report(&cx(&c), &q).unwrap());
+    assert_eq!(r["coverage"]["compared_sources"], json!(["S"]));
+    let t = &r["data"]["tiles"];
+    assert_eq!(t["ms"]["before"], json!(420_000.0)); // L1 + L2
+    assert_eq!(t["new_artists"]["before"], json!(2.0)); // Birch (L1) and Cedar (L2)
+    assert_eq!(t["new_artists"]["now"], json!(1.0)); // Dahl
+}
+
+/// FR-048 (G-46): arcs past the export compare this PC with itself. Export plays of Xx and Zz on
+/// the 15th of Feb–Jul, a desktop play of Zz on the 15th of Feb–Oct: neither habit changed, only
+/// the export ended.
+#[test]
+fn arcs_past_the_export_compare_this_pc_only() {
+    let c = db::open_in_memory().unwrap();
+    for m in 2..=10 {
+        let at = format!("2026-{m:02}-15T10:00:00");
+        if m <= 7 {
+            put(&c, Source::Export, &at, 120_000, "Xx", "X", None, None);
+            put(
+                &c,
+                Source::Export,
+                &format!("2026-{m:02}-15T12:00:00"),
+                60_000,
+                "Zz",
+                "Z",
+                None,
+                None,
+            );
+        }
+        put(
+            &c,
+            Source::Logger,
+            &format!("2026-{m:02}-15T20:00:00"),
+            60_000,
+            "Zz",
+            "Z",
+            None,
+            None,
+        );
+    }
+    let t = j(trends(&cx(&c), Measure::Hours).unwrap());
+    let arcs = t["data"]["arcs"].as_array().unwrap();
+    assert!(
+        arcs.iter()
+            .all(|a| a["kind"] != "fading" && a["kind"] != "rising"),
+        "{arcs:?}"
+    );
 }
 
 #[test]

@@ -11,7 +11,7 @@ import { invalidate, MOCK } from "../api";
 import { dev, onDevChange } from "./devState";
 import { parseLink } from "../lib/link";
 import { setToday } from "../lib/format";
-import { genresDecades, insightsV3, rangeCoverage } from "./insightsV3";
+import { genresDecades, insightsV3, monthCoverage, rangeCoverage } from "./insightsV3";
 
 const D: any = raw;
 const L = D.listening;
@@ -429,7 +429,7 @@ const H: Record<string, Handler> = {
   pick_import_source: () => "Documents\\spotify-export\\my_spotify_data.zip",
   preview_import: () => ({ ...L.import_preview, files: ["Streaming_History_Audio_2025-2026_0.json", "Streaming_History_Audio_2026_1.json", "Playlist1.json"] }),
   run_import: () => ({ batch_id: 2, added: L.import_preview.music - L.import_preview.overlap, duplicates: L.import_preview.overlap, reconciled: 41, playlists: L.import_preview.playlists, took_ms: 4200 }),
-  list_imports: () => [{ id: 1, kind: "extended", imported_at: "2026-10-05T10:12", record_count: L.import_preview.music, latest_event_utc: L.freshness.export_until }],
+  list_imports: () => [{ id: 1, kind: "extended", imported_at: "2026-10-05T04:42:00Z", record_count: L.import_preview.music, latest_event_utc: L.freshness.export_until }],
   get_freshness: () => freshness(),
   get_listening_insights: ({ range }) => {
     const ch = L.charts[range];
@@ -442,7 +442,7 @@ const H: Record<string, Handler> = {
     const [plays_cmp, plays_prev] = cmp(st.plays, st.plays_prev), [ms_cmp, ms_prev] = cmp(st.ms, st.ms_prev);
     return { coverage, ...sourced({
       top_artists: ch.artists.map(row), top_albums: ch.albums.map(row), top_tracks: ch.tracks.map(row), heatmap: L.heatmap,
-      monthly: L.monthly.map((m: { month: string; hours: number }) => ({ ...m, hours: Math.round(m.hours * (k > 1 ? 4.2 : 1) * 10) / 10 })),
+      monthly: L.monthly.map((m: { month: string; hours: number }) => ({ ...m, hours: Math.round(m.hours * (k > 1 ? 4.2 : 1) * 10) / 10, coverage: monthCoverage(m.month) })),
       skip_rate: L.skip_rate, phone_share: L.phone_share,
       totals: { ...st, plays: st.plays * k, plays_prev, ms: st.ms * k, ms_prev, plays_cmp, ms_cmp, unrated_plays: st.unrated_plays * k, private_excluded: L.private_excluded, artists_total: L.artists_total * (k > 1 ? 9 : 1) },
     }, ["U", "S", "E"]) };

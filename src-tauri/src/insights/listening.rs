@@ -24,6 +24,8 @@ pub struct RankRow {
 pub struct MonthHours {
     pub month: String,
     pub hours: f64,
+    /// The class most of the month's days (up to today) have: no data is never shown as silence.
+    pub coverage: super::terms::CoverageClass,
 }
 
 /// API.md §4 `PeriodStats & {private_excluded, artists_total}`.
@@ -234,7 +236,10 @@ pub fn listening(
     // FR-048 (G-46): "vs the period before" counts like for like, over the sources that cover both
     // periods (`coverage::Model::compare`); `*_prev` / `*_cmp` stay 0 when the delta is hidden.
     let (today, start_day, prev_day) = local_days(&Local, now, &start, &prev);
-    let model = Model::load(conn, &Local, prev_day.unwrap_or(NaiveDate::MIN), today, now)?;
+    let months = last_months(now, 12);
+    let months_from = NaiveDate::parse_from_str(&format!("{}-01", months[0]), "%Y-%m-%d").ok();
+    let from = [prev_day, months_from].into_iter().flatten().min();
+    let model = Model::load(conn, &Local, from.unwrap_or(NaiveDate::MIN), today, now)?;
     let (cur, vs) = match (start_day, prev_day) {
         (Some(a), Some(p)) => ((a, today), Some([(p, a - TimeDelta::days(1))])),
         _ => ((model.first.unwrap_or(today), today), None),
@@ -300,7 +305,6 @@ pub fn listening(
         )?
     };
 
-    let months = last_months(now, 12);
     let mut st = conn.prepare(&format!(
         "{b} SELECT substr(local, 1, 7), SUM(ms_played) FROM base
          WHERE local >= ?1 AND ended_at_utc >= date(?1 || '-01', '-1 day') GROUP BY 1"
@@ -310,9 +314,16 @@ pub fn listening(
         .collect::<rusqlite::Result<std::collections::HashMap<String, i64>>>()?;
     let monthly = months
         .iter()
-        .map(|m| MonthHours {
-            month: m.clone(),
-            hours: hours(by_month.get(m).copied().unwrap_or(0)),
+        .map(|m| {
+            let first = NaiveDate::parse_from_str(&format!("{m}-01"), "%Y-%m-%d").unwrap_or(today);
+            let last = super::v3::month_end(first).min(today);
+            MonthHours {
+                month: m.clone(),
+                hours: hours(by_month.get(m).copied().unwrap_or(0)),
+                coverage: super::v3::majority(first.iter_days().take_while(|d| *d <= last), |d| {
+                    model.class(d)
+                }),
+            }
         })
         .collect();
 
@@ -452,6 +463,22 @@ mod tests {
             (d("2026-10-20").unwrap(), d("2026-10-13"), d("2026-10-06"))
         );
         assert_eq!(local_days(&ist, now, "", "").1, None);
+    }
+
+    /// Design §4.4: a month the stored data doesn't cover is no data, never 0 h of silence.
+    #[test]
+    fn months_carry_their_coverage() {
+        use super::super::terms::CoverageClass::*;
+        let c = crate::db::open_in_memory().unwrap();
+        for t in ["2026-09-01T10:00:00Z", "2026-09-30T10:00:00Z"] {
+            fixture::put(&c, fixture::ev(t, 60_000, "Song One", None));
+        }
+        let s = listening(&c, Range::Week, false, fixture::now()).unwrap();
+        let m = &s.sourced.data.monthly;
+        assert_eq!(
+            [m[0].coverage, m[9].coverage, m[10].coverage, m[11].coverage],
+            [NoData, NoData, AllDevices, NoData]
+        );
     }
 
     #[test]

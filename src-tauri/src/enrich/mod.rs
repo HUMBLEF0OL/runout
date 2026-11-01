@@ -98,8 +98,9 @@ pub fn set_on(on: bool) {
 }
 
 /// The switch (TSD §5.4): off stops lookups and deletes every `enrich` row in one transaction.
+/// The rows go first: a failed delete leaves the switch as it was. Also run whenever a library is
+/// opened or swapped in (start-up, restore), so a saved "off" holds over any rows it brings.
 pub fn set_switch(conn: &mut Connection, on: bool) -> Result<()> {
-    set_on(on);
     if !on {
         let tx = conn.transaction()?;
         tx.execute_batch(
@@ -107,6 +108,7 @@ pub fn set_switch(conn: &mut Connection, on: bool) -> Result<()> {
         )?;
         tx.commit()?;
     }
+    set_on(on);
     Ok(())
 }
 
@@ -225,7 +227,12 @@ pub fn spawn(app: tauri::AppHandle) {
         .lock()
         .unwrap()
         .music_db;
-    set_on(on);
+    // off: rows left by an earlier failure go now (TSD §5.4)
+    let st = app.state::<crate::state::AppState>();
+    // ponytail: a failed delete here is retried at the next start or switch change
+    if set_switch(&mut st.db.lock().unwrap(), on).is_err() {
+        set_on(on);
+    }
     let Some(ua) = user_agent() else {
         return; // U-12: no contact, no lookups
     };
@@ -248,7 +255,7 @@ pub fn spawn(app: tauri::AppHandle) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::lookup::tests::Stub;
     use super::*;
     use serde_json::json;

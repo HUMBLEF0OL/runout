@@ -36,7 +36,8 @@ export function MonthBars({ months, fmt, label, avg, hot, caption, valuetext, ti
   const max = Math.max(1e-9, ...months.map((x_) => x_.value), ...(ghost ?? []).map((g) => g ?? 0));
   const dense = n > 48 ? " dense xs" : n > 16 ? " dense" : ""; // days of a month, years of months: tighter gaps
   const line = ghost?.map((g, i) => (g == null ? null : `${((i + 0.5) / n) * 100},${100 - (g / max) * 100}`)).filter(Boolean).join(" ");
-  const mean = months.reduce((a, x_) => a + x_.value, 0) / n;
+  const kept = months.filter((_, i) => !gap?.(i)); // no-data bars aren't silence: out of the average
+  const mean = kept.reduce((a, x_) => a + x_.value, 0) / Math.max(1, kept.length);
   const cur = at ?? rest;
   const pick = (i: number | null) => {
     const k = ((i ?? rest) + 0.5) / n;

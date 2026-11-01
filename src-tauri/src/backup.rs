@@ -415,15 +415,17 @@ pub fn restore_backup(
     library_path: &Path,
     zip_path: &Path,
 ) -> Result<RestoreCheck> {
-    restore_locked(&mut db.lock().unwrap(), library_path, zip_path)
+    restore_locked(&mut db.lock().unwrap(), library_path, zip_path, true)
 }
 
 /// [`restore_backup`] with the db lock already held: commands.rs reads `library_path` under it,
 /// so a concurrent `move_library` can't change it mid-restore (lock order db → settings).
+/// `music_db` = the saved switch: off, the restored library's `enrich` rows go (TSD §5.4).
 pub fn restore_locked(
     conn: &mut Connection,
     library_path: &Path,
     zip_path: &Path,
+    music_db: bool,
 ) -> Result<RestoreCheck> {
     let staged = sibling(library_path, "restore");
     let check = match extract_verified(zip_path, &staged) {
@@ -480,6 +482,9 @@ pub fn restore_locked(
         }
     }
     RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
+    if !music_db {
+        crate::enrich::set_switch(conn, false)?;
+    }
     Ok(check)
 }
 
@@ -897,6 +902,30 @@ mod tests {
         assert!(!sibling(&lib, "restore").exists() && !sibling(&lib, "check").exists());
         assert!(check_backup(Path::new(&b.path), &lib).unwrap().ok);
         drop(db);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// TSD §5.4: with the music database off, a restored backup's `enrich` rows don't come back.
+    #[test]
+    fn restore_with_the_switch_off_drops_enrich_rows() {
+        let _serial = serial();
+        let _switch = crate::enrich::tests::SWITCH.lock().unwrap();
+        let d = tmp("enrich");
+        let lib = d.join("library.db");
+        let mut c = db::open(&lib).unwrap();
+        c.execute_batch(
+            "INSERT INTO enrich_artist(artist, match, country, looked_up_at) VALUES ('synthetic band', 'matched', 'GB', '2026-10-01T00:00:00Z');",
+        )
+        .unwrap();
+        let b = backup_at(&c, &d.join("Backups"), 100, at(1)).unwrap();
+        let n = |c: &Connection| -> i64 {
+            c.query_row("SELECT count(*) FROM enrich_artist", [], |r| r.get(0))
+                .unwrap()
+        };
+        restore_locked(&mut c, &lib, Path::new(&b.path), false).unwrap();
+        assert_eq!(n(&c), 0);
+        assert!(!crate::enrich::is_on());
+        drop(c);
         let _ = std::fs::remove_dir_all(d);
     }
 

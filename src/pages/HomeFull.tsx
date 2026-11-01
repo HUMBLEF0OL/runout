@@ -8,7 +8,7 @@ import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { ArrowDownRightIcon, ArrowUpRightIcon, PlusIcon } from "@phosphor-icons/react";
 import {
   getDashboard, getFreshness, getListeningInsights, getLoggerStatus, getTakeInsights, listItems, listPlays, resumeLogger, search, setLogger,
-  type AppError, type ItemSummary, type ItemType, type ListeningInsights, type LoggerStatus, type Play, type Range, type RankRow as Rank, type Source,
+  type AppError, type CoverageClass, type ItemSummary, type ItemType, type ListeningInsights, type LoggerStatus, type Play, type Range, type RankRow as Rank, type Source,
 } from "../api";
 import { Topbar } from "../components/Shell";
 import { compareNote, likeForLike, playSources } from "../components/logic";
@@ -181,10 +181,12 @@ function NowCard({ logger, loading, error, retry }: { logger: LoggerStatus | und
 }
 
 /* ------------------------------------------------------------------ your year: 12 months as bars, scrubbable */
-function Pulse({ months, sources }: { months: { month: string; hours: number }[] | undefined; sources: Source[] }) {
+function Pulse({ months, sources }: { months: { month: string; hours: number; coverage: CoverageClass }[] | undefined; sources: Source[] }) {
   if (!months) return <div className="card hm-pulse"><div className="skel h-full min-h-[220px]" /></div>;
   if (months.length < 2) return null;
   const sum = months.reduce((a, m_) => a + m_.hours, 0);
+  const gap = (i: number) => months[i].coverage === "no_data"; // no data: hatched, left out of the average
+  const known = months.filter((m_) => m_.coverage !== "no_data").length;
   const peak = months.reduce((p, m_, i) => (m_.hours > months[p].hours ? i : p), 0);
   const last = months.length - 1;
   return (
@@ -194,9 +196,9 @@ function Pulse({ months, sources }: { months: { month: string; hours: number }[]
         <span className="hm-big">{hrs(sum)}</span>
         <span className="text-muted text-sm">listened, busiest in {monthLong(months[peak].month)}</span>
       </div>
-      <MonthBars months={months.map((m_) => ({ month: m_.month, value: m_.hours }))} fmt={hrs} label="Listening by month" avg
+      <MonthBars months={months.map((m_) => ({ month: m_.month, value: m_.hours }))} fmt={hrs} label="Listening by month" avg gap={gap}
         valuetext={(i) => `${monthLong(months[i].month)}${i === last ? " so far" : ""}: ${hrs(months[i].hours)}${i === peak ? ", your busiest month" : ""}`}
-        caption={(i) => i === null ? `Average ${hrs(sum / months.length)} a month, the faint line.`
+        caption={(i) => i === null ? `Average ${hrs(sum / Math.max(1, known))} a month, the faint line.`
           : `${monthLong(months[i].month)}${i === last ? " so far" : ""}${i === peak ? ", your busiest month" : ""}.`} />
       <SourceTag sources={sources} />
     </div>

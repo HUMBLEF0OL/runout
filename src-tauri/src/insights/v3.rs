@@ -1224,6 +1224,38 @@ pub fn month_artists<Tz: TimeZone>(cx: &Ctx<Tz>, from: &str, to: &str) -> Result
     Ok(out)
 }
 
+/// `month_artists` over desktop plays only (`Src::Desktop`: reconciled ones included) in the local
+/// dates `s`, every artist key ('' = unnamed), with each month's total time. FR-048: a comparison
+/// past the export's end counts this PC on both sides.
+pub fn desktop_month_artists<Tz: TimeZone>(
+    cx: &Ctx<Tz>,
+    s: Span,
+) -> Result<(Vec<MonthArtist>, HashMap<String, i64>)> {
+    let mut st = cx.conn.prepare(&format!(
+        "{} SELECT substr(local, 1, 7), lower(IFNULL(artist_name, '')), SUM(ms_played),
+                  SUM(counts_as_play)
+         FROM ev WHERE {} GROUP BY 1, 2 ORDER BY 1, 2",
+        Src::Desktop.cte(cx.include_private),
+        between(s)
+    ))?;
+    let (mut rows, mut totals) = (vec![], HashMap::new());
+    for r in st.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, i64>(2)?,
+            r.get::<_, i64>(3)?,
+        ))
+    })? {
+        let (m, a, ms, plays) = r?;
+        *totals.entry(m.clone()).or_insert(0) += ms;
+        if !a.is_empty() {
+            rows.push((m, a, ms, plays));
+        }
+    }
+    Ok((rows, totals))
+}
+
 /// An artist key's stored name (the newest spelling) and library record, for display.
 pub fn artist_name(conn: &Connection, key: &str) -> Result<(String, Option<i64>, Option<Status>)> {
     let name: String = conn

@@ -108,7 +108,7 @@ export interface RankRow { name: string; by: string; plays: number; hours: numbe
 export interface PeriodStats { plays: number; plays_prev: number; ms: number; ms_prev: number; plays_cmp: number; ms_cmp: number; new_artists: number; rated_this_period: number; unrated_plays: number }
 export interface ListeningInsights {
   top_artists: RankRow[]; top_albums: RankRow[]; top_tracks: RankRow[];
-  monthly: { month: string; hours: number }[]; heatmap: number[][];
+  monthly: { month: string; hours: number; coverage: CoverageClass }[]; heatmap: number[][];
   skip_rate: number; phone_share: number; totals: PeriodStats & { private_excluded: number; artists_total: number };
 }
 export interface CollectionInsights {
