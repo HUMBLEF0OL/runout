@@ -169,7 +169,14 @@ pub fn listening(
     } else {
         (b.clone(), since(&start, "ended_at_utc", "?1"))
     };
-    let top = |k| rank(conn, &src, k, &in_range, &start, TOP);
+    // the three rankings on their own connection while the figures below are read (NFR-04)
+    let tops = {
+        let (src, in_range, start) = (src.clone(), in_range.clone(), start.clone());
+        super::v3::Aside::on(conn, include_private, move |c, _| {
+            let top = |k| rank(c, &src, k, &in_range, &start, TOP);
+            Ok([top(Kind::Artist)?, top(Kind::Album)?, top(Kind::Track)?])
+        })
+    };
 
     let (plays, ms, skipped, flagged, phone, exported, artists_total): (
         i64,
@@ -358,10 +365,11 @@ pub fn listening(
         })
         .collect();
 
+    let [top_artists, top_albums, top_tracks] = tops.join()?;
     let data = ListeningInsights {
-        top_artists: top(Kind::Artist)?,
-        top_albums: top(Kind::Album)?,
-        top_tracks: top(Kind::Track)?,
+        top_artists,
+        top_albums,
+        top_tracks,
         monthly,
         heatmap,
         skip_rate: pct(skipped, flagged),

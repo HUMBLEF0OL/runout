@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn file_db_uses_wal_and_foreign_keys() {
-        let dir = std::env::temp_dir().join(format!("runout-db-{}", std::process::id()));
+        let dir = crate::test_dir::TempDir::new("db");
         let path = dir.join("library.db");
         let c = open(&path).unwrap();
         let mode: String = c
@@ -284,7 +284,6 @@ mod tests {
         let c = open(&path).unwrap(); // reopen: already migrated
         assert_eq!(version(&c), SCHEMA_VERSION);
         drop(c);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// Upgrade path (SOURCE_MAP "fresh + upgrade"): a review deleted under schema 1 is gone from the
@@ -292,7 +291,7 @@ mod tests {
     #[test]
     fn deleted_review_is_gone_after_upgrade_from_v1() {
         const TOKEN: &str = "zqxv-upgrade-token-7731";
-        let dir = std::env::temp_dir().join(format!("runout-upgrade-{}", std::process::id()));
+        let dir = crate::test_dir::TempDir::new("upgrade");
         let path = dir.join("library.db");
         std::fs::create_dir_all(&dir).unwrap();
         let c = Connection::open(&path).unwrap();
@@ -319,7 +318,6 @@ mod tests {
                 "token left in {f}"
             );
         }
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// v7 library with plays → v8 (M10 WI 2): plays untouched, `duration_ms` NULL on old rows, the

@@ -8,16 +8,19 @@ import {
   type AppError, type ItemDetail, type ItemPatch, type ItemSummary, type ItemType, type LinkKind, type Status,
 } from "../api";
 import { XIcon as X } from "@phosphor-icons/react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
+import { Grow, MonthBars, monthLong } from "../components/charts";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import {
-  Attribution, CountUp, Dialog, Dots, EmbedSlot, Empty, ErrorBanner, FreshnessNote, PrioritySelect, Rating, SkelBlock, SkelRows, SourceTag,
+  Attribution, CountUp, Dialog, Dots, EmbedSlot, Empty, ErrorBanner, FreshnessNote, PrioritySelect, Rating, SkelBlock, SkelRows, SourceTag, spot,
   StatusBadge, StatusControl, Switch, TagChips, useToast,
 } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { useShortcuts, type ShortcutAction } from "../hooks/useShortcuts";
-import { ago, an, day, nameOf, pl, STATUS, STATUS_ORDER, statusMeta, TYPE } from "../lib/format";
+import { ago, an, day, hm, nameOf, pl, STATUS, STATUS_ORDER, statusMeta, TYPE } from "../lib/format";
+import { EASE, PRESS, RISE, swap } from "../lib/motion";
 
 export default function Item() {
   const id = Number(useParams().id);
@@ -42,6 +45,9 @@ function Detail({ it }: { it: ItemDetail }) {
   const [err, setErr] = useState<{ title: string; e?: AppError; retry?: () => void }>();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [filling, setFilling] = useState(false);
+  const reduce = useReducedMotion();
+  // M9 WI 8: the page's blocks rise in once (arrival); under reduced motion RISE's children start at rest.
+  const go = { initial: reduce ? false : "hidden", animate: "show" } as const;
 
   const run = async (title: string, p: () => Promise<unknown>) => {
     setErr(undefined);
@@ -72,7 +78,7 @@ function Detail({ it }: { it: ItemDetail }) {
   const artistName = artistLink ? nameOf(artistLink) : it.artist_names.join(", ");
   const back = it.in_backlog ? "backlog" : "library";
 
-  const head = edit ? <EditForm it={it} artistName={artistName} onDone={() => nav(`/item/${it.id}`)} /> : (
+  const head0 = edit ? <EditForm it={it} artistName={artistName} onDone={() => nav(`/item/${it.id}`)} /> : (
     <div className="flex flex-col gap-1.5">
       <span className="text-muted text-sm">{TYPE[it.type]}, added {day(it.added_at)}{it.added_via === "phone" ? " from your iPhone" : it.added_via === "inbox" ? " from your Runout Inbox" : ""}</span>
       <div className="flex flex-wrap gap-2 items-center">
@@ -87,6 +93,9 @@ function Detail({ it }: { it: ItemDetail }) {
       {it.recommended_by && <span className="text-muted text-sm">Recommended by {it.recommended_by}</span>}
     </div>
   );
+  // Edit and view swap with a short slide (state change): keyed, so only the side that arrives moves.
+  const head = <m.div key={edit ? "edit" : "view"} initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+    transition={swap(reduce, { duration: 0.24, ease: EASE })}>{head0}</m.div>;
 
   const spotifySave = !savable ? null
     : !online ? <span className="text-faint text-xs py-1.5">Saved in Spotify can’t change while you’re offline</span>
@@ -154,16 +163,24 @@ function Detail({ it }: { it: ItemDetail }) {
   </>;
 
   const addTrack = () => quickAdd({ suggest: { name: "", artist: artistName, type: "track", from: "plays" }, albumId: it.id });
+  const tl = it.track_list ?? [];
+  const played = tl.filter((t) => t.plays).length;
   const tracks = it.type !== "album" ? null : (
     <section className="card flex flex-col gap-3">
-      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">Tracks you’ve added</h2></div>
-      {it.track_list?.length ? it.track_list.map((t) => (
-        <div key={t.position} className="flex justify-between items-baseline gap-3 py-[3px]">
-          <span><span className="font-mono text-faint text-xs mr-2.5">{t.position}</span>{t.item_id ? <Link to={`/item/${t.item_id}`} className="text-text">{t.name}</Link> : t.name}</span>
+      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">Tracks you’ve added</h2>
+        {r2 && tl.length > 0 && <span className="font-mono text-text-2 text-xs">{played} of {tl.length} played</span>}</div>
+      {/* how much of the album you've heard: the number gets a bar (M9 WI 8); the accent stays on "Not played yet" */}
+      {r2 && tl.length > 0 && <span className="it-meter" aria-hidden><Grow pct={(played / tl.length) * 100} /></span>}
+      {tl.length ? <m.ol className="it-tracks" {...go}>{tl.map((t, i) => (
+        <m.li key={t.position} variants={RISE} custom={i} whileTap={reduce || !t.item_id ? undefined : PRESS_ROW} className="it-track">
+          <span className="font-mono text-faint text-xs">{t.position}</span>
+          <span className="truncate">{t.item_id ? <Link to={`/item/${t.item_id}`} className="it-stretch text-text">{t.name}</Link> : t.name}</span>
           {r2 && <span className={`text-xs ${t.plays ? "text-muted" : "text-accent"}`}>{t.plays ? "Played" : "Not played yet"}</span>}
-        </div>))
-        : onAlbum.length ? onAlbum.map((t) => (
-          <div key={t.id} className="flex justify-between items-baseline gap-3 py-[3px]"><Link to={`/item/${t.id}`} className="text-text">{nameOf(t)}</Link><span className="text-muted text-xs">{statusMeta(t)}</span></div>))
+        </m.li>))}</m.ol>
+        : onAlbum.length ? <m.ol className="it-tracks" {...go}>{onAlbum.map((t, i) => (
+          <m.li key={t.id} variants={RISE} custom={i} whileTap={reduce ? undefined : PRESS_ROW} className="it-track"><span aria-hidden />
+            <span className="truncate"><Link to={`/item/${t.id}`} className="it-stretch text-text">{nameOf(t)}</Link></span>
+            <span className="text-muted text-xs">{statusMeta(t)}</span></m.li>))}</m.ol>
         : <span className="text-muted">None yet. Add tracks to see which ones you haven’t played.</span>}
       <div className="flex flex-wrap gap-2 items-center">
         <button className="btn btn-secondary" onClick={addTrack}>Add a track</button>
@@ -173,7 +190,7 @@ function Detail({ it }: { it: ItemDetail }) {
   );
 
   const artistBody = it.type !== "artist" ? null : (
-    <section className="flex flex-col gap-3">
+    <section className="lit flex flex-col gap-3" onPointerMove={spot}>
       <div className="flex justify-between items-baseline gap-3"><h2 className="section-title">In your library</h2><span className="text-muted text-xs">Only what you’ve saved. This is not the artist’s full discography.</span></div>
       {byArtist.length ? <div className="card pad-s"><div className="list">{byArtist.map((x) => (
         <div key={x.id} className="row grid-cols-[minmax(0,1fr)_140px_130px]">
@@ -192,13 +209,18 @@ function Detail({ it }: { it: ItemDetail }) {
   const l = listening.data;
   const listeningCard = r2 && (
     <div className="card flex flex-col gap-1.5">
-      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">Your listening</h2>{l && <SourceTag sources={l.sources} />}</div>
+      <h2 className="card-title">Your listening</h2>
       {listening.loading ? <SkelBlock h={60} />
         : listening.error ? <ErrorBanner title="Couldn’t load your listening." error={listening.error} onRetry={listening.reload} />
         : l && l.data.plays ? <>
-          <span className="font-mono text-[22px] font-semibold"><CountUp text={pl(l.data.plays, "play")} /></span>
+          <span className="flex flex-wrap gap-x-4 items-baseline"><span className="font-mono text-[22px] font-semibold"><CountUp text={pl(l.data.plays, "play")} /></span>
+            {l.data.ms_total > 0 && <span className="font-mono text-text-2 text-sm">{hm(l.data.ms_total)}</span>}</span>
+          {/* the last 6 months as bars you can point at or step through (shared MonthBars, M9 WI 8) */}
+          {l.data.by_month.some((x) => x.plays) && <div className="it-months"><MonthBars months={l.data.by_month.map((x) => ({ month: x.month, value: x.plays }))} fmt={(v) => pl(v, "play")}
+            label={`Your plays of ${name} by month`} caption={(i) => (i === null ? "Last 6 months." : `${monthLong(l.data.by_month[i].month)}.`)} /></div>}
           <span className="text-text-2 text-sm">{l.data.last_played_local ? `Last played ${ago(l.data.last_played_local).toLowerCase()}.` : ""}{it.type === "album" ? " Counts every track from this album." : it.type === "artist" ? " Counts every track by this artist." : ""}</span>
         </> : <span className="text-text-2">No plays yet.</span>}
+      {l && <SourceTag sources={l.sources} />}{/* under the content, so the title never wraps (Insights InsightCard) */}
       {l && <FreshnessNote freshness={l.freshness} />}
     </div>
   );
@@ -206,11 +228,13 @@ function Detail({ it }: { it: ItemDetail }) {
   const history = (
     <div className="card flex flex-col gap-3">
       <h2 className="card-title">History</h2>
-      {it.history.length ? it.history.map((h, n) => (
-        <div key={n} className="grid grid-cols-[64px_minmax(0,1fr)] gap-2.5 text-sm">
+      {it.history.length ? <ol className="it-hist"><AnimatePresence initial={false}>{it.history.map((h, n) => (
+        // newest first; keyed from the oldest, so a status change you just made slides in on top and the rest stay still
+        <m.li key={it.history.length - n} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+          transition={swap(reduce, { duration: 0.3, ease: EASE })}>
           <span className="font-mono text-faint">{day(h.at)}</span>
           <span className="text-text-2">{h.from ? `${STATUS[h.from]} to ${STATUS[h.to]}${h.note ? `: ${h.note}` : ""}` : h.note || "Added"}</span>
-        </div>)) : <span className="text-muted">No changes yet.</span>}
+        </m.li>))}</AnimatePresence></ol> : <span className="text-muted">No changes yet.</span>}
     </div>
   );
 
@@ -228,18 +252,18 @@ function Detail({ it }: { it: ItemDetail }) {
       <Topbar />
       <Link to={`/${back}`} className="text-sm font-semibold">Back to {back}</Link>
       {err && <ErrorBanner title={err.title} error={err.e} onRetry={err.retry} />}
-      <section className="flex flex-wrap gap-7 items-start">
-        <div className="flex flex-col gap-3 flex-[0_1_360px] min-w-[280px]">
+      <m.section className="lit flex flex-wrap gap-7 items-start" onPointerMove={spot} {...go}>
+        <m.div variants={RISE} className="flex flex-col gap-3 flex-[0_1_360px] min-w-[280px]">
           <EmbedSlot uri={it.spotify_uri} height={it.type === "track" ? 152 : 352} />
           {it.spotify_uri && <Attribution uri={it.spotify_uri} name={name} />}
-        </div>
-        <div className="flex-[1.5_1_520px] min-w-0 flex flex-col gap-[18px]">{head}{!edit && <>{controls}{journal}</>}</div>
-      </section>
+        </m.div>
+        <m.div variants={RISE} custom={1} className="flex-[1.5_1_520px] min-w-0 flex flex-col gap-[18px]">{head}{!edit && <>{controls}{journal}</>}</m.div>
+      </m.section>
       {artistBody}
-      <div className="flex flex-wrap gap-7 items-start">
-        <div className="flex-[1.3_1_420px] min-w-0 flex flex-col gap-3.5">{tracks}</div>
-        <div className="flex-[1_1_320px] min-w-0 flex flex-col gap-5">{listeningCard}{history}{danger}</div>
-      </div>
+      <m.div className="lit flex flex-wrap gap-7 items-start" onPointerMove={spot} {...go}>
+        {tracks && <m.div variants={RISE} custom={2} className="flex-[1.3_1_420px] min-w-0 flex flex-col gap-3.5">{tracks}</m.div>}
+        <m.div variants={RISE} custom={3} className="flex-[1_1_320px] min-w-0 flex flex-col gap-5">{listeningCard}{history}{danger}</m.div>
+      </m.div>
       {confirmDelete && (
         <Dialog title={`Delete ${name}?`} onClose={() => setConfirmDelete(false)} footer={<>
           <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>Cancel</button>
@@ -311,6 +335,8 @@ function EditForm({ it, artistName, onDone }: { it: ItemDetail; artistName: stri
   );
 }
 
+/** Press on a track row; Motion owns the row's transform (RISE), so a CSS scale would be overridden. */
+const PRESS_ROW = { scale: 0.99, transition: PRESS };
 const LINK: Record<LinkKind, string> = { by_artist: "By", on_album: "On", version_of: "Version of" };
 /** Links a record of each type can make, and the type each points at (API.md link_items direction). */
 const LINKABLE: Record<ItemType, { kind: LinkKind; to?: ItemType; label: string }[]> = {

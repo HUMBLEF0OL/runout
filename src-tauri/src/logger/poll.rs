@@ -28,6 +28,7 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>) {
             // SMTC calls block briefly: no lock held. A failed read skips this tick.
             let snap = watcher.as_mut().map(|w| w.snapshot(&apps));
             let before = chrono::Utc::now();
+            let awake_before = awake_ms();
             let lg = app.state::<Mutex<Logger>>();
             let mut lg = lg.lock().unwrap();
             let db = st.db.lock().unwrap();
@@ -41,7 +42,7 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>) {
                     // A long import held the locks; that wait isn't sleep. Only here: a tick that
                     // doesn't observe must leave `last_seen` set, or the next gap goes unclamped.
                     if (now - before).num_seconds() > 1 {
-                        lg.awake_since(before);
+                        lg.awake_since(before, now, awake_ms() - awake_before);
                     }
                     if let Ok(Some(id)) = lg.observe(&db, &s, snap, now)
                         && let Ok(p) = play(&db, id)
@@ -56,6 +57,30 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>) {
             }
         }
     });
+}
+
+/// Milliseconds on a clock that stops while the PC sleeps or hibernates (Windows unbiased
+/// interrupt time: "does not include time the system spends in sleep or hibernation").
+#[cfg(windows)]
+fn awake_ms() -> i64 {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn QueryUnbiasedInterruptTime(t: *mut u64) -> i32;
+    }
+    let mut t = 0u64;
+    // SAFETY: writes one u64 to a valid pointer; always succeeds on Windows 7+.
+    unsafe { QueryUnbiasedInterruptTime(&mut t) };
+    (t / 10_000) as i64 // 100 ns units
+}
+
+/// Off Windows (dev builds only): a monotonic clock, so the whole wait counts as awake.
+#[cfg(not(windows))]
+fn awake_ms() -> i64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as i64
 }
 
 /// `logger-status` only when something other than the running `ms_played` changed.

@@ -497,15 +497,9 @@ pub mod testing {
         }
     }
 
-    pub fn temp_dir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "runout-sp-{tag}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    /// Removed when dropped: keep it alive for the whole test.
+    pub fn temp_dir(tag: &str) -> crate::test_dir::TempDir {
+        crate::test_dir::TempDir::new(&format!("sp-{tag}"))
     }
 
     /// Disconnected `Spotify` on `stub`, memory tokens, cache in `dir`.

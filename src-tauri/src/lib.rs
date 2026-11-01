@@ -21,6 +21,48 @@ pub mod text;
 pub mod tray;
 pub mod usage;
 
+/// Test-only temp dir, removed on drop. Every unit test makes its dirs through this (check.py
+/// "test temp dirs"): bare `std::env::temp_dir()` dirs leaked ~40k folders into %TEMP%.
+#[cfg(test)]
+pub mod test_dir {
+    use std::path::{Path, PathBuf};
+
+    pub struct TempDir(PathBuf);
+
+    impl TempDir {
+        /// A fresh empty `%TEMP%/runout-{tag}-{pid}-{thread}` (unique per test thread).
+        pub fn new(tag: &str) -> Self {
+            let d = std::env::temp_dir().join(format!(
+                "runout-{tag}-{}-{:?}",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            Self(d)
+        }
+    }
+
+    impl std::ops::Deref for TempDir {
+        type Target = PathBuf;
+        fn deref(&self) -> &PathBuf {
+            &self.0
+        }
+    }
+
+    impl AsRef<Path> for TempDir {
+        fn as_ref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+}
+
 use std::time::Duration;
 
 use tauri::{Emitter, Manager};

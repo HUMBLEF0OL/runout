@@ -122,8 +122,7 @@ mod tests {
 
     #[test]
     fn delete_library_needs_the_phrase_and_empties_everything() {
-        let d = std::env::temp_dir().join(format!("runout-delete-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::test_dir::TempDir::new("delete");
         let lib = d.join("library.db");
         let mut c = db::open(&lib).unwrap();
         db::fixture(&c, 4);
@@ -179,7 +178,6 @@ mod tests {
             .unwrap();
         assert_eq!(v, db::SCHEMA_VERSION);
         drop(c);
-        let _ = std::fs::remove_dir_all(d);
     }
 
     /// Deleted review text must not survive in the file: FTS5 deletes only add tombstones unless
@@ -190,9 +188,8 @@ mod tests {
         })
     }
 
-    fn lib_with_review(tag: &str) -> (std::path::PathBuf, Connection, i64) {
-        let d = std::env::temp_dir().join(format!("runout-fts-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+    fn lib_with_review(tag: &str) -> (crate::test_dir::TempDir, Connection, i64) {
+        let d = crate::test_dir::TempDir::new(&format!("fts-{tag}"));
         let c = db::open(&d.join("library.db")).unwrap();
         let id = c
             .query_row(
@@ -214,7 +211,6 @@ mod tests {
         delete_library(&mut c, &d.join("library.db"), CONFIRM).unwrap();
         assert!(!file_has(&d, b"qzxvwsecret"));
         drop(c);
-        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
@@ -226,13 +222,11 @@ mod tests {
             .unwrap();
         assert!(!file_has(&d, b"qzxvwsecret"));
         drop(c);
-        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
     fn uninstall_cleanup_removes_cache_and_webview_and_tolerates_missing() {
-        let d = std::env::temp_dir().join(format!("runout-uninstall-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::test_dir::TempDir::new("uninstall");
         std::fs::create_dir_all(d.join(WEBVIEW_DIR).join("Default")).unwrap();
         std::fs::write(d.join(CACHE_DB), b"x").unwrap();
         std::fs::write(d.join(format!("{CACHE_DB}-wal")), b"x").unwrap();
@@ -247,6 +241,5 @@ mod tests {
             "library is the NSIS checkbox's job"
         );
         cleanup(&d, target).unwrap(); // again: everything missing is fine (incl. the credential)
-        let _ = std::fs::remove_dir_all(d);
     }
 }

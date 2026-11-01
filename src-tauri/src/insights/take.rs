@@ -1,6 +1,6 @@
 //! `get_take_insights`: your ratings and backlog set against what you play (TSD §4.9, §4.13).
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rusqlite::Connection;
 use serde::Serialize;
@@ -59,40 +59,60 @@ pub fn take(
     include_private: bool,
     now: DateTime<Utc>,
 ) -> Result<Sourced<TakeInsights>> {
-    // `per` = counted plays and latest local play time per linked record, summed over one unsorted
-    // scan and the lists picked here (NFR-04: SQL's GROUP BY sorts every linked event).
+    // `per` = counted plays per linked record, from the 0005 rollup (base rows: reconciled left out,
+    // private per setting). The latest local play time is read only for the records that count
+    // for a top-rated one ("loved but forgotten"), on the item index (NFR-04: no pass over every
+    // linked event).
     // TSD §4.9: unfinished only for albums whose track list is in the library (`on_album` links).
-    let mut per: HashMap<i64, (i64, Option<String>)> = HashMap::new();
-    {
+    let private = if include_private {
+        ""
+    } else {
+        " AND private_session = 0"
+    };
+    let per: HashMap<i64, i64> = conn
+        .prepare(&format!(
+            "SELECT item_id, SUM(counts_as_play) FROM listening_rollup
+             WHERE item_id <> 0 AND events > 0{private} GROUP BY 1"
+        ))?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    // `SRC`: each record counts for itself, its album and artists
+    let src: Vec<(i64, i64)> = conn
+        .prepare(&format!("WITH x AS (SELECT 1){SRC} SELECT s, t FROM src"))?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let rated: HashSet<i64> = conn
+        .prepare("SELECT id FROM item WHERE rating >= ?1")?
+        .query_map([TOP_RATED_MIN], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let wanted: BTreeSet<i64> = src
+        .iter()
+        .filter(|(s, t)| rated.contains(t) && per.get(s).is_some_and(|p| *p > 0))
+        .map(|x| x.0)
+        .collect();
+    let mut last: HashMap<i64, String> = HashMap::new();
+    if !wanted.is_empty() {
+        let ids: Vec<String> = wanted.iter().map(i64::to_string).collect();
         let mut st = conn.prepare(&format!(
-            "{} SELECT item_id, counts_as_play, local FROM base WHERE +item_id IS NOT NULL",
-            base(include_private)
+            "{} SELECT item_id, MAX(local) FROM base WHERE item_id IN ({}) AND counts_as_play
+             GROUP BY 1",
+            base(include_private),
+            ids.join(", ")
         ))?;
         let mut rows = st.query([])?;
         while let Some(r) = rows.next()? {
-            let e = per.entry(r.get(0)?).or_default();
-            if r.get::<_, i64>(1)? != 0 {
-                e.0 += 1;
-                let local = super::text(r, 2)?;
-                if e.1.as_deref().is_none_or(|l| local > l) {
-                    e.1 = Some(local.to_owned());
-                }
-            }
+            last.insert(r.get(0)?, r.get(1)?);
         }
     }
-    // `stats` = the same per record it counts for (`SRC`: itself, its album and artists)
+    // `stats` = plays and the latest play per record it counts for
     let mut stats: HashMap<i64, (i64, Option<String>)> = HashMap::new();
-    {
-        let mut st = conn.prepare(&format!("WITH x AS (SELECT 1){SRC} SELECT s, t FROM src"))?;
-        let mut rows = st.query([])?;
-        while let Some(r) = rows.next()? {
-            let (s, t): (i64, i64) = (r.get(0)?, r.get(1)?);
-            if let Some((plays, last)) = per.get(&s) {
-                let e = stats.entry(t).or_default();
-                e.0 += plays;
-                if last.as_ref() > e.1.as_ref() {
-                    e.1.clone_from(last);
-                }
+    for (s, t) in src {
+        if let Some(plays) = per.get(&s) {
+            let e = stats.entry(t).or_default();
+            e.0 += plays;
+            let l = last.get(&s).filter(|_| rated.contains(&t));
+            if l > e.1.as_ref() {
+                e.1 = l.cloned();
             }
         }
     }
@@ -169,7 +189,7 @@ pub fn take(
             let (from, to): (i64, i64) = (r.get(0)?, r.get(1)?);
             if albums.contains(&to) {
                 let e = by_album.entry(to).or_default();
-                e.0 += per.get(&from).is_some_and(|p| p.0 > 0) as i64;
+                e.0 += per.get(&from).is_some_and(|p| *p > 0) as i64;
                 e.1 += 1;
             }
         }

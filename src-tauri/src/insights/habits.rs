@@ -609,6 +609,9 @@ fn year_of(local: &str) -> i32 {
         .fold(0i32, |n, b| n * 10 + i32::from(b - b'0'))
 }
 
+/// Threads the deep dives are split over (`habits`).
+const DIVE_THREADS: usize = 3;
+
 /// `get_listening_habits`.
 pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Habits>> {
     let today = cx.today();
@@ -1016,12 +1019,20 @@ pub fn habits<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Hab
                 .filter(|e| terms::is_play(e))
                 .collect(),
         );
+        // deep dives in session order, a share of the sessions per thread (NFR-04)
         let (d, stf) = std::thread::scope(|sc| {
-            let d = sc.spawn(|| dives_of(&sessions));
+            let size = sessions.len().div_ceil(DIVE_THREADS).max(1);
+            let d: Vec<_> = sessions
+                .chunks(size)
+                .map(|c| sc.spawn(|| dives_of(c)))
+                .collect();
             let stf = start_to_finish(cx.conn, &sessions);
-            (d.join(), stf)
+            let d: std::thread::Result<Vec<Vec<DeepDive>>> =
+                d.into_iter().map(|h| h.join()).collect();
+            (d.map(|v| v.concat()), stf)
         });
-        Ok::<_, AppError>((sessions, d.map_err(lost)?, r.join().map_err(lost)?, stf?))
+        let r = r.join();
+        Ok::<_, AppError>((sessions, d.map_err(lost)?, r.map_err(lost)?, stf?))
     })?;
 
     let mut track = cx
@@ -1151,25 +1162,26 @@ fn start_to_finish(
             .insert(track);
     }
     // Only sessions holding one of the album's tracks can hold them all (NFR-04: thousands of albums
-    // × thousands of sessions otherwise).
-    // each session's listed tracks only (NFR-04: ~400k plays), in cheaply hashed sets
+    // × thousands of sessions otherwise). Per listed track, the sessions holding it in ascending
+    // order (NFR-04: ~400k plays; no set per session).
     let listed: IdSet = albums.values().flat_map(|a| a.2.iter().copied()).collect();
-    let heard: Vec<IdSet> = sessions
-        .iter()
-        .map(|s| {
-            s.plays
-                .iter()
-                .filter_map(|e| e.item_id)
-                .filter(|id| listed.contains(id))
-                .collect()
-        })
-        .collect();
-    let mut with_track: HashMap<i64, Vec<usize>> = HashMap::new();
-    for (i, ids) in heard.iter().enumerate() {
-        for id in ids {
-            with_track.entry(*id).or_default().push(i);
+    let mut with_track: HashMap<i64, Vec<usize>, std::hash::BuildHasherDefault<MixHash>> =
+        HashMap::default();
+    for (i, s) in sessions.iter().enumerate() {
+        for id in s.plays.iter().filter_map(|e| e.item_id) {
+            if listed.contains(&id) {
+                let v = with_track.entry(id).or_default();
+                if v.last() != Some(&i) {
+                    v.push(i);
+                }
+            }
         }
     }
+    let holds = |t: &i64, i: usize| {
+        with_track
+            .get(t)
+            .is_some_and(|v| v.binary_search(&i).is_ok())
+    };
     let mut out: Vec<StartToFinish> = albums
         .into_iter()
         .filter_map(|(item_id, (name, by, tracks))| {
@@ -1180,7 +1192,7 @@ fn start_to_finish(
                 .get(first)?
                 .iter()
                 // as `heuristics::played_all`
-                .filter(|&&i| !tracks.is_empty() && tracks.iter().all(|t| heard[i].contains(t)))
+                .filter(|&&i| !tracks.is_empty() && tracks.iter().all(|t| holds(t, i)))
                 .count();
             (times > 0).then_some(StartToFinish {
                 item_id,

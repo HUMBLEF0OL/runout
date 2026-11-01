@@ -675,4 +675,21 @@ a.card { display: flex; }
 .in3-covkey li { display: flex; gap: 8px; align-items: baseline; }
 .in3-covkey b { color: var(--color-text); font-weight: 600; }
 .in3-covkey i { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: var(--radius-bar); }
+
+/* ---------- Item (M9 WI 8): track rows you can open whole, how much of the album you've played, the last 6 months
+   as Home's month bars, and the history as a timeline. Scoped `.it-*`; no new colours (DESIGN §3). */
+.it-meter { display: block; margin-top: -4px; }
+.it-tracks { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.it-track { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; margin-inline: -8px; padding: 5px 8px; border-radius: var(--radius-control); transition: background 150ms; } /* press scale: Motion whileTap (Item.tsx PRESS_ROW), which owns transform here */
+.it-track:hover { background: var(--color-surface-2); }
+.it-track:has(.it-stretch:active) { background: var(--color-surface-3); }
+.it-track:hover .font-mono { color: var(--color-text); }
+.it-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; } /* the whole row opens the track */
+.it-months .hm-plot { height: 112px; }
+.it-hist { position: relative; display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.it-hist::before { content: ""; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 1px; background: var(--color-line-2); } /* the timeline */
+.it-hist li { position: relative; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding-left: 18px; overflow: clip; }
+.it-hist li > span { padding-block: 4px; }
+.it-hist li::before { content: ""; position: absolute; left: 0; top: 9px; width: 7px; height: 7px; border-radius: var(--radius-bar); background: var(--color-bar); }
+.it-hist li:first-child::before { background: var(--color-accent); } /* newest first: where the record stands now */
 }

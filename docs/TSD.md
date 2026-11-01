@@ -182,6 +182,7 @@ ID must match `^[A-Za-z0-9]{22}$`. Playlist links are accepted only by Playlist 
 - Subscribe to `GlobalSystemMediaTransportControlsSessionManager`; track the session whose `SourceAppUserModelId` contains `Spotify` (configurable allow-list).
 - On media-properties change, a replay of the same track (timeline position back under 3 s after being further in) or session end: close the current event; `ms_played` = accumulated time in `Playing` state (sum of intervals; pauses excluded; seeks don’t add time).
 - Poll timeline every 5 s as a fallback (some apps don’t raise every event).
+- Sleep is never play time: a gap > 5 min between snapshots or a clock moving back ends the play at the last snapshot; a sleep inside a db-lock wait (wall time beyond Windows unbiased interrupt time) is cut from the running play.
 - Event is written only if `ms_played >= 1000` (noise filter); `counts_as_play` derives as above.
 - Logger rows use `dedupe_hash = sha256("logger|" ts|uri-or-norm_key|ms_played)`, so they never collide with export rows (one writer for both: `importer/events.rs`).
 - SMTC has no private-session flag, so desktop private sessions can’t be detected. Tray menu offers **Pause logging** (until resumed or for 1 h); paused time writes nothing.

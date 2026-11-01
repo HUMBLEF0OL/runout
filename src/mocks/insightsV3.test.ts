@@ -99,6 +99,12 @@ describe("Insights v3 mocks (API.md §4.1, FR-048 coverage rule)", () => {
     expect((await getDataCoverage()).coverage.gaps).toContainEqual({ from: "2026-01-19", to: "2026-01-21" });
   });
 
+  it("an arc's month before the history is null, not 0% (G-48)", async () => {
+    const arc = (await getTrends("hours")).data.arcs[0];
+    expect(arc.shares).toHaveLength(36);
+    expect(arc.shares[0]).toBeNull(); // Nov 2023: before the light history starts (Oct 2025)
+    expect(arc.shares[35]).not.toBeNull();
+  });
   it("heavy is a long-time listener: about 180k plays since 2015", async () => {
     setDev({ view: "heavy" });
     const r = (await getRecords()).data;

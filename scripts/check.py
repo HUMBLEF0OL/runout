@@ -408,6 +408,21 @@ def check_enrich_no_spotify():
         print("--- enrich no spotify: FAIL", *bad, sep="\n")
 
 
+def check_test_temp_dirs():
+    # Tests make temp dirs only through the Drop guards (lib.rs `test_dir::TempDir`, tests/common
+    # `temp_dir`): bare std::env::temp_dir() dirs were never removed (~40k leaked, 1 Nov 2026).
+    allowed = {TAURI / "src" / "lib.rs", TAURI / "tests" / "common" / "mod.rs",
+               TAURI / "src" / "insights" / "v3_tests.rs"}  # TODO: owned by a parallel change; convert, then drop
+    bad = [str(p.relative_to(ROOT)) for d in ("src", "tests") for p in (TAURI / d).rglob("*.rs")
+           if p not in allowed and "std::env::temp_dir()" in p.read_text(encoding="utf-8")]
+    # A guard made as a temporary (`f(&temp_dir("x"))`) is dropped, and the dir removed, mid-test.
+    bad += [f"{p.relative_to(ROOT)}: temporary guard" for d in ("src", "tests") for p in (TAURI / d).rglob("*.rs")
+            if re.search(r"&(common::)?(temp_dir|tmp)\(|TempDir::new\([^)]*\)\s*\.", p.read_text(encoding="utf-8"))]
+    if bad:
+        failures.append("test temp dirs")
+        print("--- test temp dirs: FAIL (use crate::test_dir::TempDir / common::temp_dir)", *bad, sep="\n")
+
+
 def check_migrations_numbered():
     # TSD §3: MIGRATIONS[i] sets user_version i + 1, so file numbers must be 0001..N with no gap and
     # one file per number. A gap (two tracks reserving numbers) would skip a migration on upgrade.
@@ -1052,6 +1067,7 @@ check_insights_no_cache()
 check_net_hosts_parity()
 check_enrich_no_spotify()
 check_migrations_numbered()
+check_test_temp_dirs()
 check_spotify_rules()
 check_boundary_values_kept()
 check_cache_schema_in_tsd()

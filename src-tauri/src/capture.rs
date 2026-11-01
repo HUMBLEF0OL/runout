@@ -761,7 +761,6 @@ mod tests {
             sh.in_flight.fetch_sub(1, Ordering::SeqCst);
         }
         assert_eq!(gate(sh, LAN, t).unwrap().0, 429, "the 503 counted too");
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -778,7 +777,6 @@ mod tests {
         );
         drop(l);
         assert!(!listener(&dir, 0).0.info().on, "off persisted");
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -874,10 +872,8 @@ mod tests {
         (Listener::new(&dir.join(FILE), port, hooks), events)
     }
 
-    fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("runout-capture-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        d
+    fn tmp(name: &str) -> crate::test_dir::TempDir {
+        crate::test_dir::TempDir::new(&format!("capture-{name}"))
     }
 
     #[test]
@@ -895,7 +891,6 @@ mod tests {
         );
         assert_eq!(status, 503, "capture is off: nothing saved");
         assert!(events.lock().unwrap().is_empty());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -932,7 +927,6 @@ mod tests {
             (false, rotated),
             "off + new code persisted across restart"
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -977,7 +971,6 @@ mod tests {
             t.elapsed()
         );
         drop(stalled);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// NFR-18: after a lockout the port is closed, not just ignored.
@@ -995,7 +988,6 @@ mod tests {
         assert!(l.bound_port().is_none());
         std::thread::sleep(Duration::from_millis(100));
         assert!(connect(port).is_err(), "port still accepting after lockout");
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// Drive `serve_one` over a real loopback socket as if the peer were on the LAN (loopback
@@ -1017,7 +1009,6 @@ mod tests {
         th.join().unwrap();
         let took = t.elapsed();
         drop(l);
-        let _ = std::fs::remove_dir_all(dir);
         (resp, took)
     }
 
@@ -1105,6 +1096,5 @@ mod tests {
         assert_ne!(l.new_pairing_code().unwrap().code, code);
         assert!(!l.set_enabled(false).unwrap().on); // joins the accept loop (bounded by POLL)
         assert!(l.bound_port().is_none());
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

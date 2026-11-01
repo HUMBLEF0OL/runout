@@ -14,15 +14,31 @@ const SYL: &[&str] = &[
 ];
 const ID: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
-/// A fresh empty dir under the OS temp dir.
-pub fn temp_dir(tag: &str) -> PathBuf {
+/// A fresh empty dir under the OS temp dir, removed on drop (`std::mem::forget` keeps it).
+pub fn temp_dir(tag: &str) -> TempDir {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let d = std::env::temp_dir().join(format!("runout-{tag}-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
-    d
+    TempDir(d)
+}
+
+/// Same guard as the lib's `test_dir::TempDir` (cfg(test) items aren't visible here).
+pub struct TempDir(PathBuf);
+
+impl std::ops::Deref for TempDir {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 pub struct Gen {

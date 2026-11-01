@@ -846,13 +846,37 @@ impl<T: Send + 'static> Aside<T> {
         cx: &Ctx<Tz>,
         job: impl FnOnce(&Connection, bool) -> Result<T> + Send + 'static,
     ) -> Self {
-        let private = cx.include_private;
-        match cx.conn.path().filter(|p| !p.is_empty()).map(str::to_owned) {
+        Self::on(cx.conn, cx.include_private, job)
+    }
+
+    /// `run` beside a reader that has only the connection.
+    pub fn on(
+        conn: &Connection,
+        private: bool,
+        job: impl FnOnce(&Connection, bool) -> Result<T> + Send + 'static,
+    ) -> Self {
+        match conn.path().filter(|p| !p.is_empty()).map(str::to_owned) {
             Some(path) => {
                 Aside::Running(std::thread::spawn(move || job(&open_read(&path)?, private)))
             }
-            None => Aside::Done(job(cx.conn, private)),
+            None => Aside::Done(job(conn, private)),
         }
+    }
+
+    /// Starts `job` on a `Ctx` of its own (same setting, zone and now) beside the caller.
+    pub fn run_cx<Tz: TimeZone + Send + 'static>(
+        cx: &Ctx<Tz>,
+        job: impl FnOnce(&Ctx<Tz>) -> Result<T> + Send + 'static,
+    ) -> Self {
+        let (tz, now) = (cx.tz.clone(), cx.now);
+        Self::run(cx, move |conn, include_private| {
+            job(&Ctx {
+                conn,
+                include_private,
+                tz: &tz,
+                now,
+            })
+        })
     }
 
     pub fn join(self) -> Result<T> {

@@ -396,6 +396,12 @@ pub async fn preview_studio_apply(
 /// first write Spotify refused (4xx) changed nothing, so its snapshot is dropped (no undo is
 /// offered); once anything (maybe) landed, it is the playlist's only undo and older ones are dropped.
 pub async fn apply_studio_draft(sp: &Spotify, draft: &Draft, keep: &[String]) -> Result<Applied> {
+    // G-43: Spotify's playlist ceiling; refused before any read or write.
+    if keep.len() > MAX_ITEMS {
+        return Err(AppError::validation(
+            "Studio can apply up to 10,000 tracks; this draft keeps more.",
+        ));
+    }
     let _one = sp.studio_lock.lock().await;
     let current = current_uris(sp, &draft.playlist_uri).await?;
     if !current.iter().eq(draft.tracks.iter().map(|t| &t.uri)) {
@@ -650,6 +656,18 @@ mod tests {
         assert_eq!(e.code, Code::Validation);
     }
 
+    /// G-43: keeping more than the 10,000-track ceiling is refused before anything reaches Spotify.
+    #[test]
+    fn keep_over_the_ceiling_is_refused() {
+        let d = temp_dir("studio-ceiling");
+        let stub = Stub::new(&[]);
+        let sp = connected(&d, &stub);
+        let keep = vec![t(b'a'); MAX_ITEMS + 1];
+        let e = block(apply_studio_draft(&sp, &draft_of(&[t(b'a')], "s1"), &keep)).unwrap_err();
+        assert_eq!(e.code, Code::Validation);
+        assert!(stub.calls().is_empty(), "nothing read or written");
+    }
+
     fn many(n: u8) -> Vec<String> {
         (0..n)
             .map(|i| format!("spotify:track:{:0>22}", i))
@@ -732,7 +750,8 @@ mod tests {
             ("studio-conflict-order", "BA", "AB"),
         ] {
             let stub = Stub::new(&[(200, &pg(&v(have)))]);
-            let sp = connected(&temp_dir(name), &stub);
+            let d = temp_dir(name);
+            let sp = connected(&d, &stub);
             let e = block(apply_studio_draft(&sp, &draft(drafted, "s1"), &v("A"))).unwrap_err();
             assert_eq!(e.code, Code::Conflict, "{have} vs {drafted}");
             assert_eq!(stub.calls().len(), 1, "nothing written");
@@ -803,7 +822,8 @@ mod tests {
     fn refused_first_write_drops_the_snapshot() {
         for (name, status) in [("studio-first-400", 400), ("studio-first-403", 403)] {
             let stub = Stub::new(&[(200, &pg(&v("AB"))), (status, "")]);
-            let sp = connected(&temp_dir(name), &stub);
+            let d = temp_dir(name);
+            let sp = connected(&d, &stub);
             assert!(block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("A"))).is_err());
             assert_eq!(block(get_last_apply(&sp, PL)).unwrap(), None, "{status}");
             assert_eq!(stub.calls().len(), 2, "no re-read after a refusal");
@@ -866,7 +886,8 @@ mod tests {
                 (200, &pg(&orig)),
                 (502, ""), // PUT: unknown, maybe still landing
             ]);
-            let sp = connected(&temp_dir(name), &stub);
+            let d = temp_dir(name);
+            let sp = connected(&d, &stub);
             assert!(block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).is_err());
             assert!(
                 block(get_last_apply(&sp, PL)).unwrap().is_some(),
@@ -910,7 +931,8 @@ mod tests {
             for (st, b) in answers {
                 stub.push(*st, b);
             }
-            let sp = connected(&temp_dir(name), &stub);
+            let d = temp_dir(name);
+            let sp = connected(&d, &stub);
             assert!(block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).is_err());
             let calls = stub.calls().len();
             stub.push(200, &pg(&before));
@@ -944,7 +966,8 @@ mod tests {
     fn apply_waits_while_an_unanswered_write_may_still_land() {
         let orig = v("ABC");
         let stub = Stub::new(&[(200, &pg(&orig)), (502, "")]);
-        let sp = connected(&temp_dir("studio-apply-wait"), &stub);
+        let d = temp_dir("studio-apply-wait");
+        let sp = connected(&d, &stub);
         assert!(block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &v("AB"))).is_err());
         let first = block(get_last_apply(&sp, PL)).unwrap().unwrap();
         let calls = stub.calls().len();
@@ -984,7 +1007,8 @@ mod tests {
             (201, r#"{"snapshot_id":"s3"}"#), // POST 100
             (502, ""),                        // POST 50: unknown, but it ran
         ]);
-        let sp = connected(&temp_dir("studio-unknown-later"), &stub);
+        let d = temp_dir("studio-unknown-later");
+        let sp = connected(&d, &stub);
         assert!(block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).is_err());
         stub.push(200, &pg(&keep)); // undo's read: all 250 of our own writes
         stub.push(200, r#"{"snapshot_id":"s4"}"#);
@@ -1005,7 +1029,8 @@ mod tests {
             ("studio-undo-episode", episode),
         ] {
             let stub = Stub::new(&[(200, &pg(&v("AB"))), (200, r#"{"snapshot_id":"s2"}"#)]);
-            let sp = connected(&temp_dir(name), &stub);
+            let d = temp_dir(name);
+            let sp = connected(&d, &stub);
             block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("B"))).unwrap();
             stub.push(200, &page.to_string());
             assert_eq!(
@@ -1034,7 +1059,8 @@ mod tests {
         let keep: Vec<String> = orig.iter().rev().cloned().collect();
         let stub = Stub::new(&[(200, &pg(&orig)), (200, r#"{"snapshot_id":"s2"}"#)]);
         stub.push_resp(busy());
-        let sp = connected(&temp_dir("studio-busy-later"), &stub);
+        let d = temp_dir("studio-busy-later");
+        let sp = connected(&d, &stub);
         let e = block(apply_studio_draft(&sp, &draft_of(&orig, "s1"), &keep)).unwrap_err();
         assert_ne!(e.code, Code::SpotifyBusy, "apply");
         assert!(block(get_last_apply(&sp, PL)).unwrap().is_some());
@@ -1052,7 +1078,8 @@ mod tests {
     #[test]
     fn undo_on_a_deleted_playlist_drops_the_snapshot() {
         let stub = Stub::new(&[(200, &pg(&v("AB"))), (200, r#"{"snapshot_id":"s2"}"#)]);
-        let sp = connected(&temp_dir("studio-undo-404"), &stub);
+        let d = temp_dir("studio-undo-404");
+        let sp = connected(&d, &stub);
         block(apply_studio_draft(&sp, &draft("AB", "s1"), &v("B"))).unwrap();
         stub.push(404, "");
         assert_eq!(

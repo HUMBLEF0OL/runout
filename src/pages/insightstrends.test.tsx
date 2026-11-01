@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import * as api from "../api";
 import { ToastProvider } from "../components/ui";
-import { brushPeriod, calendarDay, calendarLead, Trends } from "./InsightsTrends";
+import { arcRuns, brushPeriod, calendarDay, calendarLead, Trends } from "./InsightsTrends";
 
 beforeAll(() => api.loadMocks());
 afterEach(cleanup);
@@ -26,6 +26,14 @@ describe("calendar", () => {
     expect(calendarDay(2026, 364)).toBe("2026-12-31");
     expect(calendarLead(2026)).toBe(3); // 1 Jan 2026 is a Thursday
     expect(calendarLead(2024)).toBe(0); // a Monday
+  });
+});
+
+describe("arcRuns (G-48)", () => {
+  it("a no-data month is a gap between lines, never a 0% point", () => {
+    expect(arcRuns([null, 10, 20, null, 20, null], 20)).toEqual(["20.0,50.0 40.0,4.0", "80.0,4.0"]);
+    expect(arcRuns([0, 10], 10)).toEqual(["0.0,96.0 100.0,4.0"]); // a real 0% is still drawn
+    expect(arcRuns([null, null], 10)).toEqual([]);
   });
 });
 

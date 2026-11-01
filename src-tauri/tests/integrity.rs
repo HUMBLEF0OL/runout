@@ -111,7 +111,6 @@ fn write_kill(offsets: &[u64]) {
         println!("kill mid-write at {ms} ms: ok, {n} items committed");
         last = n;
     }
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Quick variant (debug build, a few seconds).
@@ -166,7 +165,6 @@ fn backup_kill(name: &str, items: usize, offsets: &[u64]) {
         .collect();
     assert!(stray.is_empty(), "leftovers: {stray:?}");
     drop(conn);
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Quick variant (debug build, a few seconds): runs in check.py, so mid-backup NFR-05 is always proven.

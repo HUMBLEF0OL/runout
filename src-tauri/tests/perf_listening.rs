@@ -216,8 +216,7 @@ fn perf_listening() {
     drop(conn);
     if std::env::var_os("RUNOUT_PERF_KEEP").is_some() {
         println!("kept {}", dir.display());
-    } else {
-        let _ = std::fs::remove_dir_all(&dir);
+        std::mem::forget(dir);
     }
     assert!(slow.is_empty(), "over target: {slow:?}");
 }

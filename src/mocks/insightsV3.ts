@@ -241,7 +241,7 @@ export function insightsV3(find: Find, freshness: () => unknown) {
       : [["2025-10", "2026-04", ["Prateek Kuhad"]], ["2026-05", TODAY.slice(0, 7), ["Alice Coltrane"]]];
     const shape = (kind: string, i: number) => kind === "rising" ? (i > 27 ? 4 + (i - 27) * 1.7 : 1) : kind === "fading" ? Math.max(1, 20 - i * 0.5) : kind === "back_again" ? (i < 8 ? 5 : i < 31 ? 0.2 : 4 + (i - 31)) : 6;
     const arc = (artist: string, kind: "rising" | "fading" | "back_again" | "constant", change_pct: number | null, since: string | null, quiet_from: string | null, related: string[]) =>
-      ({ artist, item_id: find("artist", artist)?.id ?? null, kind, shares: Array.from({ length: 36 }, (_, i) => r1(shape(kind, i) + noise(artist + i))), change_pct, since, quiet_from, related });
+      ({ artist, item_id: find("artist", artist)?.id ?? null, kind, shares: Array.from({ length: 36 }, (_, i) => addMonths(TODAY.slice(0, 7), i - 35) < start().slice(0, 7) ? null : r1(shape(kind, i) + noise(artist + i))), change_pct, since, quiet_from, related });
     const ys = years();
     const data: Trends = {
       months,

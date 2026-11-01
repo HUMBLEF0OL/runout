@@ -90,5 +90,4 @@ fn all_data_persists_across_restart() {
     let c = db::open(&path).unwrap(); // "restart"
     assert_eq!(snapshot(&c, &[album, track]), before);
     drop(c);
-    let _ = std::fs::remove_dir_all(dir);
 }

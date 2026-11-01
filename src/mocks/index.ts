@@ -227,7 +227,7 @@ function loggerStatus(): LoggerStatus {
     now_playing: np && state === "listening" ? { track_name: np.track, artist_name: np.artist, album_name: np.album, spotify_uri: np.spotify_uri, ms_played: np.ms, duration_ms: np.duration_ms, item: it ? summary(it) : null } : null,
   };
 }
-const months = (n: number) => Array.from({ length: n }, (_, k) => { const d = new Date(TODAY.slice(0, 7) + "-01T00:00"); d.setMonth(d.getMonth() - (n - 1 - k)); return d.toISOString().slice(0, 7); });
+const months = (n: number) => Array.from({ length: n }, (_, k) => { const d = new Date(TODAY.slice(0, 7) + "-01T00:00"); d.setMonth(d.getMonth() - (n - 1 - k)); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }); // local, not toISOString (UTC shifts a month east of UTC)
 
 // What oEmbed / Spotify would say about the sample links (prototype dialogs.js SUGGEST).
 const SUGGEST: Record<string, { title: string; artist: string; type: "album" | "artist"; tracks?: string[] }> = {
@@ -422,7 +422,9 @@ const H: Record<string, Handler> = {
   link_play: ({ eventId }) => { L.unmatched = L.unmatched.filter((_: any, n: number) => 1000 + n !== eventId); },
   get_item_listening: ({ id }) => {
     const st = L.item_stats[String(id)];
-    const mine = allPlays().filter((p) => p.item?.id === id && p.counts_as_play);
+    // A play counts for its track, the track's album and artist, and the album's artist (Rust insights SRC).
+    const feeds = (t?: MItem) => { const al = t?.album_id != null ? byId(t.album_id) : undefined; return t ? [t.id, t.artist_id, al?.id, al?.artist_id] : []; };
+    const mine = allPlays().filter((p) => p.counts_as_play && feeds(p.item ? byId(p.item.id) : undefined).includes(id));
     const by_month = months(6).map((month) => ({ month, plays: mine.filter((p) => p.ended_at_local.startsWith(month)).length }));
     return sourced({ plays: st?.plays ?? 0, ms_total: (st?.plays ?? 0) * 240000, last_played_local: st?.last ?? null, by_month }, ["U", "S", "E"]);
   },

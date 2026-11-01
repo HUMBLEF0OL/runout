@@ -41,6 +41,16 @@ const lastIdx = <T,>(a: T[], p: (x: T) => boolean) => { for (let i = a.length - 
 const pct1 = (v: number) => Math.round(v * 10) / 10; // spoken shares: one decimal
 const fmtOf = (k: Measure) => (v: number) => (k === "hours" ? hrs(v) : pl(v, k === "plays" ? "play" : "artist"));
 
+/** An arc's sparkline: one polyline per run of months with data; a null month is a gap, never 0 (G-48). */
+export function arcRuns(shares: (number | null)[], max: number): string[] {
+  const runs: string[][] = [[]];
+  shares.forEach((v, i) => {
+    if (v == null) { if (runs[runs.length - 1].length) runs.push([]); return; }
+    runs[runs.length - 1].push(`${((i / Math.max(1, shares.length - 1)) * 100).toFixed(1)},${(96 - (v / max) * 92).toFixed(1)}`);
+  });
+  return runs.filter((r) => r.length).map((r) => r.join(" "));
+}
+
 export function Trends({ today }: { today: string }) {
   const reduce = useReducedMotion();
   const [measure, setMeasure] = useState<Measure>("hours");
@@ -143,12 +153,16 @@ function arcLine(x: Arc) {
 }
 const related = (x: Arc) => !x.related.length ? null
   : x.kind === "fading" ? `may have lost time to ${x.related.join(", ")}` : `may have taken time from ${x.related.join(", ")}`;
+const arcLabel = (x: Arc) => {
+  const known = x.shares.filter((v): v is number => v != null);
+  return `${x.artist}: ${known.length} months with data` + (known.length ? `, from ${pct1(known[0])}% to ${pct1(known[known.length - 1])}% of your time` : "");
+};
 function Arcs({ res }: { res: Res }) {
   const [kind, setKind] = useState<Kind>("rising");
   const [, slide] = useSlide(KINDS.map((k) => k[0]), kind);
   const all = res.data.arcs;
   const rows = all.filter((x) => x.kind === kind);
-  const max = Math.max(1e-9, ...all.flatMap((x) => x.shares));
+  const max = Math.max(1e-9, ...all.flatMap((x) => x.shares.map((v) => v ?? 0)));
   return (
     <Card title="Artist arcs" res={res}>
       <div className="flex flex-wrap gap-3 justify-between items-center">
@@ -161,8 +175,8 @@ function Arcs({ res }: { res: Res }) {
             <span className="flex flex-col min-w-0">{x.item_id ? <Link to={`/item/${x.item_id}`} className="font-semibold text-text truncate">{x.artist}</Link> : <b className="truncate">{x.artist}</b>}
               <span className="text-muted text-xs">{arcLine(x)}</span></span>
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={x.kind === "fading" ? "fade" : undefined} role="img"
-              aria-label={`${x.artist}: ${x.shares.length} months` + (x.shares.length ? `, from ${pct1(x.shares[0])}% to ${pct1(x.shares[x.shares.length - 1])}% of your time` : "")}>
-              <polyline points={x.shares.map((v, i) => `${((i / Math.max(1, x.shares.length - 1)) * 100).toFixed(1)},${(96 - (v / max) * 92).toFixed(1)}`).join(" ")} vectorEffect="non-scaling-stroke" />
+              aria-label={arcLabel(x)}>
+              {arcRuns(x.shares, max).map((pts) => <polyline key={pts} points={pts} vectorEffect="non-scaling-stroke" />)}
             </svg>
             <span className="text-text-2 text-sm">{related(x) ?? ""}</span>
           </li>))}</ul>}

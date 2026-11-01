@@ -221,8 +221,8 @@ impl Logger {
     }
 
     /// See `Accumulator::awake_since`.
-    pub fn awake_since(&mut self, from: DateTime<Utc>) {
-        self.acc.awake_since(from);
+    pub fn awake_since(&mut self, from: DateTime<Utc>, to: DateTime<Utc>, awake_ms: i64) {
+        self.acc.awake_since(from, to, awake_ms);
     }
 
     /// Finish the current play now (before pausing or turning off), writing it if ≥ 1 s.

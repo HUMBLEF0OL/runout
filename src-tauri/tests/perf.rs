@@ -141,5 +141,4 @@ fn perf_10k() {
         t.elapsed()
     );
     drop(conn);
-    let _ = std::fs::remove_dir_all(&dir);
 }

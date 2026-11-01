@@ -730,13 +730,14 @@ mod tests {
     #[test]
     fn stale_invalid_grant_keeps_newer_tokens() {
         let d = temp_dir("auth-stale-grant");
-        let me: std::sync::Arc<std::sync::OnceLock<std::sync::Arc<Spotify>>> = Default::default();
+        // Weak: an Arc here would be a cycle (sp → transport → sp), leaking the cache file and dir
+        let me: std::sync::Arc<std::sync::OnceLock<std::sync::Weak<Spotify>>> = Default::default();
         let m2 = me.clone();
         let transport: crate::spotify::Transport = std::sync::Arc::new(move |_req: HttpReq| {
             let m2 = m2.clone();
             Box::pin(async move {
                 // someone else stored a rotated token while this refresh was out
-                let sp = m2.get().unwrap();
+                let sp = m2.get().unwrap().upgrade().unwrap();
                 sp.set_tokens(Some(Tokens {
                     refresh: "rotated".into(),
                     ..Tokens::synthetic(3600)
@@ -754,7 +755,7 @@ mod tests {
             d.join(crate::cleanup::CACHE_DB),
             transport,
         ));
-        let _ = me.set(sp.clone());
+        let _ = me.set(std::sync::Arc::downgrade(&sp));
         sp.set_tokens(Some(Tokens::synthetic(-10))).unwrap();
         assert!(block(access_token(&sp, None)).is_err());
         assert_eq!(sp.tokens().unwrap().refresh, "rotated");

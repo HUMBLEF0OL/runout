@@ -19,6 +19,7 @@ Spec-driven rule: before a milestone starts, its specs are current (BRD, [TSD](T
 | M10 Deep listening insights (Insights v3) | feature (design → integration) | R2 | CAP-37–44 | U-11 (WI 9 only; yes, 26 Oct 2026) | ready 24 Oct 2026; 6–10 h agentic |
 
 ### Status (1 Nov 2026)
+- **M9 closed 1 Nov 2026** (Item screen, review fixes). Same day, code-level gaps: G-42 (sleep during a lock wait), G-43 (Studio keep cap), G-48 (arc sparkline nulls) fixed; test temp dirs now clean up (`check.py` "test temp dirs"). G-47 perf partly improved, still open. Open beyond code: U-5 daily use, G-21/G-27/G-28/G-32/G-37/G-40 (need real use).
 - **M10 closed 1 Nov 2026:** acceptance 10/11 with evidence; NFR-04 open as **G-47**. WI 1–10 done; external audit (6 lenses, 12/13 findings confirmed by adversarial verify and fixed); G-45/G-46 closed; M10 build installed over the 24 Oct build (backup `%LOCALAPPDATA%\Runout-preM10-backup-20261101`), real-history hand-check 11/11 on the installed app. Deferred: **G-47** perf, **G-48** arc sparkline no-data months. **Next:** U-5 daily use on the M10 build; a perf pass for G-47.
 - **M10 designed 24 Oct 2026** (D35, user goal "finalize the design and put it in M10"): deep listening insights, Last.fm depth, computed locally from U, S, E. Design + definitions [design/M10-insights-v3.md](design/M10-insights-v3.md), mockup and 8 tab screens in `docs/design/`, plan [plans/M10-deep-insights.md](plans/M10-deep-insights.md). Data audit found G-45 (skip rate understated) and G-46 (comparisons mix coverage), both owned by M10. Genres & decades waits on **U-11**. **M10 is ready to start**: entry (M9 Home + Insights done) met 24 Oct 2026; next is WI 1, the API contract. It runs alongside M9's Item screen.
 - **Sidebar + Settings on Motion (24 Oct 2026):** CSS animation replaced by Motion for React (rail marker, press, logo turn, label stagger; tab/segment indicators; `TabPanel` on every tabbed page; switch thumb; disclosure; copy pop; count-up). Presets in `src/lib/motion.ts`. Rail width snaps (no per-frame relayout). Start-up JS +4.8 kB gzip, measured against HEAD in a clean worktree. check.py green, journeys 31/31.
@@ -57,11 +58,8 @@ Found while building and closing M2 (18 Oct 2026). None blocks a release criteri
 | G-37 | Real `spotify.link` short-link resolution never exercised; `links::resolve_short` verified only on a synthetic code | `src-tauri/src/links.rs` | The user's Spotify apps share full `open.spotify.com` links, even to WhatsApp (21 Oct 2026) | accepted (paste a real `spotify.link` if one ever appears) |
 | G-40 | Inbox optional imports (saved albums via `GET /me/albums`, followed-artists diff via `GET /me/following`) and the `user-follow-read` re-approval flow only stub-tested | `src-tauri/src/spotify/inbox.rs`, `auth.rs` | Both options are off by default; the U-10 live test ran with them off | M8 (turn each on once, sign in again, save an album / follow an artist, Check now; U-5) |
 | G-32 | Autofill, album bulk-add, playlist from filter/items, top items, recent plays and library save/remove have only run against stub HTTP responses; only sign-in and Playlist Studio ran live (20 Oct 2026) | `src-tauri/src/spotify/{autofill,create,discover,library_sync}.rs` | M5 acceptance covers Studio + auth only; the UI still calls mocks for R3 | M8 candidate (all live 21–22 Oct 2026 except `bulk_add_album_tracks`: first real use will show it) |
-| G-42 | Logger: a PC that sleeps *during* a long db-lock wait (import/backup) counts that sleep as play time; sleeps between ticks are clamped (`MAX_GAP_MS`) | `src-tauri/src/logger/accumulator.rs` (`awake_since`) | Needs a monotonic-vs-wall-clock compare; both events together are rare | M9 candidate (if a too-long play is ever seen) |
-| G-43 | Studio apply doesn't cap `keep` at 10,000 tracks | `src-tauri/src/spotify/studio.rs` | Only reachable if the UI sends more than the draft holds | M9 candidate |
 | G-44 | UI audit low items left: inner 8 px radius on segment buttons, `.btn.s`, badges and menu items (nested radius = outer − padding); `.rail-box` and `.steps li` plain surface fills; recipe hex values for the embed placeholder and `.btn-light` hover | `src/styles/app.css` | Deliberate or cosmetic; DESIGN §3 radius table lists outer shapes only | accepted (revisit in a light-theme pass) |
 | G-47 | NFR-04 not met by some Insights v3 commands on the 500k reference: period_report week/month/year/all/custom 551–1491 ms, discovery all 562, habits all 1664, trends Hours/Artists ~1000, explore 3 series/weeks/share 487 ms (200 target), take 724 ms (433 in M4) | `src-tauri/src/insights/` (report, habits, explore, take); numbers in `docs/kb/perf-integrity.md` | Perf pass stopped 31 Oct 2026 to finish M10 on time (user: speed up) | Perf pass after M10 |
-| G-48 | Trends arc sparkline draws no-data months as 0% (the arc labels already skip them) | `docs/API.md` `shares: number[]`, `insights/history.rs`, `src/pages/InsightsTrends.tsx` | Needs a contract change to `(number\|null)[]` | Next milestone after M10 |
 ---
 
 ## M0 — Foundations
@@ -276,10 +274,10 @@ Acceptance
 4. **Review:** `spec-reviewer` against DESIGN §2–3 and accessibility; findings fixed.
 
 ### Acceptance
-- [ ] Every screen refined; each new motion listed in DESIGN §3 with its reason. *(Settings done 24 Oct 2026)*
-- [ ] Everything instant under `prefers-reduced-motion` (journey M1), focus rings and accessible names intact (M2, M3).
-- [ ] No side effects: unrelated screens' journey screenshots differ by timing noise only. *(Settings: checked 24 Oct 2026)*
-- [ ] `python scripts/check.py` and `node scripts/journeys.mjs` pass.
+- [x] Every screen refined; each new motion listed in DESIGN §3 with its reason. *(Settings done 24 Oct 2026)* **Done 1 Nov 2026:** Item (last screen) refined; independent spec-reviewer pass, 3 UI findings fixed; journeys 51/51, check.py green.
+- [x] Everything instant under `prefers-reduced-motion` (journey M1), focus rings and accessible names intact (M2, M3). **Done 1 Nov 2026:** Item (last screen) refined; independent spec-reviewer pass, 3 UI findings fixed; journeys 51/51, check.py green.
+- [x] No side effects: unrelated screens' journey screenshots differ by timing noise only. *(Settings: checked 24 Oct 2026)* **Done 1 Nov 2026:** Item (last screen) refined; independent spec-reviewer pass, 3 UI findings fixed; journeys 51/51, check.py green.
+- [x] `python scripts/check.py` and `node scripts/journeys.mjs` pass. **Done 1 Nov 2026:** Item (last screen) refined; independent spec-reviewer pass, 3 UI findings fixed; journeys 51/51, check.py green.
 
 ## M10 — Deep listening insights (Insights v3)
 

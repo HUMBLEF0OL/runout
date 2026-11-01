@@ -186,9 +186,7 @@ mod tests {
 
     #[test]
     fn relocate_across_drives_copies_and_never_loses_the_file() {
-        let d = std::env::temp_dir().join(format!("runout-relocate-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
+        let d = crate::test_dir::TempDir::new("relocate");
         let cross_drive = |_: &std::path::Path, _: &std::path::Path| {
             Err(std::io::Error::other("not same device"))
         };
@@ -201,14 +199,11 @@ mod tests {
         let missing = d.join("no-such-dir").join("moved");
         relocate(&t, &missing, cross_drive);
         assert_eq!(std::fs::read(&t).unwrap(), b"safety", "never lost");
-        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
     fn recover_library_puts_pre_restore_back_only_after_a_failed_restore() {
-        let d = std::env::temp_dir().join(format!("runout-recover-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
+        let d = crate::test_dir::TempDir::new("recover");
         let lib = d.join(LIBRARY_FILE);
         let (pre, marker) = (
             d.join("library.db.pre-restore"),
@@ -256,7 +251,6 @@ mod tests {
         // marker without pre-restore → marker cleared
         std::fs::write(&marker, b"").unwrap();
         assert!(!recover_library(&lib) && !marker.exists());
-        let _ = std::fs::remove_dir_all(d);
     }
 
     /// G-20: A is mid-edit when B starts; B must wait and apply on top of A, so both survive.
@@ -264,8 +258,7 @@ mod tests {
     /// window and A's stale clone would overwrite it).
     #[test]
     fn edit_settings_keeps_concurrent_changes() {
-        let d = std::env::temp_dir().join(format!("runout-edit-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::test_dir::TempDir::new("edit");
         let paths = Paths {
             config_dir: d.join("cfg"),
             data_dir: d.clone(),
@@ -313,13 +306,11 @@ mod tests {
             "file lost a change"
         );
         drop(st);
-        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
     fn move_library_copies_switches_and_refuses_occupied_folder() {
-        let d = std::env::temp_dir().join(format!("runout-move-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::test_dir::TempDir::new("move");
         let old = d.join("a").join(LIBRARY_FILE);
         let db = crate::db::open(&old).unwrap();
         crate::db::fixture(&db, 3);
@@ -385,6 +376,5 @@ mod tests {
         assert_eq!(e.code, crate::error::Code::Validation);
         assert_eq!(st.settings.lock().unwrap().library_path, new);
         drop(st);
-        let _ = std::fs::remove_dir_all(d);
     }
 }

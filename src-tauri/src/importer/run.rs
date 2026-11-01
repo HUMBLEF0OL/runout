@@ -203,9 +203,7 @@ mod tests {
     /// a repeat is a duplicate, a 0 ms row is stored but isn't a play.
     #[test]
     fn sparse_and_repeated_rows_import_cleanly() {
-        let d = std::env::temp_dir().join(format!("runout-sparse-import-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
+        let d = crate::test_dir::TempDir::new("sparse-import");
         let row = |ts: &str, ms: u32| {
             format!(
                 r#"{{"ts": "{ts}", "ms_played": {ms}, "platform": null, "master_metadata_track_name": null,
@@ -223,7 +221,6 @@ mod tests {
         .unwrap();
         let mut c = db::open_in_memory().unwrap();
         let r = run(&mut c, &load(&d).unwrap()).unwrap();
-        let _ = std::fs::remove_dir_all(&d);
         assert_eq!((r.added, r.duplicates), (2, 1));
         assert_eq!(
             count(
@@ -236,9 +233,7 @@ mod tests {
 
     #[test]
     fn bad_file_aborts_everything() {
-        let d = std::env::temp_dir().join(format!("runout-bad-import-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
+        let d = crate::test_dir::TempDir::new("bad-import");
         for f in std::fs::read_dir(fixture()).unwrap() {
             let p = f.unwrap().path();
             std::fs::copy(&p, d.join(p.file_name().unwrap())).unwrap();
@@ -255,7 +250,6 @@ mod tests {
                 .unwrap()
                 .contains("Streaming_History_Audio_2027_2.json")
         );
-        let _ = std::fs::remove_dir_all(d);
     }
 
     /// Acceptance (M4): no IP / user agent / username value in any TEXT column of library.db.

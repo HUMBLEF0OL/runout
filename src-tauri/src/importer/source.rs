@@ -199,7 +199,8 @@ mod tests {
         assert_eq!((e.streaming.len(), e.playlists.len()), (3, 1));
 
         // same files zipped inside a subfolder → same set, same checksum
-        let zp = std::env::temp_dir().join(format!("runout-src-{}.zip", std::process::id()));
+        let tmp = crate::test_dir::TempDir::new("src");
+        let zp = tmp.join("src.zip");
         let mut w = zip::ZipWriter::new(FsFile::create(&zp).unwrap());
         for f in std::fs::read_dir(fixture()).unwrap() {
             let p = f.unwrap().path();
@@ -217,15 +218,13 @@ mod tests {
         assert_eq!(checksum("s", &z.streaming), checksum("s", &e.streaming));
         let _ = std::fs::remove_file(zp);
 
-        let empty = std::env::temp_dir().join(format!("runout-src-empty-{}", std::process::id()));
-        std::fs::create_dir_all(&empty).unwrap();
+        let empty = crate::test_dir::TempDir::new("src-empty");
         std::fs::write(empty.join("YourLibrary.json"), "{}").unwrap();
         assert_eq!(read(&empty).err().unwrap().code, Code::ImportUnrecognized);
         assert_eq!(
             read(&empty.join("nope.txt")).err().unwrap().code,
             Code::Validation
         );
-        let _ = std::fs::remove_dir_all(empty);
     }
 }
 
@@ -235,8 +234,7 @@ mod walk_tests {
 
     #[test]
     fn folder_walk_stops_at_max_depth() {
-        let root = std::env::temp_dir().join(format!("runout-walk-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = crate::test_dir::TempDir::new("walk");
         let ok = root.join("Spotify Extended Streaming History");
         let deep = (0..=MAX_DEPTH).fold(root.clone(), |p, i| p.join(format!("d{i}")));
         for d in [&ok, &deep] {
@@ -245,7 +243,6 @@ mod walk_tests {
         }
         let e = read(&root).unwrap();
         assert_eq!(e.streaming.len(), 1, "only the shallow file is read");
-        let _ = std::fs::remove_dir_all(root);
     }
 
     /// A damaged entry inside the .zip (CRC mismatch) or truncated JSON names the file
@@ -256,9 +253,9 @@ mod walk_tests {
         use zip::CompressionMethod::{Deflated, Stored};
         let body = br#"[{"ts": "2026-01-01T00:00:00Z", "ms_played": 1000}]"#.repeat(40);
         let name = "x/Streaming_History_Audio_2026.json";
+        let tmp = crate::test_dir::TempDir::new("src-bad");
         for (i, method) in [Stored, Deflated].into_iter().enumerate() {
-            let zp =
-                std::env::temp_dir().join(format!("runout-src-bad-{}-{i}.zip", std::process::id()));
+            let zp = tmp.join(format!("bad-{i}.zip"));
             let mut w = zip::ZipWriter::new(FsFile::create(&zp).unwrap());
             let opts = zip::write::SimpleFileOptions::default().compression_method(method);
             w.start_file(name, opts).unwrap();

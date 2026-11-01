@@ -28,7 +28,8 @@ export function MonthBars({ months, fmt, label, avg, hot, caption, valuetext, ti
   const [at, setAt] = useState<number | null>(null);
   const n = months.length;
   const rest = hot ?? n - 1;
-  const tx = useMotionValue(1);
+  // Start at rest: on Item the effect's jump below moved sx but left x (useTransform) at 100% (M9 WI 8).
+  const tx = useMotionValue(n ? (rest + 0.5) / n : 1);
   const sx = useSpring(tx, SPRING);
   const x = useTransform(sx, [0, 1], ["0%", "100%"]);
   useEffect(() => { if (n) { const k = (rest + 0.5) / n; tx.jump(k); sx.jump(k); } }, [n, rest, tx, sx]); // rest without a glide
@@ -59,7 +60,8 @@ export function MonthBars({ months, fmt, label, avg, hot, caption, valuetext, ti
         aria-valuetext={valuetext ? valuetext(cur) : `${monthLong(mo.month)}: ${fmt(mo.value)}`}
         onPointerMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left) / r.width) * n))); if (i !== at) pick(i); }}
         onPointerLeave={() => pick(null)} onKeyDown={keys} onBlur={() => pick(null)}>
-        <m.div className="hm-tip-track" style={{ x }} aria-hidden><span className={`hm-tip${at === null ? "" : " on"}`}>{fmt(mo.value)}</span></m.div>
+        {/* inherit={false}: the tip has no variants; joining a parent RISE (Home) left it at 100% */}
+        <m.div className="hm-tip-track" style={{ x }} inherit={false} aria-hidden><span className={`hm-tip${at === null ? "" : " on"}`}>{fmt(mo.value)}</span></m.div>
         <div className={`hm-cols${dense}`} style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }} aria-hidden>
           {avg && <span className="hm-avg" style={{ bottom: `${(mean / max) * 100}%` }} />}
           {line && <svg className="hm-ghost" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={line} vectorEffect="non-scaling-stroke" /></svg>}

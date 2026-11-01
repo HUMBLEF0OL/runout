@@ -28,7 +28,7 @@ await new Promise((r) => (ws.onopen = r));
 let seq = 0; const pending = new Map();
 ws.onmessage = (m) => { const d = JSON.parse(m.data); if (pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } };
 const send = (method, params = {}) => new Promise((res, rej) => { pending.set(++seq, (d) => (d.error ? rej(new Error(`${method}: ${d.error.message}`)) : res(d.result))); ws.send(JSON.stringify({ id: seq, method, params })); });
-const done = (code) => { try { ws.close(); edge.kill(); } catch { /* gone */ } setTimeout(() => { try { rmSync(profile, { recursive: true, force: true }); } catch { /* locked */ } process.exit(code); }, 500); };
+const done = (code) => { try { ws.close(); edge.kill(); } catch { /* gone */ } setTimeout(() => { try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); } catch { /* locked */ } process.exit(code); }, 500); };
 
 /* ------------------------------------------------------------------ page reads (assertions only) */
 // Accessible name, close enough for buttons/links/inputs: aria-label, aria-labelledby, <label>, text, title.

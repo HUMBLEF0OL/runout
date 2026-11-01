@@ -458,6 +458,31 @@ fn arcs_past_the_export_compare_this_pc_only() {
     );
 }
 
+/// G-48: an arc's month with no time at all is no data and serializes as null, not 0%. Desktop
+/// plays on the 15th: Xx 60 s and Yy 540 s Feb–Jul, Xx 60 s in Sep and Oct, nothing in Aug.
+#[test]
+fn arc_no_data_months_are_null() {
+    let c = db::open_in_memory().unwrap();
+    for m in [2, 3, 4, 5, 6, 7, 9, 10] {
+        let at = format!("2026-{m:02}-15T10:00:00");
+        put(&c, Source::Logger, &at, 60_000, "Xx", "X", None, None);
+        if m <= 7 {
+            let at = format!("2026-{m:02}-15T12:00:00");
+            put(&c, Source::Logger, &at, 540_000, "Yy", "Y", None, None);
+        }
+    }
+    let t = j(trends(&cx(&c), Measure::Hours).unwrap());
+    let arcs = t["data"]["arcs"].as_array().unwrap();
+    let xx = arcs.iter().find(|a| a["artist"] == "Xx").expect("Xx arc");
+    assert_eq!(xx["kind"], "rising"); // 10% Feb–Jul → 100% Sep–Oct
+    let s = xx["shares"].as_array().unwrap();
+    assert_eq!(s.len(), 36); // Nov 2023 … Oct 2026
+    assert_eq!(s[26], Value::Null); // Jan 2026: no data
+    assert_eq!(s[27], json!(10.0)); // Feb
+    assert_eq!(s[33], Value::Null); // Aug: no data, not 0%
+    assert_eq!(s[35], json!(100.0)); // Oct
+}
+
 #[test]
 fn trends_and_records_use_all_device_dates() {
     let c = history();
@@ -989,7 +1014,7 @@ fn dump_payloads() {
     }
 }
 
-fn dump<Tz: TimeZone>(cx: &Ctx<'_, Tz>, dir: &std::path::Path, month: &str) {
+fn dump<Tz: TimeZone + Send + 'static>(cx: &Ctx<'_, Tz>, dir: &std::path::Path, month: &str) {
     let w = |name: &str, v: Value| {
         std::fs::write(
             dir.join(format!("{name}.json")),

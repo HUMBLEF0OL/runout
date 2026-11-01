@@ -584,11 +584,8 @@ mod tests {
     use crate::db;
     use chrono::TimeZone;
 
-    fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("runout-backup-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmp(name: &str) -> crate::test_dir::TempDir {
+        crate::test_dir::TempDir::new(&format!("backup-{name}"))
     }
     fn at(day: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 10, day, 9, 30, 0).unwrap()
@@ -664,7 +661,6 @@ mod tests {
             d.join("runout-backup-old.zip").exists(),
             "foreign file untouched"
         );
-        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
@@ -681,7 +677,6 @@ mod tests {
         std::fs::create_dir(d.join("dir")).unwrap();
         let r = write_then_rename(&tmp_file, &d.join("dir"), |t| Ok(std::fs::write(t, b"x")?));
         assert!(r.is_err() && !tmp_file.exists());
-        let _ = std::fs::remove_dir_all(d);
     }
 
     fn fail_renames_from(paths: &[&Path]) {
@@ -712,7 +707,6 @@ mod tests {
         assert!(!marker(&lib).exists() && !sibling(&lib, "restore").exists());
         drop(db);
         assert_eq!(n_items(&db::open(&lib).unwrap()), 4, "and on disk");
-        let _ = std::fs::remove_dir_all(d);
     }
 
     /// Swap fails and moving back fails too: the old library is opened in place as pre-restore,
@@ -749,7 +743,6 @@ mod tests {
         cleanup_pre_restore(&lib);
         assert!(pre.exists(), "marker keeps pre-restore");
         assert_eq!(n_items(&Connection::open(&pre).unwrap()), 3);
-        let _ = std::fs::remove_dir_all(d);
     }
 
     /// Nothing left to reopen: the live connection must refuse writes, not keep a writable
@@ -762,7 +755,6 @@ mod tests {
         let e = reopen_old(&mut conn, &lib, &pre_restore(&lib)).unwrap_err();
         assert!(e.message.contains("Restart Runout"));
         assert!(conn.execute_batch("CREATE TABLE t(x)").is_err());
-        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
@@ -780,7 +772,6 @@ mod tests {
         drop(db::open(&lib).unwrap());
         cleanup_pre_restore(&lib);
         assert!(!pre.exists(), "healthy library, no marker → deleted");
-        let _ = std::fs::remove_dir_all(d);
     }
     /// A pre-restore left by an earlier session (restored library failed integrity_check, so start-up
     /// kept it) must not block restoring forever: it is set aside under a stamp, never deleted.
@@ -820,7 +811,6 @@ mod tests {
             "delete_library removes both"
         );
         drop(db);
-        let _ = std::fs::remove_dir_all(d);
     }
 
     fn n_items(c: &Connection) -> i64 {
@@ -866,7 +856,6 @@ mod tests {
         assert!(!due(&d.join("b"), t5 + WEEK - Duration::from_secs(1)));
         assert!(due(&d.join("nothing"), t5));
         assert!(due(&d.join("b"), t5 + WEEK));
-        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
@@ -902,7 +891,6 @@ mod tests {
         assert!(!sibling(&lib, "restore").exists() && !sibling(&lib, "check").exists());
         assert!(check_backup(Path::new(&b.path), &lib).unwrap().ok);
         drop(db);
-        let _ = std::fs::remove_dir_all(d);
     }
 
     /// TSD §5.4: with the music database off, a restored backup's `enrich` rows don't come back.
@@ -926,7 +914,6 @@ mod tests {
         assert_eq!(n(&c), 0);
         assert!(!crate::enrich::is_on());
         drop(c);
-        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
@@ -994,6 +981,5 @@ mod tests {
         assert_eq!(n_items(&db.lock().unwrap()), 7);
         assert_eq!(n_items(&Connection::open(&pre).unwrap()), 5);
         drop(db);
-        let _ = std::fs::remove_dir_all(d);
     }
 }

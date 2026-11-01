@@ -13,7 +13,7 @@ use super::terms::{
     median, streaks,
 };
 use super::v3::{
-    Agg, AggAcc, ArtistAcc, Ctx, Grain, IdMap, PeriodQuery, Resolved, Src, artist_item,
+    Agg, AggAcc, ArtistAcc, Aside, Ctx, Grain, IdMap, PeriodQuery, Resolved, Src, artist_item,
     artist_name, between, by_artist, by_artist_rollup, covered, daily, day, majority, minute,
     month, months, period_coverage, played, resolve, show,
 };
@@ -1404,7 +1404,10 @@ impl Figures<'_> {
 }
 
 /// `get_period_report`.
-pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<PeriodReport>> {
+pub fn report<Tz: TimeZone + Send + 'static>(
+    cx: &Ctx<Tz>,
+    q: &PeriodQuery,
+) -> Result<Covered<PeriodReport>> {
     let today = cx.today();
     let first = coverage::first_day(cx.conn)?;
     let r = resolve(q, today, first)?;
@@ -1428,6 +1431,22 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     let vs: Vec<Span> = r.vs.clone().unwrap_or_default();
     let like = Src::Like(&cov);
     let basis = if on_pc { Src::Desktop } else { Src::All };
+    let prev = r.single_vs().or_else(|| vs.first().copied());
+    let spark_months = months(month_start_minus(end, 11), end);
+    // All time reads rollups only for these: each on its own connection while the events are
+    // scanned below (NFR-04).
+    let side = all_time.then(|| {
+        let most = |k: Kind| {
+            let (r, cov, sm) = (r.clone(), cov.clone(), spark_months.clone());
+            Aside::run_cx(cx, move |cx| most_played(cx, &r, &cov, k, true, prev, &sm))
+        };
+        (
+            Aside::run_cx(cx, super::v3::aggs_all),
+            Aside::run_cx(cx, move |cx| by_artist(cx, Src::All, r.cur, first)),
+            Aside::run_cx(cx, top_tags_all),
+            [most(Kind::Artist), most(Kind::Album), most(Kind::Track)],
+        )
+    });
 
     // One pass over the events the figures below read (NFR-04: the period, the compared windows,
     // the last 6 months, the sparkline months and the average's months read once together, not
@@ -1467,8 +1486,6 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         .filter(|_| !merged)
         .map(|ms| RepeatAcc::new(basis, ms));
     let tags = (!all_time).then(|| TagAcc::new(r.cur));
-    let prev = r.single_vs().or_else(|| vs.first().copied());
-    let spark_months = months(month_start_minus(end, 11), end);
     let most = (!all_time).then(|| MostAcc::new(&r, &cov, prev, &spark_months));
     let figs = Figures {
         aggs: [agg_like, agg_all, agg_pc],
@@ -1528,8 +1545,12 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
     // like for like: the same pass gives the timeline's days (`daily` over `like`)
     let mut like_days = None;
     let cur_all = agg_all.map(|a| a.finish().0[0]);
-    let (all, like_aggs): (Agg, Option<(Agg, Vec<Agg>)>) = if all_time {
-        (super::v3::aggs_all(cx)?, None)
+    let (side_aggs, side_artists, side_tags, side_most) = match side {
+        Some((a, b, c, d)) => (Some(a), Some(b), Some(c), Some(d)),
+        None => (None, None, None, None),
+    };
+    let (all, like_aggs): (Agg, Option<(Agg, Vec<Agg>)>) = if let Some(a) = side_aggs {
+        (a.join()?, None)
     } else if let Some(acc) = agg_like {
         let (v, days) = acc.finish();
         like_days = Some(days);
@@ -1698,9 +1719,10 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         .map(|(h, ms)| (h, pct(*ms, hours.iter().sum())));
 
     // Artists of the period, new ones first heard in it.
-    let artists = match artists_all {
-        Some(a) => a.out,
-        None => by_artist(cx, Src::All, r.cur, first)?,
+    let artists = match (artists_all, side_artists) {
+        (Some(a), _) => a.out,
+        (None, Some(a)) => a.join()?,
+        (None, None) => by_artist(cx, Src::All, r.cur, first)?,
     };
     let mut ranked: Vec<(&String, &(i64, i64))> = artists.iter().collect();
     ranked.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.cmp(b.0)));
@@ -1764,13 +1786,6 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         plays: fp_agg.plays,
         repeat_plays: 0,
     };
-    let (repeat_plays, avg_repeats) = repeats.join()?;
-    parts.repeat_plays = repeat_plays;
-    let average = match avg_spans.as_deref() {
-        Some(ms) => average_fingerprint(cx, &model, on_pc, &heard, ms, &avg_repeats)?,
-        None => None,
-    };
-
     // Lines (design §5.1).
     let top_names: Vec<(String, Option<NaiveDate>)> = ranked
         .iter()
@@ -1804,14 +1819,23 @@ pub fn report<Tz: TimeZone>(cx: &Ctx<Tz>, q: &PeriodQuery) -> Result<Covered<Per
         record_day,
     };
 
-    let (tag_rows, tag_cov) = match tags_acc {
-        Some(t) => terms::tag_shares(cx.conn, t.per, 6)?,
-        None => top_tags_all(cx)?,
+    let (tag_rows, tag_cov) = match (tags_acc, side_tags) {
+        (Some(t), _) => terms::tag_shares(cx.conn, t.per, 6)?,
+        (None, Some(t)) => t.join()?,
+        (None, None) => top_tags_all(cx)?,
     };
     let most = |k| most_played(cx, &r, &cov, k, all_time, prev, &spark_months);
-    let [artists, albums, tracks] = match most_acc {
-        Some(acc) => most_rows(cx, acc, &spark_months)?,
-        None => [most(Kind::Artist)?, most(Kind::Album)?, most(Kind::Track)?],
+    let [artists, albums, tracks] = match (most_acc, side_most) {
+        (Some(acc), _) => most_rows(cx, acc, &spark_months)?,
+        (None, Some([a, b, c])) => [a.join()?, b.join()?, c.join()?],
+        (None, None) => [most(Kind::Artist)?, most(Kind::Album)?, most(Kind::Track)?],
+    };
+    // the repeat counts ran beside everything above (NFR-04)
+    let (repeat_plays, avg_repeats) = repeats.join()?;
+    parts.repeat_plays = repeat_plays;
+    let average = match avg_spans.as_deref() {
+        Some(ms) => average_fingerprint(cx, &model, on_pc, &heard, ms, &avg_repeats)?,
+        None => None,
     };
     let private_excluded = if cx.include_private {
         0

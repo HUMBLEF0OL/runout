@@ -166,7 +166,7 @@ export interface PeriodReport {
 }
 export interface Arc {
   artist: string; item_id: number | null; kind: "rising" | "fading" | "back_again" | "constant";
-  shares: number[]; change_pct: number | null; since: string | null; quiet_from: string | null; related: string[];
+  shares: (number | null)[]; change_pct: number | null; since: string | null; quiet_from: string | null; related: string[];
 }
 export interface Trends {
   months: { month: string; value: number; coverage: CoverageClass }[];

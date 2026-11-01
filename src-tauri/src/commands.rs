@@ -1094,13 +1094,11 @@ mod tests {
         );
     }
 
-    fn app() -> (tauri::App<tauri::test::MockRuntime>, PathBuf) {
-        let d = std::env::temp_dir().join(format!(
-            "runout-cmd-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&d);
+    fn app() -> (
+        tauri::App<tauri::test::MockRuntime>,
+        crate::test_dir::TempDir,
+    ) {
+        let d = crate::test_dir::TempDir::new("cmd");
         let paths = crate::state::Paths {
             config_dir: d.join("cfg"),
             data_dir: d.clone(),
@@ -1147,7 +1145,7 @@ mod tests {
     /// Round trip with the exact keys `src/api.ts` sends (camelCase multi-word args, `type`).
     #[test]
     fn invoke_keys_match_api_ts() {
-        let (app, d) = app();
+        let (app, _d) = app(); // the dir lives until the test ends
         let w = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
@@ -1346,6 +1344,5 @@ mod tests {
         call(&w, "disconnect_spotify", json!({})).unwrap();
         drop(w);
         drop(app);
-        let _ = std::fs::remove_dir_all(d);
     }
 }

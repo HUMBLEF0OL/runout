@@ -51,7 +51,8 @@ pub struct Arc {
     pub artist: String,
     pub item_id: Option<i64>,
     pub kind: ArcKind,
-    pub shares: Vec<f64>,
+    /// % of each month's time; None = no data that month (G-48).
+    pub shares: Vec<Option<f64>>,
     pub change_pct: Option<f64>,
     pub since: Option<String>,
     pub quiet_from: Option<String>,
@@ -370,7 +371,7 @@ pub fn trends<Tz: TimeZone>(cx: &Ctx<Tz>, measure: Measure) -> Result<Covered<Tr
                 artist,
                 item_id,
                 kind,
-                shares: m.iter().map(|x| pct(x.0, x.1)).collect(),
+                shares: m.iter().map(|x| (x.1 > 0).then(|| pct(x.0, x.1))).collect(),
                 change_pct,
                 since,
                 quiet_from,

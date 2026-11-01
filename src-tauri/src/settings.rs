@@ -214,7 +214,7 @@ mod tests {
             assert_eq!(e.code, crate::error::Code::Validation, "{key}");
         }
 
-        let dir = std::env::temp_dir().join(format!("runout-settings-{}", std::process::id()));
+        let dir = crate::test_dir::TempDir::new("settings");
         let path = dir.join(FILE);
         assert_eq!(load(&path, d.clone()).unwrap(), d);
         assert_eq!(
@@ -274,6 +274,5 @@ mod tests {
             let e = load(&path, d.clone()).unwrap_err();
             assert_eq!(e.code, crate::error::Code::Integrity);
         }
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

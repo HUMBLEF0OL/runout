@@ -14,7 +14,8 @@ const RESTART_MS: i64 = 3000;
 
 /// Snapshots arrive at least every `poll::POLL` (5 s). A longer silence (PC asleep, hibernated) or
 /// the wall clock moving backwards ends the play at the last snapshot seen: the gap is never play time.
-// ponytail: sleeps under 5 min still count as play time; a long lock wait is vouched for by `awake_since`.
+// ponytail: sleeps under 5 min between ticks still count as play time; a long lock wait is vouched
+// for (minus any sleep inside it) by `awake_since`.
 const MAX_GAP_MS: i64 = 5 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,12 +123,18 @@ impl Accumulator {
         }
     }
 
-    /// The poll thread was blocked (lock held by an import or backup) from `from` until the next
-    /// snapshot: that wait is awake time, so the next snapshot is not clamped as a sleep.
-    // ponytail: a PC that sleeps during the lock wait itself still counts; needs a monotonic-vs-wall clock compare.
-    pub fn awake_since(&mut self, from: DateTime<Utc>) {
-        if self.clamp(from) == from {
-            self.last_seen = None;
+    /// The poll thread was blocked (lock held by an import or backup) from `from` to `to`, and the
+    /// PC was awake for `awake_ms` of it (a clock that stops in sleep/hibernate). The awake part is
+    /// play time, so the next snapshot is not clamped as a sleep; a sleep inside the wait (wall time
+    /// beyond `awake_ms`) is cut out of the running play (G-42).
+    pub fn awake_since(&mut self, from: DateTime<Utc>, to: DateTime<Utc>, awake_ms: i64) {
+        if self.clamp(from) != from {
+            return; // a real sleep before the wait: the clamp ends the play
+        }
+        self.last_seen = None;
+        let slept = ((to - from).num_milliseconds() - awake_ms).max(0);
+        if let Some(s) = &mut self.playing_since {
+            *s += chrono::Duration::milliseconds(slept);
         }
     }
 
@@ -321,14 +328,33 @@ mod tests {
         let mut a = Accumulator::default();
         a.observe(Some((song("A"), Playing)), t(0.0));
         a.observe(Some((song("A"), Playing)), t(5.0));
-        a.awake_since(t(10.0)); // poll thread waited 10 min for the db lock from here
+        // poll thread waited 10 min for the db lock from here, all of it awake
+        a.awake_since(t(10.0), t(610.0), 600_000);
         assert_eq!(a.observe(Some((song("A"), Playing)), t(610.0)), None);
         assert_eq!(a.observe(None, t(615.0)).unwrap().ms_played, 615_000);
         // a real sleep before the wait still clamps
         let mut b = Accumulator::default();
         b.observe(Some((song("A"), Playing)), t(0.0));
-        b.awake_since(t(3_600.0));
+        b.awake_since(t(3_600.0), t(3_605.0), 5_000);
         assert_eq!(b.observe(None, t(3_605.0)), None); // 0 ms played, nothing written
+    }
+
+    /// G-42: the PC slept 8 min of a 10 min lock wait (the awake clock moved 2 min): only the
+    /// awake part is play time.
+    #[test]
+    fn a_sleep_during_a_lock_wait_is_not_play_time() {
+        let mut a = Accumulator::default();
+        a.observe(Some((song("A"), Playing)), t(0.0));
+        a.observe(Some((song("A"), Playing)), t(5.0));
+        a.awake_since(t(10.0), t(610.0), 120_000);
+        assert_eq!(a.observe(Some((song("A"), Playing)), t(610.0)), None);
+        assert_eq!(a.observe(None, t(615.0)).unwrap().ms_played, 135_000);
+        // paused through the wait: nothing to cut, nothing invented
+        let mut b = Accumulator::default();
+        b.observe(Some((song("A"), Playing)), t(0.0));
+        b.observe(Some((song("A"), Paused)), t(20.0));
+        b.awake_since(t(25.0), t(625.0), 0);
+        assert_eq!(b.observe(None, t(630.0)).unwrap().ms_played, 20_000);
     }
 
     /// M10 WI 2: the closed play carries the track length and shuffle state the session showed,

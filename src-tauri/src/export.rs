@@ -137,13 +137,11 @@ mod tests {
         assert_eq!(doc, real, "regenerate the example (see above)");
         assert_eq!(real["format_version"], FORMAT_VERSION);
         // the file write path as well
-        let dir = std::env::temp_dir().join(format!("runout-export-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::test_dir::TempDir::new("export");
         assert_eq!(
             export_library(&example_library(), &dir.join("x.json")).unwrap(),
             2
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -156,12 +154,11 @@ mod tests {
     #[test]
     fn failed_export_leaves_no_tmp() {
         let c = db::open_in_memory().unwrap();
-        let dir = std::env::temp_dir().join(format!("runout-export-fail-{}", std::process::id()));
+        let dir = crate::test_dir::TempDir::new("export-fail");
         let path = dir.join("out");
         std::fs::create_dir_all(&path).unwrap(); // target is a directory: the rename fails
         assert!(export_library(&c, &path).is_err());
         assert!(!path.with_extension("json.tmp").exists());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
