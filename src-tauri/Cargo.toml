@@ -1,6 +1,6 @@
 [package]
 name = "runout"
-version = "0.1.0"
+version = "1.0.0"
 description = "Runout — local-first music notebook for Spotify"
 authors = []
 edition = "2024"
