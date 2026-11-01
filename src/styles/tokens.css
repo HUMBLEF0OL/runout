@@ -3,11 +3,11 @@
    exist are these tokens (bg-surface, text-muted, border-line-strong, rounded-control, text-sm, font-mono, ...). */
 @theme {
   --color-*: initial;
-  --color-bg: #101113; --color-rail: #0B0C0E; --color-surface: #17191C; --color-surface-2: #1F2226; --color-surface-3: #23262B;
+  --color-bg: #101113; --color-rail: #0B0C0E; --color-surface: #17191C; --color-surface-2: #1F2226; --color-surface-3: #23262B; --color-surface-hover: #2A2D32;
   --color-line: #23262B; --color-line-2: #2E3238; --color-line-strong: #3A3F46; --color-line-hover: #4A5059;
-  --color-text: #ECEDEF; --color-text-2: #C3C7CE; --color-muted: #A9AEB7; --color-faint: #9A9FA8;
+  --color-text: #ECEDEF; --color-text-2: #C3C7CE; --color-muted: #B6BBC3; --color-faint: #9A9FA8;
   --color-accent: #F5B544; --color-accent-ink: #101113; --color-link: #F5C46B; --color-link-hover: #FFDCA0;
-  --color-bar: #4A5059; --color-star-off: #686E78; --color-danger: #FF7A6B; --color-danger-line: #5A3530;
+  --color-bar: #4A5059; --color-star-off: #686E78; --color-danger: #FF7A6B; --color-danger-line: #452C2C; /* 20% --danger over --surface */
   --color-transparent: transparent;
 
   /* Spacing 4 · 8 · 12 · 16 · 20 · 24 · 32 in px: html is 14px, so Tailwind's rem default would shrink it 12.5%. */
@@ -29,11 +29,12 @@
   --shadow-elev-1-hover: inset 0 1px 0 rgba(255,255,255,0.05), 0 12px 28px rgba(0,0,0,0.34);
   --shadow-elev-2: 0 24px 64px rgba(0,0,0,0.5);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* Non-utility recipes used by the component layer. */
 :root {
   --elev-1-bg: linear-gradient(180deg, #1A1C20, #16181B);
-  --hair: 1px solid rgba(255,255,255,0.06);
+  --hair: 1px solid rgba(255,255,255,0.045);
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

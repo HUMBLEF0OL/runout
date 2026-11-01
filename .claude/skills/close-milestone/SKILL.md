@@ -12,6 +12,7 @@ description: Verify every acceptance check of a Runout milestone (M0–M8) in do
 4. For each acceptance line, produce **evidence**: a command + its output, a query result, or a description of what you observed in the running app. No evidence → not passed.
 5. Lines that need the user (`U-n`, real-use judgement) → mark "waiting on U-n" and point to `docs/USER_ACTIONS.md`.
 6. Tick passed lines in `docs/MILESTONES.md` (`- [x]`) and append a one-line evidence note after each.
+6a. **Nothing deferred is lost.** Every line left unticked gets `*(open, G-n: why)*` or `*(open: waiting on U-n)*`, and every G-n has a Known gaps row with a later milestone in "Fix in". Also sweep agent reports, audit "below the bar" notes, `ponytail:` comments and work done only on synthetic/stub data, and add a G-n row for anything not yet tracked. `check.py` "deferrals tracked" enforces the line → row link.
 7. Resolve TSD §10 / KB open questions scheduled for this milestone (`verify-assumption`). Confirm SOURCE_MAP statuses match reality.
 8. Report: passed / waiting / failed, then the next milestone's first work item.
 
@@ -23,6 +24,9 @@ description: Verify every acceptance check of a Runout milestone (M0–M8) in do
 - [ ] Every ticked line has evidence written next to it.
 - [ ] No line ticked on reasoning alone ("should work").
 - [ ] `python scripts/check.py` exits 0 at close time.
+- [ ] Every unticked line and every deferral from this milestone has a G-n (or U-n) with an owner milestone.
 
 ## Gotchas
 <!-- Lessons from corrections go here, newest first. -->
+- (20 Oct 2026, M4) Deferrals lived only in agent reports and evidence notes (real-data spot-check, Account data playlists, in-app logger live run, audit "below the bar" items) until the user asked for them to be tracked. Now step 6a + `check.py` "deferrals tracked".
+

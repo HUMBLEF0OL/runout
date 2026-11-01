@@ -3,19 +3,19 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import {
-  autofill, bulkAddAlbumTracks, createItem, deleteItem, getItem, isAppError, linkItems, parseLink, prefillTitle, resolveLink, updateItem,
+  autofill, bulkAddAlbumTracks, createItem, deleteItem, getItem, isAppError, linkItems, parseLink, prefillTitle, resolveLink, toAppError, updateItem,
   type ItemDetail, type ItemType, type ParsedLink, type Priority,
 } from "../api";
 import { useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { an, day, nameOf, openUrl, STATUS } from "../lib/format";
 import { qaStep } from "../lib/backlog";
-import { parseLinkLocal } from "./linkLocal";
+import { linkKind } from "../lib/link";
 import type { QuickAddOpts } from "./QuickAddContext";
-import { Attribution, Dialog, Dots, EmbedSlot, useToast } from "./ui";
+import { Attribution, Dialog, Dots, EmbedSlot, PrioritySelect, useToast } from "./ui";
 
 type Resolved = { uri: string; type: ItemType; existing_id?: number };
-const msg = (e: unknown) => (isAppError(e) ? e.message : "Something went wrong.");
+const msg = (e: unknown) => toAppError(e).message;
 
 export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClose: () => void }) {
   const t0 = useRef(performance.now()); // capture_ms: open → save (FR-045)
@@ -67,7 +67,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
     return () => { live = false; };
   }, [link, online]);
 
-  const step = qaStep({ manual, link, online, kind: parseLinkLocal(link).kind, self: naming, parsed, resolved });
+  const step = qaStep({ manual, link, online, kind: linkKind(link), self: naming, parsed, resolved });
   const uri = parsed?.uri ?? resolved?.uri;
   const kind = parsed?.type ?? resolved?.type ?? type;
   const existingId = parsed?.existing_id ?? resolved?.existing_id;
@@ -124,6 +124,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
           type: manual ? type : kind, display_name: nm || null, spotify_uri: manual ? null : uri ?? null, priority: prio || undefined,
           recommended_by: rec.trim() || undefined, provenance: "user", promoted_fields, capture_ms, artist_name: artistName,
           notes: isArtist ? notes.trim() || undefined : undefined,
+          album_id: (manual ? type : kind) === "track" ? opts.albumId : undefined,
         });
         const keep = tracks.filter((t) => t.keep);
         if (keep.length) await bulkAddAlbumTracks(it.id, keep.map(({ uri: u, name: n }) => ({ uri: u, name: n })));
@@ -174,7 +175,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
   switch (step) {
     case "blank":
       state = <span className="help">{versionOf != null ? "Paste the link to the other version." : "Detects albums, tracks and artists. Short links from the iPhone share sheet work too."}</span>;
-      foot = <><button type="button" className="btn btn-ghost" onClick={() => setManual(true)}>Add without a link</button>{saveBtn}</>;
+      foot = <><button type="button" className="btn btn-secondary" onClick={() => setManual(true)}>Add without a link</button>{saveBtn}</>;
       break;
     case "checking":
       state = <span className="flex flex-wrap gap-2 items-center"><Dots /><span className="text-muted">{parsed?.state === "short" ? "Opening the short link…" : "Checking the link…"}</span></span>;
@@ -185,7 +186,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
       foot = cancel;
       break;
     case "podcast":
-      state = <span className="help err">This is a podcast {parseLinkLocal(link).kind}. Runout keeps albums, tracks and artists.</span>;
+      state = <span className="help err">This is a podcast {linkKind(link)}. Runout keeps albums, tracks and artists.</span>;
       foot = <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>;
       break;
     case "playlist":
@@ -198,18 +199,19 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
       foot = <>{cancel}<button type="button" className="btn btn-primary" disabled={saving} onClick={saveLater}>{saving ? <Dots /> : "Save for later"}</button></>;
       break;
     case "duplicate":
-      body = <div className="card flex flex-col gap-3 border-[rgba(245,181,68,0.35)]">
+      body = <div className="card warn flex flex-col gap-3">
         <span className="text-accent font-bold text-sm">Already saved</span>
         <span>{dup ? `${nameOf(dup)} is already in your library, ${STATUS[dup.status]} since ${day(dup.history[0]?.at ?? dup.added_at)}.` : "This is already in your library."}</span></div>;
       foot = <>
         {naming == null && <button type="button" className="btn btn-secondary" onClick={() => { setVersionOf(existingId ?? null); setLink(""); }}>Add a different version</button>}
-        <Link className="btn btn-light" to={`/item/${existingId}`} onClick={onClose}>Open existing</Link></>;
+        <Link className="btn btn-primary" to={`/item/${existingId}`} onClick={onClose}>Open existing</Link></>;
       break;
     case "form":
       state = <span className="help">{parsed?.state === "short" ? `Short link opened: ${an(kind)}.` : `Detected ${an(kind)}.`}{naming == null ? " Not in your library yet." : ""}</span>;
       body = <>
-        <div className="flex gap-4 items-start">
-          <div className="flex-[0_0_152px]"><EmbedSlot uri={uri ?? null} height={152} /></div>
+        {/* Spotify's compact player needs >= 280 px wide (docs/kb/spotify.md); a 152 px column clipped it, so it spans the dialog */}
+        <div className="flex flex-col gap-4">
+          <EmbedSlot uri={uri ?? null} height={152} />
           <div className="flex flex-col gap-3 flex-auto min-w-0">
             <div className="field"><label className="label" htmlFor="qa-name">Name</label>
               <input id="qa-name" className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={prefilling ? "Getting the title from Spotify…" : "Name it"} />
@@ -235,9 +237,7 @@ export default function QuickAdd({ opts, onClose }: { opts: QuickAddOpts; onClos
           </fieldset>)}
         <div className="tiles grid-cols-2">
           <div className="field"><label className="label" htmlFor="qa-prio">Priority</label>
-            <select id="qa-prio" className="input" value={prio} onChange={(e) => setPrio(e.target.value as Priority | "")}>
-              <option value="">None</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-            </select></div>
+            <PrioritySelect id="qa-prio" value={prio} onChange={setPrio} /></div>
           <div className="field"><label className="label" htmlFor="qa-rec">Recommended by</label>
             <input id="qa-rec" className="input" placeholder="Optional" value={rec} onChange={(e) => setRec(e.target.value)} /></div>
         </div>

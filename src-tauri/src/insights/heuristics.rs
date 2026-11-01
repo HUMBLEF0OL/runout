@@ -1,0 +1,909 @@
+//! Insights v3 sessions and heuristics (design/M10-insights-v3.md §4.2, "estimates, labelled"):
+//! sessions, deep dives, on repeat, eras, arcs, "took time from", album start to finish. One
+//! constant per threshold, so WI 10 can tune each on the real history.
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
+use serde::Serialize;
+
+use super::terms::{Ev, artist_key, is_play};
+
+/// Session: a gap from one play's end to the next play's estimated start above this splits.
+pub const SESSION_GAP_MS: i64 = 30 * 60_000;
+/// Deep dive: at least this much consecutive time …
+pub const DIVE_MIN_MS: i64 = 60 * 60_000;
+/// … of which at least this share (%) is one artist or album.
+pub const DIVE_SHARE_PCT: i64 = 80;
+/// On repeat: a track played this many times in one local day.
+pub const REPEAT_PLAYS: usize = 5;
+/// Era: an artist holds ≥ this share of the month (%) …
+pub const ERA_SHARE: f64 = 0.15;
+/// … and ≥ this many times its lifetime share; the era is named after up to this many …
+pub const ERA_LIFT: f64 = 1.5;
+pub const ERA_ARTISTS: usize = 2;
+/// … and runs shorter than this many months merge into a neighbour.
+pub const ERA_MIN_MONTHS: usize = 3;
+/// Arc: months looked at.
+pub const ARC_MONTHS: usize = 36;
+/// Arc windows: the last 3 months against the 6 before.
+pub const ARC_RECENT: usize = 3;
+pub const ARC_BEFORE: usize = 6;
+/// Rising: recent share ≥ 2× before. Fading: ≤ 0.5×, with a before share ≥ 3%.
+pub const RISING: f64 = 2.0;
+pub const FADING: f64 = 0.5;
+pub const FADING_PAST: f64 = 0.03;
+/// Back again: ≥ 18 months under 0.5%, then ≥ 2% in a recent month.
+pub const BACK_QUIET_MONTHS: usize = 18;
+pub const BACK_QUIET: f64 = 0.005;
+pub const BACK_AGAIN: f64 = 0.02;
+/// Constant: in the top 20 in ≥ 75% of years.
+pub const CONSTANT_TOP: usize = 20;
+pub const CONSTANT_YEARS_PCT: usize = 75;
+/// "May have taken time from": how many artists are named.
+pub const TOOK_TIME_TOP: usize = 3;
+
+fn est_start(e: &Ev) -> NaiveDateTime {
+    e.local - TimeDelta::milliseconds(e.ms)
+}
+
+/// A session (estimate): plays in end order, split where the gap from one play's end to the next
+/// play's estimated start (end − ms played) is over 30 min.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Session<'a> {
+    pub plays: Vec<&'a Ev>,
+    /// Estimated start (local): the first play's end − its ms played.
+    pub start: NaiveDateTime,
+    pub end: NaiveDateTime,
+    /// Listening time in the session.
+    pub ms: i64,
+}
+
+impl Session<'_> {
+    /// The library item ids its plays are linked to.
+    pub fn item_ids(&self) -> HashSet<i64> {
+        self.plays.iter().filter_map(|e| e.item_id).collect()
+    }
+}
+
+impl Session<'_> {
+    /// Wall-clock length, estimated start to last end.
+    pub fn span_ms(&self) -> i64 {
+        (self.end - self.start).num_milliseconds()
+    }
+}
+
+/// Sessions over `evs` (any order; only plays are used).
+pub fn sessions<'a>(evs: impl IntoIterator<Item = &'a Ev>) -> Vec<Session<'a>> {
+    let mut plays: Vec<&Ev> = evs.into_iter().filter(|e| is_play(e)).collect();
+    plays.sort_by_key(|e| (e.end, e.id));
+    sessions_in_order(plays)
+}
+
+/// `sessions` over plays already in end order (`(end, id)`).
+pub fn sessions_in_order(plays: Vec<&Ev>) -> Vec<Session<'_>> {
+    debug_assert!(plays.is_sorted_by_key(|e| (e.end, e.id)));
+    let mut out: Vec<Session> = vec![];
+    for p in plays {
+        let gap = out.last().map(|s| {
+            let prev = s.plays.last().unwrap();
+            (p.end - TimeDelta::milliseconds(p.ms) - prev.end).num_milliseconds()
+        });
+        match out.last_mut() {
+            Some(s) if gap.is_some_and(|g| g <= SESSION_GAP_MS) => {
+                s.plays.push(p);
+                s.end = p.local;
+                s.ms += p.ms;
+            }
+            _ => out.push(Session {
+                plays: vec![p],
+                start: est_start(p),
+                end: p.local,
+                ms: p.ms,
+            }),
+        }
+    }
+    out
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiveKind {
+    Artist,
+    Album,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Dive {
+    pub kind: DiveKind,
+    pub name: String,
+    /// The album's artist; `""` for an artist dive.
+    pub by: String,
+    pub start: NaiveDateTime,
+    pub end: NaiveDateTime,
+    pub tracks: usize,
+    pub ms: i64,
+}
+
+/// A dive key without a copy: (album, artist), ASCII-case-folded as `artist_key`.
+#[derive(Clone, Copy)]
+struct FoldKey<'a>(Option<&'a str>, &'a str);
+
+impl PartialEq for FoldKey<'_> {
+    fn eq(&self, o: &Self) -> bool {
+        self.1.eq_ignore_ascii_case(o.1)
+            && match (self.0, o.0) {
+                (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+                (a, b) => a.is_none() && b.is_none(),
+            }
+    }
+}
+
+impl Eq for FoldKey<'_> {}
+
+impl std::hash::Hash for FoldKey<'_> {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        // FNV-1a over the folded bytes, one write
+        let mut x: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in self
+            .0
+            .unwrap_or("")
+            .bytes()
+            .chain([0x1f])
+            .chain(self.1.bytes())
+        {
+            x = (x ^ u64::from(b.to_ascii_lowercase())).wrapping_mul(0x100_0000_01b3);
+        }
+        h.write_u64(x);
+    }
+}
+
+/// `FoldKey`'s hasher: it writes one u64 already mixed.
+#[derive(Default)]
+struct FoldHasher(u64);
+
+impl std::hash::Hasher for FoldHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, _: &[u8]) {
+        unreachable!("FoldKey writes one u64")
+    }
+    fn write_u64(&mut self, x: u64) {
+        self.0 = x;
+    }
+}
+
+type FoldBuild = std::hash::BuildHasherDefault<FoldHasher>;
+
+/// FNV-1a, for maps keyed by local data only (NFR-04: SipHash costs more than the work per play).
+struct Fnv(u64);
+
+impl Default for Fnv {
+    fn default() -> Self {
+        Fnv(0xcbf2_9ce4_8422_2325)
+    }
+}
+
+impl std::hash::Hasher for Fnv {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.0 = (self.0 ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3);
+        }
+    }
+}
+
+type FnvBuild = std::hash::BuildHasherDefault<Fnv>;
+
+/// Deep dives (estimate) in one session: the longest stretches of consecutive plays, each
+/// starting and ending on the key's plays, of ≥ 60 min where ≥ 80% of the time is one artist
+/// (or one album). Stretches of one key don't overlap.
+pub fn deep_dives(s: &Session) -> Vec<Dive> {
+    // every window is part of the session's time: a shorter session holds no dive
+    if s.ms < DIVE_MIN_MS {
+        return vec![];
+    }
+    let p = &s.plays;
+    let mut pre = vec![0i64];
+    for e in p {
+        pre.push(pre.last().unwrap() + e.ms);
+    }
+    let mut out = vec![];
+    for kind in [DiveKind::Artist, DiveKind::Album] {
+        let key = |e: &Ev| match kind {
+            _ if e.artist.is_empty() => None,
+            DiveKind::Artist => Some(artist_key(&e.artist)),
+            DiveKind::Album if e.album.is_empty() => None,
+            DiveKind::Album => Some(format!(
+                "{}\u{1f}{}",
+                e.album.to_ascii_lowercase(),
+                artist_key(&e.artist)
+            )),
+        };
+        // each key's time first, without a copy per play or a list per key (NFR-04: a whole
+        // history is ~400k plays); the keys that can hold a dive are then taken in `key` order
+        fn fold_of(kind: DiveKind, e: &Ev) -> Option<FoldKey<'_>> {
+            match kind {
+                _ if e.artist.is_empty() => None,
+                DiveKind::Artist => Some(FoldKey(None, &e.artist)),
+                DiveKind::Album if e.album.is_empty() => None,
+                DiveKind::Album => Some(FoldKey(Some(&e.album), &e.artist)),
+            }
+        }
+        let fold = |e| fold_of(kind, e);
+        let mut totals: HashMap<FoldKey, i64, FoldBuild> = HashMap::default();
+        for e in p {
+            if let Some(k) = fold(e) {
+                *totals.entry(k).or_default() += e.ms;
+            }
+        }
+        // a dive needs ≥ 80% of 60 min on this key: skip keys that can't reach it
+        let mut at: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        for (k, _) in totals
+            .into_iter()
+            .filter(|(_, ms)| ms * 100 >= DIVE_MIN_MS * DIVE_SHARE_PCT)
+        {
+            let idx: Vec<usize> = (0..p.len()).filter(|&i| fold(p[i]) == Some(k)).collect();
+            at.insert(key(p[idx[0]]).expect("a keyed play"), idx);
+        }
+        for idx in at.values() {
+            let mut kp = vec![0i64];
+            for &i in idx {
+                kp.push(kp.last().unwrap() + p[i].ms);
+            }
+            let mut i = 0;
+            while i < idx.len() {
+                let hit = (i..idx.len()).rev().find(|&j| {
+                    let win = pre[idx[j] + 1] - pre[idx[i]];
+                    win >= DIVE_MIN_MS && (kp[j + 1] - kp[i]) * 100 >= win * DIVE_SHARE_PCT
+                });
+                let Some(j) = hit else {
+                    i += 1;
+                    continue;
+                };
+                let w = &p[idx[i]..=idx[j]];
+                let first = p[idx[i]];
+                out.push(Dive {
+                    kind,
+                    name: match kind {
+                        DiveKind::Artist => first.artist.clone(),
+                        DiveKind::Album => first.album.clone(),
+                    },
+                    by: match kind {
+                        DiveKind::Artist => String::new(),
+                        DiveKind::Album => first.artist.clone(),
+                    },
+                    start: est_start(first),
+                    end: p[idx[j]].local,
+                    tracks: w
+                        .iter()
+                        .map(|e| e.norm_key.as_str())
+                        .collect::<HashSet<_>>()
+                        .len(),
+                    ms: pre[idx[j] + 1] - pre[idx[i]],
+                });
+                i = j + 1;
+            }
+        }
+    }
+    out
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Repeat {
+    pub date: NaiveDate,
+    pub norm_key: String,
+    pub track: String,
+    pub artist: String,
+    pub times: usize,
+}
+
+/// On repeat: a track with ≥ 5 plays in one local day. By date, then most played.
+pub fn on_repeat<'a>(evs: impl IntoIterator<Item = &'a Ev>) -> Vec<Repeat> {
+    let evs: Vec<&Ev> = evs
+        .into_iter()
+        .filter(|e| is_play(e) && !e.norm_key.is_empty())
+        .collect();
+    let repeat = |date: NaiveDate, e: &Ev, times: usize| Repeat {
+        date,
+        norm_key: e.norm_key.clone(),
+        track: e.track.clone(),
+        artist: e.artist.clone(),
+        times,
+    };
+    // Count first, copy names only for the repeats. Plays in end order come one local day at a
+    // time: counted a day at a time in one small map (NFR-04: a whole history is ~400k plays);
+    // a day seen twice (any other order) counts them all at once.
+    let mut out: Vec<Repeat> = vec![];
+    let mut seen: HashSet<NaiveDate> = HashSet::new();
+    let mut day: HashMap<&str, (&Ev, usize), FnvBuild> = HashMap::default();
+    let mut i = 0;
+    let mut by_day = true;
+    while i < evs.len() {
+        let d = evs[i].date();
+        if !seen.insert(d) {
+            by_day = false;
+            break;
+        }
+        day.clear();
+        while i < evs.len() && evs[i].date() == d {
+            day.entry(&evs[i].norm_key).or_insert((evs[i], 0)).1 += 1;
+            i += 1;
+        }
+        out.extend(
+            day.values()
+                .filter(|(_, n)| *n >= REPEAT_PLAYS)
+                .map(|(e, n)| repeat(d, e, *n)),
+        );
+    }
+    if !by_day {
+        let mut by: HashMap<(NaiveDate, &str), (&Ev, usize), FnvBuild> = HashMap::default();
+        for e in &evs {
+            by.entry((e.date(), &e.norm_key)).or_insert((e, 0)).1 += 1;
+        }
+        out = by
+            .into_iter()
+            .filter(|(_, (_, n))| *n >= REPEAT_PLAYS)
+            .map(|((date, _), (e, times))| repeat(date, e, times))
+            .collect();
+    }
+    out.sort_by(|a, b| {
+        a.date
+            .cmp(&b.date)
+            .then(b.times.cmp(&a.times))
+            .then_with(|| a.norm_key.cmp(&b.norm_key))
+    });
+    out
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Era {
+    pub from: String,
+    pub to: String,
+    pub artists: Vec<String>,
+}
+
+/// Eras (estimate). `months` = every month in order, each with its `(artist, ms)` rows. A month's
+/// label is the (≤ 2) artists holding ≥ 15% of its time and ≥ 1.5× their lifetime share. Runs of
+/// one label shorter than 3 months merge into a neighbour: first a run between two runs of one
+/// label (it joins them), else the longer neighbour (the earlier on a tie). Unlabelled runs are
+/// kept as gaps between eras.
+pub fn eras(months: &[(String, Vec<(String, i64)>)]) -> Vec<Era> {
+    let mut life: HashMap<&str, i64> = HashMap::new();
+    for (_, rows) in months {
+        for (a, ms) in rows {
+            *life.entry(a).or_default() += ms;
+        }
+    }
+    let all: i64 = life.values().sum();
+    let label = |rows: &[(String, i64)]| -> Vec<String> {
+        let total: i64 = rows.iter().map(|r| r.1).sum();
+        let mut lead: Vec<&(String, i64)> = rows
+            .iter()
+            .filter(|(a, ms)| {
+                let share = *ms as f64 / total as f64;
+                let lifetime = life[a.as_str()] as f64 / all as f64;
+                !a.is_empty() && share >= ERA_SHARE && share >= ERA_LIFT * lifetime
+            })
+            .collect();
+        lead.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let mut l: Vec<String> = lead
+            .into_iter()
+            .take(ERA_ARTISTS)
+            .map(|r| r.0.clone())
+            .collect();
+        l.sort();
+        l
+    };
+    // (label, first month index, last month index)
+    let mut runs: Vec<(Vec<String>, usize, usize)> = vec![];
+    for (i, (_, rows)) in months.iter().enumerate() {
+        runs.push((label(rows), i, i));
+    }
+    let len = |r: &(Vec<String>, usize, usize)| r.2 - r.1 + 1;
+    loop {
+        // join neighbours with one label
+        let mut k = 1;
+        while k < runs.len() {
+            if runs[k].0 == runs[k - 1].0 {
+                runs[k - 1].2 = runs[k].2;
+                runs.remove(k);
+            } else {
+                k += 1;
+            }
+        }
+        if runs.len() < 2 {
+            break;
+        }
+        let short = |i: &usize| len(&runs[*i]) < ERA_MIN_MONTHS;
+        let sandwich = (1..runs.len() - 1)
+            .filter(short)
+            .find(|&i| runs[i - 1].0 == runs[i + 1].0);
+        let Some(i) =
+            sandwich.or_else(|| (0..runs.len()).filter(short).min_by_key(|&i| len(&runs[i])))
+        else {
+            break;
+        };
+        let into_prev = i > 0
+            && (sandwich.is_some()
+                || i + 1 == runs.len()
+                || len(&runs[i - 1]) >= len(&runs[i + 1]));
+        let r = runs.remove(i);
+        if into_prev {
+            runs[i - 1].2 = r.2;
+        } else {
+            runs[i].1 = r.1;
+        }
+    }
+    runs.into_iter()
+        .filter(|r| !r.0.is_empty())
+        .map(|(artists, a, b)| Era {
+            from: months[a].0.clone(),
+            to: months[b].0.clone(),
+            artists,
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArcKind {
+    Rising,
+    Fading,
+    BackAgain,
+    Constant,
+}
+
+/// An artist's share of the time in a run of `(artist ms, all ms)` months. A month with no time at
+/// all (`(0, 0)`: no data, design §4.4) adds nothing; a run of only such months has no share
+/// (`None`): unknown, never silence.
+pub fn window_share(m: &[(i64, i64)]) -> Option<f64> {
+    let (a, t) = m.iter().fold((0, 0), |(a, t), x| (a + x.0, t + x.1));
+    (t > 0).then(|| a as f64 / t as f64)
+}
+
+/// Constant: in the top 20 in ≥ 75% of the years.
+pub fn is_constant(years_in_top: usize, years: usize) -> bool {
+    years > 0 && years_in_top * 100 >= years * CONSTANT_YEARS_PCT
+}
+
+/// An artist's arc (estimate) over `months` = `(artist ms, all ms)`, oldest first, ending this
+/// month (36 of them). First match wins: back again, rising, fading, constant.
+/// - back again: a run of ≥ 18 months under 0.5% ending within the last 3 months, a month ≥ 2%
+///   after it, and some listening before it;
+/// - rising: last-3-month share > 0 and ≥ 2× the 6 months before;
+/// - fading: the 6 months before ≥ 3%, the last 3 ≤ 0.5× that.
+///
+/// Months with no time at all are no data (design §4.4): left out of every window, never quiet;
+/// rising and fading need data on both sides.
+pub fn arc(months: &[(i64, i64)], constant: bool) -> Option<ArcKind> {
+    let n = months.len();
+    if back_again_at(months).is_some() {
+        return Some(ArcKind::BackAgain);
+    }
+    if n >= ARC_RECENT + ARC_BEFORE {
+        let recent = window_share(&months[n - ARC_RECENT..]);
+        let before = window_share(&months[n - ARC_RECENT - ARC_BEFORE..n - ARC_RECENT]);
+        if let Some((recent, before)) = recent.zip(before) {
+            if recent > 0.0 && recent >= RISING * before {
+                return Some(ArcKind::Rising);
+            }
+            if before >= FADING_PAST && recent <= FADING * before {
+                return Some(ArcKind::Fading);
+            }
+        }
+    }
+    constant.then_some(ArcKind::Constant)
+}
+
+/// Back again's months: `(first quiet month, comeback month)` as indexes into `months`, or `None`.
+/// A no-data month (no time at all) neither counts toward the quiet run nor breaks it, as a
+/// no-data day in a streak (design §4.4).
+pub fn back_again_at(months: &[(i64, i64)]) -> Option<(usize, usize)> {
+    let n = months.len();
+    let share = |i: usize| window_share(&months[i..=i]);
+    let recent_from = n.saturating_sub(ARC_RECENT);
+    let back = (recent_from..n).find(|&i| share(i).is_some_and(|s| s >= BACK_AGAIN))?;
+    // step over recent non-quiet months before the comeback, then count the quiet run
+    let mut end = back;
+    while end > recent_from && share(end - 1).is_none_or(|s| s >= BACK_QUIET) {
+        end -= 1;
+    }
+    let (mut start, mut quiet) = (end, 0);
+    while start > 0 && share(start - 1).is_none_or(|s| s < BACK_QUIET) {
+        start -= 1;
+        quiet += usize::from(share(start).is_some());
+    }
+    // the run starts at its first quiet month with data
+    while start < end && share(start).is_none() {
+        start += 1;
+    }
+    (quiet >= BACK_QUIET_MONTHS && months[..start].iter().any(|m| m.0 > 0)).then_some((start, back))
+}
+
+/// "May have taken time from" (estimate): for a fading artist, the others whose share rose most
+/// over the same months (last 3 against the 6 before), up to 3, biggest rise first.
+pub fn took_time_from(fading: &str, artists: &HashMap<String, Vec<(i64, i64)>>) -> Vec<String> {
+    moved_most(fading, artists, true)
+}
+
+/// The others whose share moved most over the arc windows (last 3 months against the 6 before),
+/// up to 3: rose most (`up`: for a fading artist) or fell most (for a rising one, "may have taken
+/// time from").
+pub fn moved_most(
+    artist: &str,
+    artists: &HashMap<String, Vec<(i64, i64)>>,
+    up: bool,
+) -> Vec<String> {
+    let sign = if up { 1.0 } else { -1.0 };
+    let mut moves: Vec<(f64, &str)> = artists
+        .iter()
+        .filter(|(a, m)| a.as_str() != artist && m.len() >= ARC_RECENT + ARC_BEFORE)
+        .map(|(a, m)| {
+            let n = m.len();
+            // no data on either side: no move (design §4.4)
+            let rise = window_share(&m[n - ARC_RECENT..])
+                .zip(window_share(
+                    &m[n - ARC_RECENT - ARC_BEFORE..n - ARC_RECENT],
+                ))
+                .map_or(0.0, |(r, b)| r - b);
+            (sign * rise, a.as_str())
+        })
+        .filter(|(r, _)| *r > 0.0)
+        .collect();
+    moves.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(b.1)));
+    moves
+        .into_iter()
+        .take(TOOK_TIME_TOP)
+        .map(|(_, a)| a.to_owned())
+        .collect()
+}
+
+/// Album start to finish (estimate): sessions in which every track of the album's track list
+/// (library tracks linked `on_album`, TSD §4.9) was played. An album without a list: 0.
+pub fn start_to_finish(tracklist: &HashSet<i64>, sessions: &[Session]) -> usize {
+    if tracklist.is_empty() {
+        return 0;
+    }
+    sessions
+        .iter()
+        .filter(|s| played_all(tracklist, &s.item_ids()))
+        .count()
+}
+
+/// One session of `start_to_finish`: `heard` (its plays' item ids) holds the whole track list.
+pub fn played_all(tracklist: &HashSet<i64>, heard: &HashSet<i64>) -> bool {
+    !tracklist.is_empty() && tracklist.is_subset(heard)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::insights::terms::ev;
+
+    fn t(s: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").unwrap()
+    }
+    const MIN: i64 = 60_000;
+
+    #[test]
+    fn sessions_split_on_gaps_over_30_min() {
+        let evs = vec![
+            ev("2026-05-01T10:05:00", 5 * MIN, "A", "One"), // starts 10:00
+            ev("2026-05-01T10:10:00", 5 * MIN, "A", "Two"), // gap 0
+            ev("2026-05-01T11:20:00", 20_000, "A", "Skip"), // not a play: ignored
+            ev("2026-05-01T11:10:00", 30 * MIN, "B", "Long"), // starts 10:40: gap exactly 30 min
+            ev("2026-05-01T11:45:00", 4 * MIN, "B", "Late"), // starts 11:41: gap 31 min → new
+        ];
+        let s = sessions(&evs);
+        assert_eq!(s.len(), 2);
+        assert_eq!(
+            s[0].plays
+                .iter()
+                .map(|e| e.track.as_str())
+                .collect::<Vec<_>>(),
+            vec!["One", "Two", "Long"]
+        );
+        assert_eq!(
+            (s[0].start, s[0].end, s[0].ms, s[0].span_ms()),
+            (
+                t("2026-05-01T10:00:00"),
+                t("2026-05-01T11:10:00"),
+                40 * MIN,
+                70 * MIN
+            )
+        );
+        assert_eq!((s[1].start, s[1].ms), (t("2026-05-01T11:41:00"), 4 * MIN));
+        assert!(sessions(&[]).is_empty());
+    }
+
+    /// Back-to-back plays from `at` (local), each `mins` long.
+    fn run(at: &str, specs: &[(&str, &str, i64)]) -> Vec<Ev> {
+        let mut now = t(at);
+        specs
+            .iter()
+            .map(|(artist, track, mins)| {
+                now += TimeDelta::minutes(*mins);
+                ev(
+                    &now.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                    mins * MIN,
+                    artist,
+                    track,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn deep_dives_need_an_hour_at_80_percent() {
+        // A 50 min (10 tracks), B 5 min, A 15 min: 70 min, A = 65/70 = 93%
+        let mut spec: Vec<(&str, &str, i64)> = (0..10).map(|_| ("A", "a", 5)).collect();
+        spec.push(("B", "b", 5));
+        spec.extend([("A", "c", 5), ("A", "d", 5), ("A", "e", 5)]);
+        let evs = run("2026-05-01T20:00:00", &spec);
+        let s = sessions(&evs);
+        assert_eq!(s.len(), 1);
+        let d = deep_dives(&s[0]);
+        let want = |kind, name: &str, by: &str| Dive {
+            kind,
+            name: name.into(),
+            by: by.into(),
+            start: t("2026-05-01T20:00:00"),
+            end: t("2026-05-01T21:10:00"),
+            tracks: 5, // a, b, c, d, e
+            ms: 70 * MIN,
+        };
+        assert_eq!(
+            d,
+            vec![
+                want(DiveKind::Artist, "A", ""),
+                want(DiveKind::Album, "A LP", "A")
+            ]
+        );
+        // A 50, B 20, A 10: 80 min at 75%, and no 60-min stretch of A reaches 80%
+        let evs = run(
+            "2026-05-01T20:00:00",
+            &[("A", "a", 50), ("B", "b", 20), ("A", "c", 10)],
+        );
+        assert!(deep_dives(&sessions(&evs)[0]).is_empty());
+        // A 40, B 30: A can't reach 48 min
+        let evs = run("2026-05-01T20:00:00", &[("A", "a", 40), ("B", "b", 30)]);
+        assert!(deep_dives(&sessions(&evs)[0]).is_empty());
+    }
+
+    #[test]
+    fn on_repeat_is_five_plays_in_a_day() {
+        let mut evs: Vec<Ev> = (0..5)
+            .map(|i| ev(&format!("2026-05-01T1{i}:00:00"), 60_000, "A", "One"))
+            .collect();
+        evs.push(ev("2026-05-01T16:00:00", 29_000, "A", "One")); // not a play
+        evs.extend((0..4).map(|i| ev(&format!("2026-05-02T1{i}:00:00"), 60_000, "A", "One")));
+        let r = on_repeat(&evs);
+        assert_eq!(r.len(), 1);
+        assert_eq!(
+            (r[0].date.to_string(), r[0].norm_key.as_str(), r[0].times),
+            ("2026-05-01".into(), "a|one", 5)
+        );
+        // out of day order (a day comes back): the same repeats
+        let mut mixed: Vec<Ev> = evs.clone();
+        mixed.swap(0, 7);
+        mixed.extend((0..5).map(|i| ev(&format!("2026-05-03T1{i}:00:00"), 60_000, "B", "Two")));
+        mixed.swap(1, 11);
+        let r = on_repeat(&mixed);
+        assert_eq!(
+            r.iter()
+                .map(|x| (x.date.to_string(), x.times))
+                .collect::<Vec<_>>(),
+            vec![("2026-05-01".into(), 5), ("2026-05-03".into(), 5)]
+        );
+    }
+
+    fn month(m: &str, rows: &[(&str, i64)]) -> (String, Vec<(String, i64)>) {
+        (
+            m.into(),
+            rows.iter().map(|(a, ms)| (a.to_string(), *ms)).collect(),
+        )
+    }
+
+    #[test]
+    fn eras_group_dominant_months_and_merge_short_runs() {
+        let fill = [("f1", 10), ("f2", 10), ("f3", 10), ("f4", 10)];
+        let with = |lead: &'static str| -> Vec<(&'static str, i64)> {
+            let mut v = vec![(lead, 60)];
+            v.extend(fill);
+            v
+        };
+        // lifetime: x 30%, y 22.5%, w 7.5%, each fill 10%. Months: x x x x y w y y
+        let months: Vec<_> = ["x", "x", "x", "x", "y", "w", "y", "y"]
+            .iter()
+            .enumerate()
+            .map(|(i, a)| month(&format!("2026-{:02}", i + 1), &with(a)))
+            .collect();
+        // w (1 month) sits between y runs: it joins them, so y runs May–Aug
+        assert_eq!(
+            eras(&months),
+            vec![
+                Era {
+                    from: "2026-01".into(),
+                    to: "2026-04".into(),
+                    artists: vec!["x".into()]
+                },
+                Era {
+                    from: "2026-05".into(),
+                    to: "2026-08".into(),
+                    artists: vec!["y".into()]
+                },
+            ]
+        );
+        // two leaders share a month: named after both; a 2-month run joins its longer neighbour
+        let months = vec![
+            month("2026-01", &[("p", 50), ("q", 50)]),
+            month("2026-02", &[("p", 50), ("q", 50)]),
+            month("2026-03", &[("r", 100)]),
+            month("2026-04", &[("r", 100)]),
+            month("2026-05", &[("r", 100)]),
+        ];
+        // lifetime p 20%, q 20%, r 60%: Jan–Feb [p, q] (50% ≥ 1.5 × 20%), Mar–May [r] (100% ≥ 90%)
+        let e = eras(&months);
+        assert_eq!(
+            e,
+            vec![Era {
+                from: "2026-01".into(),
+                to: "2026-05".into(),
+                artists: vec!["r".into()]
+            }]
+        );
+        // a no-data month (no time at all, as history.rs builds it) inside an era doesn't split it
+        // lifetime q 3/7, r 4/7: each holds 100% of its months (≥ 1.5 × lifetime)
+        let months: Vec<_> = ["q", "q", "q", "r", "r", "", "r", "r"]
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                let ms = if a.is_empty() { 0 } else { 100 };
+                month(&format!("2026-{:02}", i + 1), &[(a, ms)])
+            })
+            .collect();
+        assert_eq!(
+            eras(&months),
+            vec![
+                Era {
+                    from: "2026-01".into(),
+                    to: "2026-03".into(),
+                    artists: vec!["q".into()]
+                },
+                Era {
+                    from: "2026-04".into(),
+                    to: "2026-08".into(),
+                    artists: vec!["r".into()]
+                },
+            ]
+        );
+        assert!(eras(&[]).is_empty());
+    }
+
+    fn months(f: impl Fn(usize) -> i64) -> Vec<(i64, i64)> {
+        (0..ARC_MONTHS).map(|i| (f(i), 1000)).collect()
+    }
+
+    #[test]
+    fn arcs() {
+        use ArcKind::*;
+        // 1% in the 6 months before, 3% in the last 3
+        let rising = months(|i| match i {
+            27..=32 => 10,
+            33.. => 30,
+            _ => 0,
+        });
+        assert_eq!(arc(&rising, false), Some(Rising));
+        // 5% before, 2% now (≤ 2.5%)
+        let fading = months(|i| if i >= 33 { 20 } else { 50 });
+        assert_eq!(arc(&fading, true), Some(Fading));
+        // 2% before is under the 3% floor: not fading
+        assert_eq!(arc(&months(|i| if i >= 33 { 5 } else { 20 }), false), None);
+        // heard in months 0–4, quiet 5–33 (29 months), 3% in month 34
+        let back = months(|i| match i {
+            0..=4 => 10,
+            34 => 30,
+            _ => 0,
+        });
+        assert_eq!(arc(&back, false), Some(BackAgain));
+        assert_eq!(back_again_at(&back), Some((5, 34))); // quiet from month 5, back in 34
+        // the same with nothing before the quiet run is new, not back: rising
+        assert_eq!(
+            arc(&months(|i| if i == 34 { 30 } else { 0 }), false),
+            Some(Rising)
+        );
+        // only 17 quiet months: not back again
+        let short = months(|i| match i {
+            0..=17 => 10,
+            35 => 30,
+            _ => 0,
+        });
+        assert_eq!(arc(&short, false), Some(Rising));
+        // flat 5%: constant only when the years say so
+        let flat = months(|_| 50);
+        assert_eq!(arc(&flat, true), Some(Constant));
+        assert_eq!(arc(&flat, false), None);
+        assert!(is_constant(3, 4) && !is_constant(2, 4) && !is_constant(0, 0));
+
+        // No-data months (no time at all, design §4.4) are unknown, never silence.
+        let gap = |m: &mut Vec<(i64, i64)>, r: std::ops::Range<usize>| m[r].fill((0, 0));
+        // 5% in the 6 months before, the last 3 no data: not fading (was: share 0 → Fading)
+        let mut unknown_now = months(|_| 50);
+        gap(&mut unknown_now, 33..36);
+        assert_eq!(window_share(&unknown_now[33..]), None);
+        assert_eq!(arc(&unknown_now, false), None);
+        // 3% now, the 6 months before no data: not rising
+        let mut unknown_before = months(|i| if i >= 33 { 30 } else { 0 });
+        gap(&mut unknown_before, 27..33);
+        assert_eq!(arc(&unknown_before, false), None);
+        // a no-data month inside a window only drops out of it: 2 data months at 5%, 1 no data = 5%
+        let mut part = months(|_| 50);
+        gap(&mut part, 34..35);
+        assert_eq!(window_share(&part[33..]), Some(0.05));
+        // heard in 0–4, 5–33 no data, 3% in 34: the "quiet" run is unknown, not back again
+        let mut back_unknown = back.clone();
+        gap(&mut back_unknown, 5..34);
+        assert_eq!(back_again_at(&back_unknown), None);
+        assert_eq!(arc(&back_unknown, false), None);
+        // 20 quiet data months after 9 no-data ones (5–13): back again, quiet from 14;
+        // with only 17 quiet data months it isn't (14–16 no data too)
+        let mut back_holes = back.clone();
+        gap(&mut back_holes, 5..14);
+        assert_eq!(back_again_at(&back_holes), Some((14, 34)));
+        gap(&mut back_holes, 14..17);
+        assert_eq!(back_again_at(&back_holes), None);
+
+        let artists: HashMap<String, Vec<(i64, i64)>> = [
+            ("fader", fading.clone()),
+            ("big", months(|i| if i >= 33 { 100 } else { 0 })), // +10 points
+            ("small", months(|i| if i >= 33 { 30 } else { 10 })), // +2 points
+            ("down", months(|i| if i >= 33 { 10 } else { 30 })), // falls
+        ]
+        .into_iter()
+        .map(|(a, m)| (a.to_owned(), m))
+        .collect();
+        assert_eq!(took_time_from("fader", &artists), vec!["big", "small"]);
+        // an artist with no data in the windows moved nowhere (was: −3 points from no data)
+        let mut both = artists.clone();
+        let mut none_now = months(|_| 30);
+        gap(&mut none_now, 33..36);
+        both.insert("unknown".into(), none_now);
+        assert_eq!(moved_most("big", &both, false)[0], "fader");
+        assert!(!moved_most("big", &both, false).contains(&"unknown".to_owned()));
+        // the other way round: who fell most (for a rising artist), the fader first
+        assert_eq!(moved_most("big", &artists, false)[0], "fader");
+    }
+
+    #[test]
+    fn start_to_finish_needs_every_listed_track_in_one_session() {
+        let mut evs = run(
+            "2026-05-01T20:00:00",
+            &[
+                ("A", "one", 4),
+                ("A", "two", 4),
+                ("B", "x", 4),
+                ("A", "three", 4),
+            ],
+        );
+        evs.extend(run(
+            "2026-05-02T20:00:00",
+            &[("A", "one", 4), ("A", "two", 4)],
+        ));
+        for e in &mut evs {
+            e.item_id = match e.track.as_str() {
+                "one" => Some(1),
+                "two" => Some(2),
+                "three" => Some(3),
+                _ => None,
+            };
+        }
+        let s = sessions(&evs);
+        assert_eq!(s.len(), 2);
+        let list: HashSet<i64> = [1, 2, 3].into();
+        assert_eq!(start_to_finish(&list, &s), 1);
+        assert_eq!(start_to_finish(&HashSet::new(), &s), 0);
+    }
+}

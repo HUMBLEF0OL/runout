@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Runout",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "app.runout.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -13,12 +13,14 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Runout",
         "width": 1200,
         "height": 800,
         "minWidth": 900,
         "minHeight": 600,
-        "incognito": true
+        "incognito": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,msEdgeIdentitySSO,msHubs,msProfileTokenBroker --disable-identity-proxy --disable-background-networking --disable-component-update --disable-domain-reliability --no-pings --disable-sync --disable-client-side-phishing-detection"
       }
     ],
     "security": {
@@ -36,6 +38,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/hooks.nsh",
+        "customLanguageFiles": {
+          "English": "windows/English.nsh"
+        }
+      }
+    }
   }
 }

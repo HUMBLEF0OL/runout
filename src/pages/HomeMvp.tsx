@@ -5,17 +5,16 @@ import { Link } from "react-router-dom";
 import { getDashboard, listItems, setStatus, updateItem, type Dashboard, type ItemSummary } from "../api";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
-import { ArtTiles, ErrorBanner, ItemSet, OpenSpotify, SkelRows, Stat, useToast } from "../components/ui";
+import { ArtTiles, ErrorBanner, ItemSet, OpenSpotify, SkelRows, Stat, Switch, useToast } from "../components/ui";
 import { useApi } from "../hooks/useApi";
 import { age, ago, daysSince, nameOf, PRIO, stars, TYPE, uriLink } from "../lib/format";
+import { byPriority } from "../lib/backlog";
 import FirstRun from "./FirstRun";
 
-const PRIO_ORDER = { high: 0, medium: 1, low: 2 } as const;
-const byPriority = (a: ItemSummary, b: ItemSummary) => (a.priority ? PRIO_ORDER[a.priority] : 3) - (b.priority ? PRIO_ORDER[b.priority] : 3);
 const from = (it: ItemSummary) => (it.recommended_by ? `, from ${it.recommended_by}` : "");
 const withScheme = (raw: string) => (/^https?:\/\//.test(raw) ? raw : `https://${raw}`);
 
-export const StatSkel = () => <div className="stats">{[1, 2, 3, 4].map((i) => <div key={i} className="card h-24"><div className="skel h-full" /></div>)}</div>;
+export const StatSkel = ({ className = "" }: { className?: string }) => <div className={`stats ${className}`}>{[1, 2, 3, 4].map((i) => <div key={i} className="card h-24"><div className="skel h-full" /></div>)}</div>;
 
 export default function HomeMvp() {
   const d = useApi(getDashboard);
@@ -23,6 +22,7 @@ export default function HomeMvp() {
   return (
     <>
       <Topbar />
+      <h1 className="sr-only">Home</h1>
       {d.loading ? <><StatSkel /><SkelRows n={5} /></>
         : d.error || !d.data ? <ErrorBanner title="Couldn’t open your library." error={d.error} onRetry={d.reload} />
         : <MvpBody dash={d.data} />}
@@ -58,7 +58,7 @@ export function MvpBody({ dash }: { dash: Dashboard }) {
         <section className="flex-[1.5_1_520px] min-w-0 flex flex-col gap-3.5" aria-labelledby="mvp-prog">
           <div className="flex justify-between items-baseline gap-3">
             <h2 id="mvp-prog" className="section-title">In progress</h2>
-            <button className="btn btn-secondary" aria-pressed={art} onClick={() => setArt(!art)}>{art ? "Hide artwork" : "Show artwork"}</button>
+            <Switch label="Artwork" on={art} onChange={async (v) => { setArt(v); return true; }} />
           </div>
           {!dash.in_progress.length && <span className="text-muted">Nothing in progress. Start something from your backlog.</span>}
           {art && dash.in_progress.length > 0 && <ArtTiles items={dash.in_progress} meta={(it) => <span className="flex flex-wrap gap-2 items-center justify-between">
@@ -68,11 +68,11 @@ export function MvpBody({ dash }: { dash: Dashboard }) {
             <div key={it.id} className="card flex flex-wrap gap-4 items-center">
               <div className="flex flex-col flex-[1_1_220px] gap-1 min-w-0">
                 <Link to={`/item/${it.id}`} className="text-[18px] font-extrabold text-text">{nameOf(it)}</Link>
-                <span className="text-text-2">{it.type === "artist" ? "Artist" : it.artist_names.join(", ")}</span>
+                <span className="text-text-2 truncate">{it.type === "artist" ? it.notes || "Artist" : it.artist_names.join(", ")}</span>
                 <span className="font-mono text-faint text-xs">{TYPE[it.type]}, started {age(dash.started_at[it.id] ?? it.modified_at)} ago{from(it)}</span>
               </div>
               <div className="flex flex-wrap gap-2 items-center">
-                <button className="btn btn-light" onClick={() => markExplored(it)} aria-label={`Mark explored: ${nameOf(it)}`}>Mark explored</button>
+                <button className="btn btn-light s" onClick={() => markExplored(it)} aria-label={`Mark explored: ${nameOf(it)}`}>Mark explored</button>
                 <OpenSpotify uri={it.spotify_uri} name={nameOf(it)} />
               </div>
             </div>
@@ -98,7 +98,7 @@ export function MvpBody({ dash }: { dash: Dashboard }) {
             <div className="flex justify-between items-baseline gap-3"><h2 id="mvp-next" className="card-title">Up next</h2><Link to="/backlog" className="text-sm font-semibold">Backlog ({c.backlog})</Link></div>
             {next.data && !upNext.length && <span className="text-muted">Nothing planned. Paste a link to add one.</span>}
             {upNext.map((it) => (
-              <Link key={it.id} to={`/item/${it.id}`} className="flex justify-between items-baseline gap-3 text-text py-1">
+              <Link key={it.id} to={`/item/${it.id}`} className="lrow flex justify-between items-baseline gap-3 text-text py-1">
                 <span className="flex flex-col gap-0.5"><span className="font-semibold">{nameOf(it)}</span><span className="text-muted text-xs">{TYPE[it.type]}{from(it)}</span></span>
                 <span className={`text-xs ${it.priority === "high" ? "text-accent" : "text-muted"}`}>{it.priority ? PRIO[it.priority] : "Planned"}</span>
               </Link>
@@ -107,7 +107,7 @@ export function MvpBody({ dash }: { dash: Dashboard }) {
           <section className="card flex flex-col gap-3" aria-labelledby="mvp-recent">
             <h2 id="mvp-recent" className="card-title">Recently added</h2>
             {recent.data?.rows.map((it) => (
-              <Link key={it.id} to={`/item/${it.id}`} className="flex justify-between items-baseline gap-3 text-text py-0.5">
+              <Link key={it.id} to={`/item/${it.id}`} className="lrow flex justify-between items-baseline gap-3 text-text py-0.5">
                 <span className="truncate">{nameOf(it)}</span>
                 <span className="font-mono text-faint whitespace-nowrap text-xs">{age(it.added_at)}{daysSince(it.added_at) ? " ago" : ""}</span>
               </Link>
@@ -127,7 +127,7 @@ function NameRow({ link, when, note, onName }: { link: string; when: string; not
         <span className="font-mono truncate text-text-2 text-xs">{link}</span>
         <span className="text-muted text-xs">Shared from iPhone {t}{note}</span>
       </span>
-      <button className="btn btn-primary s" onClick={onName} aria-label={`Name the link shared ${t}`}>Name it</button>
+      <button className="btn btn-light s" onClick={onName} aria-label={`Name the link shared ${t}`}>Name it</button>
     </div>
   );
 }

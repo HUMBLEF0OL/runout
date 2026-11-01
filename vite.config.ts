@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from "vite";
+import { configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 // @ts-expect-error type error without @types/node package
@@ -9,7 +10,8 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
-  test: { environment: "jsdom" },
+  // .claude/worktrees: agent worktrees hold full repo copies (own node_modules → two Reacts)
+  test: { environment: "jsdom", exclude: [...configDefaults.exclude, ".claude/**"] },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -19,7 +21,8 @@ export default defineConfig(() => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // 127.0.0.1, not "localhost": Node resolves localhost to ::1 only, which journeys.mjs blocks
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

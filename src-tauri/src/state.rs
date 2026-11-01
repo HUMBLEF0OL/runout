@@ -1,0 +1,380 @@
+//! `AppState`, managed by Tauri: the library connection, resolved paths and current settings.
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+use rusqlite::Connection;
+use tauri::{AppHandle, Manager};
+
+use crate::backup;
+use crate::error::Result;
+use crate::settings::{self, Settings};
+
+/// Folders from Tauri's path API (TSD §2), never hard-coded.
+#[derive(Debug, Clone)]
+pub struct Paths {
+    /// `%APPDATA%\app.runout.desktop` (settings.json).
+    pub config_dir: PathBuf,
+    /// `%APPDATA%\app.runout.desktop` (default library.db).
+    pub data_dir: PathBuf,
+    /// `%LOCALAPPDATA%\app.runout.desktop` (spotify_cache.db, EBWebView).
+    pub local_data_dir: PathBuf,
+}
+
+impl Paths {
+    pub fn settings_file(&self) -> PathBuf {
+        self.config_dir.join(settings::FILE)
+    }
+}
+
+pub struct AppState {
+    /// library.db. Lock briefly; never hold across an `.await` (see `links::retry_unresolved`).
+    pub db: Mutex<Connection>,
+    pub paths: Paths,
+    pub settings: Mutex<Settings>,
+}
+
+impl AppState {
+    /// Resolve paths, load settings, open + migrate library.db.
+    pub fn init(app: &AppHandle) -> Result<Self> {
+        let p = app.path();
+        let paths = Paths {
+            config_dir: p.app_config_dir()?,
+            data_dir: p.app_data_dir()?,
+            local_data_dir: p.app_local_data_dir()?,
+        };
+        // Backups never default under app data: the uninstaller's "delete my library" removes it (TSD §4.11).
+        let docs = p.document_dir().or_else(|_| p.home_dir())?;
+        let settings = settings::load(
+            &paths.settings_file(),
+            Settings::defaults(&paths.data_dir, &docs),
+        )?;
+        recover_library(std::path::Path::new(&settings.library_path));
+        let db = crate::db::open(std::path::Path::new(&settings.library_path))?;
+        Ok(Self {
+            db: Mutex::new(db),
+            paths,
+            settings: Mutex::new(settings),
+        })
+    }
+}
+
+/// Start-up recovery (TSD §4.10), before library.db is opened: a restore that failed half-way leaves
+/// a marker (`backup::marker`). While it exists, `library.db.pre-restore` IS the user's library
+/// (library.db may be the half-restored file), so it goes back in place whatever library.db holds,
+/// then the marker is removed. Returns `true` when it put pre-restore back.
+pub fn recover_library(library: &std::path::Path) -> bool {
+    let (pre, marker) = (backup::pre_restore(library), backup::marker(library));
+    if !marker.exists() {
+        return false;
+    }
+    let moved = pre.exists();
+    if moved && backup::move_db(&pre, library).is_err() {
+        return false; // marker stays: next start tries again
+    }
+    let _ = std::fs::remove_file(marker);
+    moved
+}
+
+/// Library file name inside the folder `move_library` picks.
+pub const LIBRARY_FILE: &str = "library.db";
+
+impl AppState {
+    /// Read-modify-write the settings under one guard, then save and store them: a concurrent
+    /// change can't be lost between the read and the write (G-20). `f` runs with the guard held,
+    /// so it must not lock `settings` itself. Returns `f`'s value and the new settings.
+    pub fn edit_settings<T>(
+        &self,
+        f: impl FnOnce(&mut Settings) -> Result<T>,
+    ) -> Result<(T, Settings)> {
+        let mut held = self.settings.lock().unwrap();
+        let mut s = held.clone();
+        let out = f(&mut s)?;
+        settings::save(&self.paths.settings_file(), &s)?;
+        *held = s.clone();
+        Ok((out, s))
+    }
+
+    /// `move_library` (D15): copy library.db into `dir` with `VACUUM INTO` under the db lock, open the copy,
+    /// check it holds the same items, save `settings.library_path`, then swap connections and delete the old
+    /// file. Any failure before the swap leaves the old library live and removes the partial copy.
+    pub fn move_library(&self, dir: &std::path::Path) -> Result<String> {
+        use crate::error::AppError;
+        let to = dir.join(LIBRARY_FILE);
+        let mut conn = self.db.lock().unwrap();
+        let from = PathBuf::from(&self.settings.lock().unwrap().library_path);
+        if backup::marker(&from).exists() {
+            return Err(AppError::new(
+                crate::error::Code::Conflict,
+                "A restore didn't finish. Restart Runout before moving the library.",
+            ));
+        }
+        if to == from {
+            return Ok(from.to_string_lossy().into_owned());
+        }
+        if to.exists() {
+            return Err(AppError::validation(
+                "That folder already has a library.db. Choose an empty folder.",
+            ));
+        }
+        let count =
+            |c: &Connection| c.query_row("SELECT count(*) FROM item", [], |r| r.get::<_, i64>(0));
+        let new = (|| -> Result<Connection> {
+            std::fs::create_dir_all(dir)?;
+            conn.execute("VACUUM INTO ?1", [to.to_string_lossy()])?;
+            let new = crate::db::open(&to)?;
+            if count(&new)? != count(&conn)? {
+                return Err(AppError::new(
+                    crate::error::Code::Integrity,
+                    "The moved library didn't match.",
+                ));
+            }
+            self.edit_settings(|s| {
+                s.library_path = to.to_string_lossy().into_owned();
+                Ok(())
+            })?;
+            Ok(new)
+        })();
+        let new = match new {
+            Ok(c) => c,
+            Err(e) => {
+                for side in ["", "-wal", "-shm"] {
+                    let _ = std::fs::remove_file(format!("{}{side}", to.display()));
+                }
+                return Err(e);
+            }
+        };
+        drop(std::mem::replace(&mut *conn, new)); // closes the old file
+        for side in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{side}", from.display()));
+        }
+        // TSD §4.10: pre-restore copies (incl. set-aside `.<stamp>` ones) travel with the library and
+        // are never lost: rename, or across drives copy and remove each only once its copy exists.
+        // Target built from file names, not path strings (settings may hold `/` separators).
+        let name = |p: &std::path::Path| {
+            p.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        };
+        let (old_prefix, new_prefix) = (
+            name(&backup::pre_restore(&from)),
+            name(&backup::pre_restore(&to)),
+        );
+        for f in backup::pre_restore_files(&from) {
+            let t = to.with_file_name(format!("{new_prefix}{}", &name(&f)[old_prefix.len()..]));
+            relocate(&f, &t, |a, b| std::fs::rename(a, b));
+        }
+        Ok(to.to_string_lossy().into_owned())
+    }
+}
+
+/// Rename `f` to `t`; when that fails (another drive) copy it and remove `f` only once the copy
+/// exists. A failed copy leaves `f` where it was, never lost.
+fn relocate(
+    f: &std::path::Path,
+    t: &std::path::Path,
+    rename: impl Fn(&std::path::Path, &std::path::Path) -> std::io::Result<()>,
+) {
+    if rename(f, t).is_err() && std::fs::copy(f, t).is_ok() {
+        let _ = std::fs::remove_file(f);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relocate_across_drives_copies_and_never_loses_the_file() {
+        let d = crate::test_dir::TempDir::new("relocate");
+        let cross_drive = |_: &std::path::Path, _: &std::path::Path| {
+            Err(std::io::Error::other("not same device"))
+        };
+        let (f, t) = (d.join("pre"), d.join("moved"));
+        std::fs::write(&f, b"safety").unwrap();
+        relocate(&f, &t, cross_drive);
+        assert!(!f.exists(), "removed after its copy exists");
+        assert_eq!(std::fs::read(&t).unwrap(), b"safety");
+        // copy fails too (target folder gone): the only copy stays put
+        let missing = d.join("no-such-dir").join("moved");
+        relocate(&t, &missing, cross_drive);
+        assert_eq!(std::fs::read(&t).unwrap(), b"safety", "never lost");
+    }
+
+    #[test]
+    fn recover_library_puts_pre_restore_back_only_after_a_failed_restore() {
+        let d = crate::test_dir::TempDir::new("recover");
+        let lib = d.join(LIBRARY_FILE);
+        let (pre, marker) = (
+            d.join("library.db.pre-restore"),
+            d.join("library.db.restore-failed"),
+        );
+        let good = crate::db::open(&pre).unwrap();
+        crate::db::fixture(&good, 2);
+        drop(good);
+        assert!(!recover_library(&lib), "no marker → nothing to do");
+        std::fs::write(&marker, b"").unwrap();
+        assert!(
+            recover_library(&lib),
+            "missing library + marker → recovered"
+        );
+        assert!(lib.exists() && !pre.exists() && !marker.exists());
+        let n: i64 = crate::db::open(&lib)
+            .unwrap()
+            .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
+            .unwrap();
+        assert!(n > 0);
+        // damaged library + marker → recovered; healthy library + marker → left alone
+        std::fs::rename(&lib, &pre).unwrap();
+        std::fs::write(&lib, b"not a database").unwrap();
+        std::fs::write(&marker, b"").unwrap();
+        assert!(recover_library(&lib));
+        // healthy (half-restored) library + marker → pre-restore still wins
+        for side in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{side}", lib.display()));
+        }
+        drop(crate::db::open(&lib).unwrap()); // empty but passes integrity_check
+        let good = crate::db::open(&pre).unwrap();
+        crate::db::fixture(&good, 2);
+        let want: i64 = good
+            .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
+            .unwrap();
+        drop(good);
+        std::fs::write(&marker, b"").unwrap();
+        assert!(recover_library(&lib), "marker → pre-restore goes back");
+        assert!(!pre.exists() && !marker.exists());
+        let n: i64 = crate::db::open(&lib)
+            .unwrap()
+            .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, want);
+        // marker without pre-restore → marker cleared
+        std::fs::write(&marker, b"").unwrap();
+        assert!(!recover_library(&lib) && !marker.exists());
+    }
+
+    /// G-20: A is mid-edit when B starts; B must wait and apply on top of A, so both survive.
+    /// Fails if `edit_settings` goes back to clone, release, assign (B would finish inside A's
+    /// window and A's stale clone would overwrite it).
+    #[test]
+    fn edit_settings_keeps_concurrent_changes() {
+        let d = crate::test_dir::TempDir::new("edit");
+        let paths = Paths {
+            config_dir: d.join("cfg"),
+            data_dir: d.clone(),
+            local_data_dir: d.clone(),
+        };
+        let mut s = Settings::defaults(&d, &d);
+        s.logger_on = true;
+        s.include_private = false;
+        let st = AppState {
+            db: Mutex::new(crate::db::open(&d.join(LIBRARY_FILE)).unwrap()),
+            paths,
+            settings: Mutex::new(s),
+        };
+        let (go, inside) = std::sync::mpsc::channel();
+        std::thread::scope(|sc| {
+            let a = sc.spawn(|| {
+                st.edit_settings(|s| {
+                    s.logger_on = false;
+                    go.send(()).unwrap();
+                    // window in which B runs if the guard isn't held
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    Ok(())
+                })
+                .unwrap()
+            });
+            inside.recv().unwrap();
+            let b = sc.spawn(|| {
+                st.edit_settings(|s| {
+                    s.include_private = true;
+                    Ok(())
+                })
+                .unwrap()
+            });
+            a.join().unwrap();
+            b.join().unwrap();
+        });
+        let now = st.settings.lock().unwrap().clone();
+        assert!(
+            !now.logger_on && now.include_private,
+            "a concurrent change was lost"
+        );
+        let saved = settings::load(&st.paths.settings_file(), Settings::defaults(&d, &d)).unwrap();
+        assert!(
+            !saved.logger_on && saved.include_private,
+            "file lost a change"
+        );
+        drop(st);
+    }
+
+    #[test]
+    fn move_library_copies_switches_and_refuses_occupied_folder() {
+        let d = crate::test_dir::TempDir::new("move");
+        let old = d.join("a").join(LIBRARY_FILE);
+        let db = crate::db::open(&old).unwrap();
+        crate::db::fixture(&db, 3);
+        let paths = Paths {
+            config_dir: d.join("cfg"),
+            data_dir: d.join("a"),
+            local_data_dir: d.join("local"),
+        };
+        let mut s = Settings::defaults(&paths.data_dir, &d);
+        // `/` separators (a hand-edited settings.json) must not stop pre-restore copies moving
+        s.library_path = old.to_string_lossy().replace('\\', "/");
+        let st = AppState {
+            db: Mutex::new(db),
+            paths,
+            settings: Mutex::new(s),
+        };
+        let n = |st: &AppState| -> i64 {
+            st.db
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM item", [], |r| r.get(0))
+                .unwrap()
+        };
+        let before = n(&st);
+        // a failed restore's marker → refused, nothing moves
+        let marker = backup::marker(&old);
+        std::fs::write(&marker, b"").unwrap();
+        let e = st.move_library(&d.join("b")).unwrap_err();
+        assert_eq!(e.code, crate::error::Code::Conflict);
+        assert!(old.exists() && !d.join("b").exists());
+        std::fs::remove_file(&marker).unwrap();
+        // a leftover pre-restore moves with the library (kept until next successful start, TSD §4.10)
+        std::fs::write(backup::pre_restore(&old), b"old").unwrap();
+        let stamped = |lib: &std::path::Path| {
+            PathBuf::from(format!(
+                "{}.20261019T000000Z",
+                backup::pre_restore(lib).display()
+            ))
+        };
+        std::fs::write(stamped(&old), b"older").unwrap();
+        let new = st.move_library(&d.join("b")).unwrap();
+        assert!(!backup::pre_restore(&old).exists(), "not left behind");
+        assert!(!stamped(&old).exists(), "set-aside copy not left behind");
+        assert_eq!(
+            std::fs::read(stamped(std::path::Path::new(&new))).unwrap(),
+            b"older",
+            "set-aside copy moved too"
+        );
+        assert_eq!(
+            std::fs::read(backup::pre_restore(std::path::Path::new(&new))).unwrap(),
+            b"old",
+            "pre-restore moved beside the new library"
+        );
+        assert_eq!(PathBuf::from(&new), d.join("b").join(LIBRARY_FILE));
+        assert_eq!(n(&st), before, "live connection is the moved file");
+        assert!(!old.exists(), "old file removed after success");
+        let saved = settings::load(&st.paths.settings_file(), Settings::defaults(&d, &d)).unwrap();
+        assert_eq!(saved.library_path, new);
+        // occupied target → validation, nothing changes
+        std::fs::create_dir_all(d.join("c")).unwrap();
+        std::fs::write(d.join("c").join(LIBRARY_FILE), b"x").unwrap();
+        let e = st.move_library(&d.join("c")).unwrap_err();
+        assert_eq!(e.code, crate::error::Code::Validation);
+        assert_eq!(st.settings.lock().unwrap().library_path, new);
+        drop(st);
+    }
+}

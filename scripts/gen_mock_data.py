@@ -456,7 +456,10 @@ data = {
     "settings": {"library_path": "%APPDATA%\\app.runout.desktop\\library.db", "backup_dir": "Documents\\Runout\\Backups",
                  "backups": [{"at": iso(day(0, 9)), "mb": 14.2}, {"at": iso(day(7, 9)), "mb": 13.9}, {"at": iso(day(14, 9)), "mb": 13.6}],
                  "logger": {"on": True, "autostart": True, "include_private": False, "paused_until": None},
-                 "capture": {"on": True, "address": "192.168.1.24:47821", "code": "482 913"}},
+                 "capture": {"on": True, "address": "192.168.1.24:47821", "code": "482 913"},
+                 # Runout Inbox (TSD §5.3, D33): what "Check now" finds waiting in the phone's Inbox playlist
+                 "inbox": {"state": "ready", "last_check": iso(day(0, 9, 30)), "imported_last": 0,
+                           "waiting": [{"type": "album", "added_at": iso(day(0, 8, 12))}]}},
     "usage": {"capture_median_s": 6, "days_opened_this_week": 5, "searches_this_week": 11, "rediscover_visits_this_week": 4},
 }
 # ---------------------------------------------------------------- consistency guarantees (also checked by scripts/check.py)

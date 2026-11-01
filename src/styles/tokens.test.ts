@@ -19,3 +19,10 @@ describe("token contrast ≥ 4.5:1", () => {
   it("accent-ink on accent (primary button)", () => expect(contrast(tok("accent-ink"), tok("accent"))).toBeGreaterThanOrEqual(4.5));
   it("accent-ink on text (light button, selected segment)", () => expect(contrast(tok("accent-ink"), tok("text"))).toBeGreaterThanOrEqual(4.5));
 });
+
+// M8 acceptance (taste audit): text, text-2 and muted ≥ 7:1 on every background they sit on, hover/pressed fills included.
+describe("body text contrast ≥ 7:1", () => {
+  const ALL_BG = [...css.matchAll(/--color-(bg|rail|surface[\w-]*):/g)].map((m) => m[1]);
+  it("covers the hover fills", () => expect(ALL_BG).toEqual(expect.arrayContaining(["surface-3", "surface-hover"])));
+  for (const t of ["text", "text-2", "muted"]) for (const b of ALL_BG) it(`${t} on ${b}`, () => expect(contrast(tok(t), tok(b))).toBeGreaterThanOrEqual(7));
+});

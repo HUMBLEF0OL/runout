@@ -1,42 +1,34 @@
 import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
+import type { ComponentType } from "react";
 import Shell from "./components/Shell";
 import { ToastProvider } from "./components/ui";
-import Home from "./pages/Home";
-import FirstRun from "./pages/FirstRun";
-import Backlog from "./pages/Backlog";
-import Library from "./pages/Library";
-import Search from "./pages/Search";
-import Item from "./pages/Item";
-import Rediscover from "./pages/Rediscover";
-import Plays from "./pages/Plays";
-import Insights from "./pages/Insights";
-import Import from "./pages/Import";
-import Playlists from "./pages/Playlists";
-import Spotify from "./pages/Spotify";
-import Settings from "./pages/Settings";
-import SettingsTags from "./pages/SettingsTags";
-import System from "./pages/System";
+
+// Each page is its own chunk, fetched on first visit; only the shell loads up front.
+const page = (load: () => Promise<{ default: ComponentType }>) => async () => ({ Component: (await load()).default });
+// Shown while the first page chunk loads (a few ms from disk); blank, like the window before React mounts.
+const HydrateFallback = () => null;
 
 // Hash routes match the prototype (DESIGN §6).
 const router = createHashRouter([
-  { path: "/system", element: <System /> },
+  { path: "/system", HydrateFallback, lazy: page(() => import("./pages/System")) },
   {
     element: <Shell />,
+    HydrateFallback,
     children: [
-      { path: "/home", element: <Home /> },
-      { path: "/first-run", element: <FirstRun /> },
-      { path: "/backlog", element: <Backlog /> },
-      { path: "/library/:type?", element: <Library /> },
-      { path: "/search/:q", element: <Search /> },
-      { path: "/item/:id", element: <Item /> },
-      { path: "/rediscover", element: <Rediscover /> },
-      { path: "/plays/:tab?", element: <Plays /> },
-      { path: "/insights/:tab?", element: <Insights /> },
-      { path: "/import/:step?", element: <Import /> },
-      { path: "/playlists/:tab?", element: <Playlists /> },
-      { path: "/spotify/:tab?", element: <Spotify /> },
-      { path: "/settings", element: <Settings /> },
-      { path: "/settings/tags", element: <SettingsTags /> },
+      { path: "/home", lazy: page(() => import("./pages/Home")) },
+      { path: "/first-run", lazy: page(() => import("./pages/FirstRun")) },
+      { path: "/backlog", lazy: page(() => import("./pages/Backlog")) },
+      { path: "/library/:type?", lazy: page(() => import("./pages/Library")) },
+      { path: "/search/:q", lazy: page(() => import("./pages/Search")) },
+      { path: "/item/:id", lazy: page(() => import("./pages/Item")) },
+      { path: "/rediscover", lazy: page(() => import("./pages/Rediscover")) },
+      { path: "/plays/:tab?", lazy: page(() => import("./pages/Plays")) },
+      { path: "/insights/:tab?", lazy: page(() => import("./pages/Insights")) },
+      { path: "/import/:step?", lazy: page(() => import("./pages/Import")) },
+      { path: "/playlists/:tab?", lazy: page(() => import("./pages/Playlists")) },
+      { path: "/spotify/:tab?", lazy: page(() => import("./pages/Spotify")) },
+      { path: "/settings", lazy: page(() => import("./pages/Settings")) },
+      { path: "/settings/tags", lazy: page(() => import("./pages/SettingsTags")) },
       { path: "*", element: <Navigate to="/home" replace /> },
     ],
   },

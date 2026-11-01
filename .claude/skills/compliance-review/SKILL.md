@@ -17,7 +17,7 @@ description: Check a Runout change against Spotify developer rules, the promotio
 - `docs/kb/spotify.md`.
 
 ## Proof — the checklist
-- [ ] **Hosts**: outbound only to `open.spotify.com`, `spotify.link`, `api.spotify.com`, `accounts.spotify.com`, via `net.rs` (TSD §7).
+- [ ] **Hosts**: outbound only to `open.spotify.com`, `spotify.link`, `api.spotify.com`, `accounts.spotify.com`, plus `musicbrainz.org`, `www.wikidata.org` from `enrich/` (artist/album names from U/S/E only, source M, TSD §5.4), via `net.rs` (TSD §7).
 - [ ] **Source A storage**: Spotify-provided data only in `spotify_cache.db` with expiry; into `library.db` only via user-confirmed promotion with provenance (TSD §4.2, S8).
 - [ ] **oEmbed**: response never persisted; only the confirmed title (TSD §4.3).
 - [ ] **Insights**: computed from U/S/E only; no path to the cache DB (S9, TSD §4.9).

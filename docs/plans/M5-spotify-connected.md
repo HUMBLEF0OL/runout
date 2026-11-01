@@ -5,13 +5,15 @@ Agents: `spotify-researcher` (gate + T3), `rust-core`, `spec-reviewer` after ste
 
 **Entry:** M3 done (M4 not required). UI is already built (M2): implement [API.md](../API.md) as the UI expects it; no page changes (see [plans README](README.md#rules-for-backend-milestones-m3m5)). **Gate before any R3 code:** U-6 developer app created → one `GET /me` call with the user’s token proves the Student Premium plan works in Development Mode (**O1**). Fails → stop R3, report to the user (scope decision). Optional U-8/O7.
 
+**Known gaps owned here:** G-9. See [MILESTONES Known gaps](../MILESTONES.md#known-gaps); remove each row when fixed.
+
 ## Steps
-0. **Gate.** `spotify-researcher` re-checks T3 (redirect rules, `/me/library` scope); U-6 + U-7; minimal PKCE script in `src-tauri/examples/spotify_gate.rs` calls `GET /me`. Record O1 result in KB + BRD §18 via `change-spec`.
+0. **Gate.** `spotify-researcher` re-checks T3 (redirect rules, `/me/library` scope); U-6 + U-7; minimal PKCE script in `src-tauri/examples/spotify_gate.rs` calls `GET /me`. Record O1 result in KB + BRD §18 via `change-spec`. **Done 19 Oct 2026:** O1 passed (`GET /me` 200, premium), T3 dynamic loopback port verified ([KB](../kb/spotify.md#web-api-release-3)). **Client ID rule (user):** never in the repo, never logged; read at run time (settings or env) — a `check.py` secret scan must cover it.
 1. **Auth (WI 1).** `spotify/auth.rs`: PKCE (S256 verifier), bind free loopback port, open browser, receive `/callback`, exchange code; `keyring` entry `Runout/spotify` holds `{access, refresh, expires_at}`; refresh on 401 and **store rotated refresh token**; `invalid_grant` → delete tokens, status `reconnect`, `spotify-status` event. `client.rs` wraps `net` with auth header, 429 `Retry-After` backoff, max 1 in-flight write.
    - Tests: PKCE challenge vector; token store round-trip with a test credential target; refresh-rotation handler with a stubbed response.
 2. **Cache DB (WI 2).** `spotify/cache.rs`: separate `spotify_cache.db` (`cache_entry`, `playlist_snapshot`), own tiny migration; sweeper at startup + daily (cache 7 d, snapshots 30 d); `disconnect_spotify` closes the connection and deletes the file + tokens.
    - Tests: expired entry gone after sweep; disconnect leaves no file; backup zip contains no `spotify_cache` content.
-3. **Playlist Studio (WI 3).** `spotify/studio.rs`: list own/collab playlists → load draft (items + current `snapshot_id`, join **only** `item` ratings/tags by URI, dupes within/across) → `preview_studio_apply` diff → apply: re-`GET` playlist, compare `snapshot_id`, mismatch → `conflict`; else store 30-day undo snapshot in cache DB, then replace items in chunks of 100 → `undo_last_apply` restores from snapshot.
+3. **Playlist Studio (WI 3).** `spotify/studio.rs`: list own/collab playlists → load draft (items + current `snapshot_id`, informational only; join **only** `item` ratings/tags by URI, dupes within/across) → `preview_studio_apply` diff → apply: re-read the playlist's items (`studio::current_uris`, the one track-list read) and check them against the draft's tracks, never `snapshot_id` (GET serves a stale one, TSD §5.2); different → `conflict`; else store 30-day undo snapshot in cache DB, then replace items in chunks of 100 → `undo_last_apply` restores from snapshot.
    - Tests: diff function table; conflict path with stubbed GET; grep check in `check.py`: `spotify/` never references `listening_event` or `exported_playlist`.
 4. **Playlist from filter (WI 4).** Resolve `SavedFilter` via M3 `filters.rs` → URIs (skip items without one, count them) → `POST /me/playlists` + add items.
 5. **Autofill (WI 5).** `autofill(uri)`: cache hit or `GET /albums|tracks|artists/{id}` → cache entry; return fields without writing. Confirm path = M3 `update_item`/`create_item` with `promoted_fields`. `bulk_add_album_tracks` creates promoted track items linked `on_album`.
@@ -34,7 +36,7 @@ Agents: `spotify-researcher` (gate + T3), `rust-core`, `spec-reviewer` after ste
 |---|---|
 | O1 fails (Premium plan not accepted) | R3 stops; user decides (USER_ACTIONS); M6 unaffected |
 | Endpoint names change (Feb 2026 Dev Mode guide) | Re-verify each endpoint in step 0; KB holds checked date |
-| Snapshot race between GET and write | Accepted (TSD §5.2); undo snapshot covers recovery |
+| Edit on Spotify between the items read and the write | Accepted (TSD §5.2); undo snapshot covers recovery |
 
 ## Done when
 MILESTONES M5 acceptance passes; `python scripts/check.py` exits 0.

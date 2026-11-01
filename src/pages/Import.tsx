@@ -17,19 +17,19 @@ function Choose() {
   const [path, setPath] = useState<string | null>(null);
   const [err, setErr] = useState<AppError | undefined>((useLocation().state as { error?: AppError } | null)?.error);
   const [busy, setBusy] = useState(false);
-  const choose = () => { setBusy(true); setErr(undefined); api.pickImportSource().then(setPath, setErr).finally(() => setBusy(false)); };
+  const choose = () => { setBusy(true); setErr(undefined); api.pickImportSource().then(setPath, (e) => setErr(api.toAppError(e))).finally(() => setBusy(false)); };
   return <>
-    <div className="card flex flex-col gap-3 items-center text-center p-10 border border-dashed border-line-strong">
+    <div className="card flex flex-col gap-3 items-center text-center p-10 border border-dashed border-line-2">
       <b className="text-lg">Choose the folder or .zip from Spotify's email</b>
       <span className="text-text-2">Runout reads it on this PC; nothing is uploaded.</span>
-      <button className="btn btn-secondary" onClick={choose} disabled={busy}>{busy ? <Dots /> : "Choose folder or .zip"}</button>
+      <button className="btn btn-light" onClick={choose} disabled={busy}>{busy ? <Dots /> : "Choose folder or .zip"}</button>
       {path && <span className="font-mono text-text-2 text-xs">{shortPath(path)} (selected)</span>}
     </div>
     {err && <ErrorBanner error={err.code === "import_unrecognized" ? { ...err, message: "Choose the unzipped folder from Spotify's email, or the .zip itself." } : err}
       title={err.code === "import_unrecognized" ? UNRECOGNIZED : "Couldn't open that."} />}
     {!online && <span className="text-muted text-xs">Importing works offline. The files are read from your PC.</span>}
     <div className="flex flex-wrap gap-2 items-center justify-end">
-      <Link className="btn btn-secondary" to="/settings">Cancel</Link>
+      <Link className="btn btn-secondary" to="/settings?tab=import">Cancel</Link>
       <button className="btn btn-primary" disabled={!path} onClick={() => nav("/import/2", { state: { path } })}>Next</button>
     </div>
   </>;
@@ -47,7 +47,7 @@ function Check({ path }: { path: string }) {
   if (!p.music) return <Empty h="No music plays in this export" line="It may hold only account details. Request Extended streaming history from Spotify for your plays."><Link className="btn btn-secondary" to="/import/1">Choose another</Link></Empty>;
   const run = () => {
     setRunning(true); setRunErr(undefined);
-    api.runImport(path).then((result) => nav("/import/3", { state: { result, preview: p } }), (e) => { setRunErr(e); setRunning(false); });
+    api.runImport(path).then((result) => nav("/import/3", { state: { result, preview: p } }), (e) => { setRunErr(api.toAppError(e)); setRunning(false); });
   };
   const rows: [string, string, number, "" | "text-muted" | "text-accent"][] = [
     ["Music plays", `${dayY(p.from)} to ${dayY(p.until)}`, p.music, ""],
@@ -80,7 +80,7 @@ function Check({ path }: { path: string }) {
 }
 
 function Done({ result, preview }: { result: ImportResult; preview: api.ImportPreview }) {
-  if (!result.added) return <Empty h="Nothing new to import" line={`Every play in this export is already in Runout. Your history covers up to ${dayY(preview.until)}.`}><Link className="btn btn-secondary" to="/insights">Open insights</Link></Empty>;
+  if (!result.added) return <Empty h="Nothing new to import" line={`Every play in this export is already in Runout. Your history covers up to ${dayY(preview.until)}.`}><Link className="btn btn-primary" to="/insights">See your insights</Link></Empty>;
   return (
     <div className="card flex flex-col gap-3 p-7">
       <b className="text-xl">Imported {pl(result.added, "play")}.</b>
@@ -101,7 +101,7 @@ export default function Import() {
   return (
     <>
       <Topbar />
-      <Link to="/settings" className="text-sm font-semibold">Back to settings</Link>
+      <Link to="/settings?tab=import" className="text-sm font-semibold">Back to settings</Link>
       <div className="flex flex-col gap-1.5">
         <h1 className="page-title">Import your Spotify history</h1>
         <span className="text-muted">Uses the files Spotify emails you after you request your data.</span>

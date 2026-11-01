@@ -2,20 +2,28 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Status } from "../api";
-import { Attribution, Dots, Empty, EmbedSlot, LiveDot, NameNeeded, Rating, SkelRows, Stat, StatusBadge, StatusControl, TagChips, useToast } from "../components/ui";
+import { CaretRight } from "@phosphor-icons/react";
+import { Attribution, CopyButton, Dots, EmbedSlot, Empty, LiveDot, NameNeeded, Rating, Seg, SkelRows, Stat, StatusBadge, StatusControl, Switch, TabPanel, TagChips, useSlide, useToast } from "../components/ui";
 
-const SW: [string, string, string][] = [["--bg", "#101113", "Page canvas"], ["--rail", "#0B0C0E", "Sidebar"], ["--surface", "#17191C", "Cards, inputs"], ["--surface-2", "#1F2226", "Hover, selected"], ["--line", "#23262B", "Dividers"],
-  ["--line-strong", "#3A3F46", "Control borders"], ["--text", "#ECEDEF", "Primary text, 16.1:1"], ["--text-2", "#C3C7CE", "Secondary, 11.1:1"], ["--muted", "#A9AEB7", "Labels, 8.5:1"], ["--faint", "#9A9FA8", "Ranks, times, 7.1:1"],
-  ["--accent", "#F5B544", "Needs you, 10.4:1"], ["--link", "#F5C46B", "Links, 11.7:1"], ["--bar", "#4A5059", "Chart bars"], ["--danger", "#FF7A6B", "Destructive, 7.4:1"], ["--accent-ink", "#101113", "Text on accent, 10.4:1"]];
+const SW: [string, string, string][] = [["--bg", "#101113", "Page canvas"], ["--rail", "#0B0C0E", "Sidebar"], ["--surface", "#17191C", "Cards, inputs"], ["--surface-2", "#1F2226", "Hover, selected"],
+  ["--surface-3", "#23262B", "Pressed, switch track"], ["--surface-hover", "#2A2D32", "Row hover"], ["--line", "#23262B", "Dividers"], ["--line-2", "#2E3238", "Input borders"],
+  ["--line-strong", "#3A3F46", "Input hover, checkbox border"], ["--line-hover", "#4A5059", "Hover rings"], ["--danger-line", "#452C2C", "Danger frames"],
+  ["--text", "#ECEDEF", "Primary text, 16.1:1"], ["--text-2", "#C3C7CE", "Secondary, 11.1:1"], ["--muted", "#B6BBC3", "Labels, 9.8:1"], ["--faint", "#9A9FA8", "Ranks, times, 7.1:1"],
+  ["--accent", "#F5B544", "Needs you, 10.4:1"], ["--link", "#F5C46B", "Links, 11.7:1"], ["--link-hover", "#FFDCA0", "Link hover"], ["--bar", "#4A5059", "Chart bars"], ["--star-off", "#686E78", "Empty stars"],
+  ["--danger", "#FF7A6B", "Destructive, 7.4:1"], ["--accent-ink", "#101113", "Text on accent, 10.4:1"]];
 const STATES = ["Default", "Hover", "Pressed", "Focus", "Disabled", "Loading"];
-// Static pictures of each interaction state (the live row below has the real ones).
+// Static pictures of each interaction state (the live row below has the real ones). Hover is per variant, as in app.css.
 const STATE_CLASS: Record<string, string> = {
-  Hover: "brightness-110", Pressed: "scale-[0.98] brightness-[0.92]", Focus: "outline-2 outline-accent outline-offset-2", Disabled: "opacity-40",
+  Pressed: "scale-[0.98] brightness-[0.92]", Focus: "outline-2 outline-accent outline-offset-2", Disabled: "opacity-40",
+};
+const HOVER: Record<string, string> = {
+  "btn-primary": "brightness-110", "btn-light": "brightness-105",
+  "btn-secondary": "bg-surface-2 border-[rgba(255,255,255,0.14)]", "btn-danger": "bg-[rgba(255,122,107,0.1)] border-danger",
 };
 const TYPE: [string, string, string][] = [["32 / 800", "text-3xl font-extrabold tracking-[-0.025em]", "Promises"], ["26 / 800", "text-2xl font-extrabold", "Backlog"],
   ["20 / 800", "text-xl font-extrabold", "Top artists"], ["15 / 600", "text-md font-semibold", "Journey in Satchidananda"], ["14 / 400", "text-text-2", "Recommended by Meera."],
   ["12 / 400", "text-xs text-muted", "Desktop plays: live"], ["Mono 26 / 600", "font-mono text-2xl font-semibold", "6,519 plays"]];
-const KEYS: [string, string][] = [["Quick add from anywhere", "Ctrl+N"], ["Search", "Ctrl+K"], ["Set status on an item page", "1 to 5"], ["Rating, by half a star", "Arrow keys"], ["Close a dialog", "Esc"]];
+const KEYS: [string, string][] = [["Quick add from anywhere", "Ctrl+N"], ["Search", "Ctrl+K"], ["Collapse or expand the sidebar", "Ctrl+B"], ["Set status on an item page", "1 to 5"], ["Rating, by half a star", "Arrow keys"], ["Close a dialog", "Esc"]];
 
 const col = "flex flex-col gap-3";
 const rowFlex = "flex flex-wrap gap-2 items-center";
@@ -28,8 +36,13 @@ export default function System() {
   const [status, setStatus] = useState<Status>("in_progress");
   const [rating, setRating] = useState<number | null>(3.5);
   const [tags, setTags] = useState(["late-night", "jazz"]);
+  const [sw, setSw] = useState(true);
+  const [sw2, setSw2] = useState(false);
+  const [tab, setTab] = useState("one");
+  const [dir, slide] = useSlide(["one", "two", "three"], tab);
+  const [keep, setKeep] = useState<"keep" | "cut">("keep");
   const toast = useToast();
-  const btn = (cls: string, label: string) => STATES.map((s) => <span key={s} className={`btn ${cls} ${STATE_CLASS[s] ?? ""}`}>{s === "Loading" ? <Dots /> : label}</span>);
+  const btn = (cls: string, label: string) => STATES.map((s) => <span key={s} className={`btn ${cls} ${(s === "Hover" ? HOVER[cls] : STATE_CLASS[s]) ?? ""}`}>{s === "Loading" ? <Dots /> : label}</span>);
   return (
     <div className="app">
       <main className="main mx-auto max-w-[1240px] gap-11 pt-10">
@@ -91,6 +104,36 @@ export default function System() {
             </div>
           </section>
         </div>
+        <section className={col}><h2 className="section-title">Controls</h2>
+          <div className={cols}>
+            <div className={`card ${colMain}`}>
+              <span className="label">Switches: every on/off setting</span>
+              <div className="flex flex-col max-w-[380px]">
+                <Switch label="Switch, on" on={sw} onChange={async (v) => { setSw(v); return true; }} />
+                <Switch label="Switch, off" on={sw2} onChange={async (v) => { setSw2(v); return true; }} />
+                <Switch label="Switch, disabled" on={false} disabled onChange={async () => true} />
+              </div>
+              <span className="label">Selection checkboxes: choosing rows or tracks</span>
+              <div className={rowFlex}>
+                <label className={rowFlex}><input type="checkbox" defaultChecked />Checked</label>
+                <label className={rowFlex}><input type="checkbox" />Unchecked</label>
+                <label className={rowFlex}><input type="checkbox" disabled />Disabled</label>
+              </div>
+              <span className="label">Tabs (views) and a value picker</span>
+              <Seg label="Example tabs" value={tab} onChange={(t) => { slide(t); setTab(t); }} options={[["one", "Listening"], ["two", "Collection"], ["three", "Your take"]]} />
+              <TabPanel key={tab} dir={dir} label={`Example panel ${tab}`} className="text-text-2">The panel slides in from the side of the tab picked.</TabPanel>
+              <Seg label="Example keep or cut" radio value={keep} onChange={setKeep} options={[["keep", "Keep"], ["cut", "Cut"]]} />
+              <details className="st-details">
+                <summary><CaretRight size={14} weight="bold" aria-hidden />Disclosure</summary>
+                <div className="pt-3 text-text-2">Its height animates open; the caret turns.</div>
+              </details>
+              <span className={rowFlex}><span className="font-mono">AB12CD</span><CopyButton text="AB12CD" label="Copy example code" /></span>
+            </div>
+            <div className={colSide}>
+              <Stat k="Count-up number" v="6,519" d="Counts up once when it first shows" />
+            </div>
+          </div>
+        </section>
         <section className={col}><h2 className="section-title">Data and feedback</h2>
           <div className={cols}>
             <div className={`${colMain} flex-[1_1_320px]`}>

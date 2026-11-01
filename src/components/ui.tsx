@@ -1,10 +1,12 @@
 // Shared UI components, DESIGN.md §5. Markup and class names follow the M1 prototype (styles in src/styles/app.css).
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { XIcon as X } from "@phosphor-icons/react";
-import type { AppError, Freshness, ItemSummary, Play, Source, Status } from "../api";
-import { ago, mmss, time, nameOf, num, openUrl, STATUS, STATUS_ORDER, stars, statusMeta, sub } from "../lib/format";
-import { freshnessText, ratingClick, ratingKey, sourceText } from "./logic";
+import { CheckIcon, CopyIcon, XIcon as X } from "@phosphor-icons/react";
+import { animate, inView, m, useReducedMotion } from "motion/react";
+import { ARRIVE, LAND, PRESS, RISE } from "../lib/motion";
+import type { AppError, Freshness, ItemSummary, Play, Priority, Source, Sourced, Status } from "../api";
+import { ago, mmss, time, nameOf, openUrl, PRIO, STATUS, STATUS_ORDER, stars, statusMeta, sub, TYPE } from "../lib/format";
+import { freshnessText, ratingClick, ratingKey, sourcedText, sourceText } from "./logic";
 import { useOnline } from "../hooks/useApi";
 import { safeUri } from "../lib/sanitize";
 import spotifyLogo from "../assets/spotify/spotify-logo-white.svg";
@@ -22,7 +24,26 @@ export function PageHead({ title, children, sub: subline }: { title: ReactNode; 
   );
 }
 
-/** Segmented control. `role` tablist for views, radiogroup for values (status). */
+/** Page tabs (Seg `line`): the keyed `TabPanel` slides in from the side of the tab picked. Call `slide(next)` when switching. */
+export function useSlide(order: string[], cur: string) {
+  const [dir, setDir] = useState<"from-right" | "from-left">("from-right");
+  return [dir, (next: string) => setDir(order.indexOf(next) >= order.indexOf(cur) ? "from-right" : "from-left")] as const;
+}
+
+/** The content a tab switches. Give it `key={tab}` so a switch remounts it; it slides 18 px in from the picked side
+ *  and fades (Motion, transform + opacity). `as="section"` where the panel is a landmark. */
+export function TabPanel({ dir, label, className = "", as = "div", still, onPointerMove, children }: {
+  dir: "from-right" | "from-left"; label?: string; className?: string; as?: "div" | "section"; still?: boolean;
+  onPointerMove?: (e: React.PointerEvent) => void; children: ReactNode;
+}) {
+  const C = as === "section" ? m.section : m.div;
+  return (
+    <C role="tabpanel" aria-label={label} className={className} onPointerMove={onPointerMove}
+      initial={still ? false : { opacity: 0, x: dir === "from-right" ? 18 : -18 }} animate={{ opacity: 1, x: 0 }} transition={ARRIVE}>{children}</C>
+  );
+}
+
+/** Segmented control. `role` tablist for views, radiogroup for values (status). Every tablist (views) is drawn as tabs, an accent underline (`.seg.line`, M9); radio groups (values: status, keep/cut) stay a filled segment. */
 export function Seg<T extends string>({ label, options, value, onChange, radio, accent }: {
   label: string; options: [T, ReactNode][]; value: T; onChange: (v: T) => void; radio?: boolean; accent?: boolean;
 }) {
@@ -35,18 +56,113 @@ export function Seg<T extends string>({ label, options, value, onChange, radio, 
     onChange(options[n][0]);
     (ref.current?.children[n] as HTMLElement | undefined)?.focus();
   };
+  // Indicator slides under the selected button (DESIGN §2.4); re-measured when the control resizes (rail collapse, wrap).
+  const [ind, setInd] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const sel = options.findIndex((o) => o[0] === value);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const place = () => {
+      const b = el.children[sel] as HTMLElement | undefined;
+      setInd(b ? { left: b.offsetLeft, top: b.offsetTop, width: b.offsetWidth, height: b.offsetHeight } : null);
+    };
+    place();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [sel, options.length]);
   return (
-    <div ref={ref} className={`seg${accent ? " accent" : ""}`} role={radio ? "radiogroup" : "tablist"} aria-label={label}>
+    <div ref={ref} className={`seg${accent ? " accent" : ""}${radio ? "" : " line"}${ind ? " slid" : ""}`} role={radio ? "radiogroup" : "tablist"} aria-label={label}>
       {options.map(([v, t], i) => (
         <button key={v} type="button" role={radio ? "radio" : "tab"} {...(radio ? { "aria-checked": v === value } : { "aria-selected": v === value })}
           tabIndex={v === value || (!options.some((o) => o[0] === value) && i === 0) ? 0 : -1} onClick={() => onChange(v)} onKeyDown={(e) => move(e, i)}>{t}</button>
       ))}
+      {ind && <m.span className="seg-ind" initial={false} animate={{ x: ind.left, y: ind.top, width: ind.width, height: ind.height }}
+        transition={LAND} aria-hidden />}
     </div>
   );
 }
 
-export function Stat({ k, v, d, act }: { k: ReactNode; v: ReactNode; d?: ReactNode; act?: boolean }) {
-  return <div className="card stat hover"><span className="k">{k}</span><span className="v">{v}</span>{d != null && <span className={`d${act ? " act" : ""}`}>{d}</span>}</div>;
+/* ------------------------------------------------------------------ M9 controls */
+/** Spotlight (DESIGN §3, M9): the card under the pointer gets the pointer position as --mx/--my, read by the
+ *  `.st-panel .card` / `.hm-page .card` light. CSS variables only, no React state, so it costs nothing per move. */
+export const spot = (e: React.PointerEvent) => {
+  const c = (e.target as HTMLElement).closest<HTMLElement>(".card");
+  if (!c) return;
+  const r = c.getBoundingClientRect();
+  c.style.setProperty("--mx", `${e.clientX - r.left}px`);
+  c.style.setProperty("--my", `${e.clientY - r.top}px`);
+};
+
+
+/** On/off setting (DESIGN §3 Controls). Flips at once (the write takes a moment); `onChange` resolves falsy when the write
+ *  failed (useRun → undefined, Item's run → false), and the switch goes back to the saved value, unless a later click
+ *  has superseded that write. */
+export function Switch({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => Promise<unknown>; disabled?: boolean }) {
+  const [v, setV] = useState(on);
+  const seq = useRef(0);
+  const saved = useRef(on);
+  saved.current = on;
+  useEffect(() => setV(on), [on]);
+  const [down, setDown] = useState(false); // pressed: the thumb stretches toward where it will go
+  return (
+    <label className="switch-row" onPointerDown={() => !disabled && setDown(true)} onPointerUp={() => setDown(false)} onPointerLeave={() => setDown(false)}>
+      <span>{label}</span>
+      <span className="toggle-wrap">
+        <input type="checkbox" role="switch" className="toggle" checked={v} disabled={disabled}
+          onChange={(e) => { const n = e.target.checked, k = ++seq.current; setV(n); onChange(n).then((r) => { if (!r && k === seq.current) setV(saved.current); }); }} />
+        <m.span className="toggle-thumb" aria-hidden initial={false} style={{ originX: v ? 1 : 0 }}
+          animate={{ x: v ? 16 : 0, scaleX: down ? 1.25 : 1 }} transition={{ x: LAND, scaleX: PRESS }} />
+      </span>
+    </label>
+  );
+}
+
+/** Counts a leading number up from 0 the first time it scrolls into view (DESIGN §3); "6,519" keeps its grouping, the rest
+ *  of the text ("%", " s", "h 40m") stays. Screen readers get the final text only. */
+export function CountUp({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const reduce = useReducedMotion();
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.textContent = text;
+    const m = /^(\d[\d,]*)(\.\d+)?/.exec(text);
+    if (!m || reduce || typeof IntersectionObserver === "undefined") return;
+    const to = Number(m[1].replace(/,/g, "") + (m[2] ?? "")), dp = m[2] ? m[2].length - 1 : 0, rest = text.slice(m[0].length);
+    const fmt = (x: number) => (m[1].includes(",") ? Math.round(x).toLocaleString("en-US") : x.toFixed(dp)) + rest;
+    el.textContent = fmt(0);
+    let run: { stop: () => void } | undefined;
+    // Writes text straight to the node each frame: no React render per frame.
+    const stopView = inView(el, () => { run = animate(0, to, { duration: 0.9, ease: [0.16, 1, 0.3, 1], onUpdate: (x) => { el.textContent = fmt(x); } }); });
+    return () => { stopView(); run?.stop(); el.textContent = text; };
+  }, [text, reduce]);
+  return <><span className="sr-only">{text}</span><span ref={ref} aria-hidden /></>;
+}
+/** Copy a value the user types elsewhere (pairing code, capture URL); a check mark and a status message confirm it. */
+export function CopyButton({ text, label }: { text: string; label: string }) {
+  const toast = useToast();
+  const reduce = useReducedMotion();
+  const [done, setDone] = useState(false);
+  useEffect(() => { if (!done) return; const t = setTimeout(() => setDone(false), 1600); return () => clearTimeout(t); }, [done]);
+  return (
+    <>
+      <button type="button" className={`icon-btn copy${done ? " done" : ""}`} aria-label={label}
+        onClick={() => (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => setDone(true), () => toast("Couldn’t copy. Select the code and copy it instead."))}>
+        <m.span key={done ? "done" : "copy"} className="inline-flex" initial={reduce ? false : { scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={LAND}>
+          {done ? <CheckIcon size={16} weight="bold" /> : <CopyIcon size={16} />}
+        </m.span>
+      </button>
+      <span className="sr-only" role="status">{done ? "Copied" : ""}</span>
+    </>
+  );
+}
+
+/** `txt`: the value is a name, not a number, so it is set in sans (DESIGN §2.5 keeps mono for numbers). Lifts on hover only inside a link. */
+export function Stat({ k, v, d, act, txt }: { k: ReactNode; v: ReactNode; d?: ReactNode; act?: boolean; txt?: boolean }) {
+  const n = !txt && (typeof v === "number" || typeof v === "string") ? <CountUp text={String(v)} /> : v;
+  return <div className="card stat"><span className="k">{k}</span><span className={`v${txt ? " txt" : ""}`}>{n}</span>{d != null && <span className={`d${act ? " act" : ""}`}>{d}</span>}</div>;
 }
 
 export function Empty({ h, line, children }: { h: ReactNode; line: ReactNode; children?: ReactNode }) {
@@ -91,6 +207,19 @@ export const LiveDot = () => <span className="live" aria-hidden="true" />;
 export const NameNeeded = () => <span className="badge need">Name needed</span>;
 export const StatusBadge = ({ children }: { children: ReactNode }) => <span className="badge status">{children}</span>;
 export const SourceTag = ({ sources }: { sources: Source[] }) => !sources.length ? null : <span className="text-faint text-xs">{sourceText(sources)}</span>;
+/** Insight source tag (FR-032): sources + freshness of the `Sourced` response it sits on. */
+export const SourcedTag = ({ res }: { res: Pick<Sourced<unknown>, "sources" | "freshness"> | undefined }) => <span className="text-faint text-xs">{sourcedText(res ?? {})}</span>;
+/** SC-09 insight card: title, the response's sources and freshness (always: no response yet → "Sources unknown."), then the content. */
+export function InsightCard({ title, res, children, className = "", side }: { title: ReactNode; res: Pick<Sourced<unknown>, "sources" | "freshness"> | undefined; children: ReactNode; className?: string; side?: boolean }) {
+  return (
+    <section className={`card flex flex-col gap-3 ${side ? "flex-[1_1_320px] min-w-0" : className}`}>
+      <h2 className="card-title">{title}</h2>
+      {children}
+      {/* The source tag sits under the content (M9): beside the title it squeezed titles onto two lines */}
+      <span className="mt-auto pt-1"><SourcedTag res={res} /></span>
+    </section>
+  );
+}
 export const FreshnessNote = ({ freshness, loggerState }: { freshness: Freshness | undefined; loggerState?: string }) =>
   <span className="freshness">{freshnessText(freshness, loggerState)}</span>;
 export const Stars = ({ r }: { r: number | null }) => (r ? <span className="stars" aria-label={`Rated ${r} of 5`}>{stars(r)}</span> : null);
@@ -112,16 +241,46 @@ export function TagChips({ tags, onRemove, onAdd }: { tags: string[]; onRemove?:
 }
 
 /* ------------------------------------------------------------------ opinion controls */
-/** 5 stars with halves; role="slider", arrows ±0.5 (DESIGN §5). */
-export function Rating({ value, onChange, label = "Your rating" }: { value: number | null; onChange: (v: number | null) => void; label?: string }) {
-  const v = value ?? 0;
+/** 5 stars with halves; role="slider", arrows ±0.5 (DESIGN §5). The control shows a local draft: on Rust each save
+ *  refetches, and keys read from the saved value dropped presses (M7 run). Arrows save once, 400 ms after the last key
+ *  (or at once on unmount); a click saves at once and cancels pending keys. The draft stays until `value` catches up
+ *  with what was sent, or the save fails (`onChange` rejects or resolves `false`). `prev` is the value this save
+ *  replaces (the last one sent, when its refetch hasn't landed yet), for undo. */
+export function Rating({ value, onChange, label = "Your rating" }: { value: number | null; onChange: (v: number | null, prev: number | null) => unknown; label?: string }) {
+  const [draft, setDraft] = useState<number | null>();
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pending = useRef<number | null | undefined>(undefined); // keyed, not yet sent
+  const sent = useRef<number | null | undefined>(undefined); // sent, not yet seen in `value`
+  const latest = useRef({ value, onChange });
+  latest.current = { value, onChange };
+  const send = (n: number | null) => {
+    clearTimeout(timer.current);
+    pending.current = undefined;
+    const base = sent.current !== undefined ? sent.current : latest.current.value;
+    if (n === base) { if (n === latest.current.value) { sent.current = undefined; setDraft(undefined); } return; }
+    sent.current = n;
+    const fail = () => { if (sent.current === n) { sent.current = undefined; if (pending.current === undefined) setDraft(undefined); } };
+    void Promise.resolve(latest.current.onChange(n, base)).then((r) => { if (r === false) fail(); }, fail);
+  };
+  useEffect(() => { // the refetch brought what was sent: show the saved value again
+    if (pending.current === undefined && (sent.current === undefined || sent.current === value)) { sent.current = undefined; setDraft(undefined); }
+  }, [value]);
+  useEffect(() => () => { if (pending.current !== undefined) send(pending.current); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const shown = draft === undefined ? value : draft;
+  const v = shown ?? 0;
+  const key = (n: number) => {
+    setDraft(n || null);
+    pending.current = n || null;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => send(n || null), 400);
+  };
   return (
     <div className="rating" role="slider" tabIndex={0} aria-label={label} aria-valuemin={0} aria-valuemax={5} aria-valuenow={v}
-      aria-valuetext={value ? `${value} of 5 stars` : "Not rated"}
-      onKeyDown={(e) => { const n = ratingKey(v, e.key); if (n != null) { e.preventDefault(); onChange(n || null); } }}>
+      aria-valuetext={shown ? `${shown} of 5 stars` : "Not rated"}
+      onKeyDown={(e) => { const n = ratingKey(v, e.key); if (n != null) { e.preventDefault(); key(n); } }}>
       {[0, 1, 2, 3, 4].map((i) => (
         <button key={i} type="button" tabIndex={-1} aria-hidden="true" className={v >= i + 1 ? "on" : v >= i + 0.5 ? "half" : ""}
-          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onChange(ratingClick(value, i, e.clientX - r.left < r.width / 2)); }}>★</button>
+          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); const n = ratingClick(shown, i, e.clientX - r.left < r.width / 2); setDraft(n); send(n); }}>★</button>
       ))}
     </div>
   );
@@ -131,12 +290,19 @@ export function Rating({ value, onChange, label = "Your rating" }: { value: numb
 export const StatusControl = ({ value, onChange }: { value: Status; onChange: (s: Status) => void }) =>
   <Seg label="Status" radio accent options={STATUS_ORDER.map((s) => [s, STATUS[s]])} value={value} onChange={onChange} />;
 
+/** Priority <select> (quick add, item detail); "" means none. */
+export const PrioritySelect = ({ id, value, onChange, className = "input" }: { id: string; value: Priority | ""; onChange: (p: Priority | "") => void; className?: string }) => (
+  <select id={id} className={className} value={value} onChange={(e) => onChange(e.target.value as Priority | "")}>
+    <option value="">None</option>{(Object.keys(PRIO) as Priority[]).map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
+  </select>
+);
+
 /* ------------------------------------------------------------------ rows and cards */
 /** Record card (default, text-first; no artwork). */
 export function RecordCard({ it, meta, act }: { it: ItemSummary; meta?: ReactNode; act?: boolean }) {
   return (
     <Link to={`/item/${it.id}`} className="card hover flex flex-col gap-1 text-inherit">
-      <span className="text-muted text-xs">{it.type === "album" ? "Album" : it.type === "track" ? "Track" : "Artist"}</span>
+      <span className="text-muted text-xs">{TYPE[it.type]}</span>
       <span className="font-bold">{nameOf(it)}</span>
       {it.type !== "artist" && <span className="text-muted text-sm">{sub(it)}</span>}
       <span className={`font-mono text-xs ${act ? "text-accent" : "text-text-2"}`}>{meta ?? statusMeta(it)}</span>
@@ -145,22 +311,26 @@ export function RecordCard({ it, meta, act }: { it: ItemSummary; meta?: ReactNod
   );
 }
 
-/** Rank bar row: rank, name + your-status suffix, bar without track, mono count. */
-export function RankRow({ rank, name, by, href, suffix, value, max, label, hot }: {
-  rank: number; name: string; by?: string; href?: string; suffix?: ReactNode; value: number; max: number; label: ReactNode; hot?: boolean;
-}) {
+/** Collection card (Library grid, Rediscover rails; M9): type + Revisit, title, artist, then a hairline footer with your
+ *  status (accent when it asks for action) or the shelf's own line, and your stars. Rises in with `RISE` (custom = index). */
+export function CollectionCard({ it, i = 0, meta, act }: { it: ItemSummary; i?: number; meta?: ReactNode; act?: boolean }) {
+  const hot = act ?? it.status === "in_progress";
   return (
-    <div className="rank">
-      <span className="font-mono text-faint text-xs">{rank}</span>
-      <div className="min-w-0">
-        <div className="truncate">{href ? <Link to={href} className="text-text font-semibold">{name}</Link> : <b>{name}</b>}{by && <span className="text-muted"> {by}</span>}{suffix && <span className="text-muted text-xs"> {suffix}</span>}</div>
-        <div className={`bar${hot ? " hot" : ""}`} style={{ width: `${Math.max(2, (value / (max || 1)) * 100)}%` }} />
-      </div>
-      <span className="font-mono text-text-2 text-xs text-right">{label}</span>
-    </div>
+    <m.div variants={RISE} custom={i} className="cc-cell">
+      <Link to={`/item/${it.id}`} className="card hover cc-card">
+        <span className="cc-type">{TYPE[it.type]}{it.revisit && <span className="badge status">Revisit</span>}</span>
+        <span className="cc-name">{nameOf(it)}</span>
+        {it.type !== "artist" && <span className="cc-sub">{sub(it)}</span>}
+        <span className="cc-foot">
+          <span className={`font-mono text-xs ${hot ? "text-accent" : "text-text-2"}`}>{meta ?? STATUS[it.status]}</span>
+          {meta == null && (it.rating ? <Stars r={it.rating} /> : <span className="text-faint text-xs">Unrated</span>)}
+        </span>
+      </Link>
+    </m.div>
   );
 }
 
+/** Rank bar row: rank, name + your-status suffix, bar without track, mono count. */
 /** Play row: track, artist, your stars or a Rate button, mono relative time. Skipped text in --faint (never opacity). */
 export function PlayRow({ p, onRate, onSave, wide }: { p: Play; onRate?: (p: Play) => void; onSave?: (p: Play) => void; wide?: boolean }) {
   if (wide) return <PlayRowWide p={p} onRate={onRate} onSave={onSave} />;
@@ -171,10 +341,7 @@ export function PlayRow({ p, onRate, onSave, wide }: { p: Play; onRate?: (p: Pla
           : <b className={`truncate ${p.skipped ? "text-faint" : ""}`}>{p.track_name}</b>}
         <span className="text-muted truncate text-xs">{p.artist_name}{p.source === "export" ? ", phone or other device" : ""}</span>
       </span>
-      {p.skipped ? <span className="text-faint text-xs">Skipped, not counted</span>
-        : p.item?.rating ? <Stars r={p.item.rating} />
-        : p.item ? <button className="btn btn-secondary s" onClick={() => onRate?.(p)}>Rate</button>
-        : <button className="btn btn-secondary s" onClick={() => onSave?.(p)}>Save to backlog</button>}
+      {p.skipped ? <span className="text-faint text-xs">Skipped, not counted</span> : <PlayAction p={p} onRate={onRate} onSave={onSave} save="Save to backlog" />}
       <span className="font-mono text-faint text-xs text-right">{ago(p.ended_at_local)}</span>
     </div>
   );
@@ -193,13 +360,19 @@ function PlayRowWide({ p, onRate, onSave }: { p: Play; onRate?: (p: Play) => voi
       <span className="text-muted text-xs">{p.source === "logger" ? "This PC" : "Phone"}</span>
       <span className={`font-mono text-xs ${dim ? "text-faint" : "text-text-2"}`}>{mmss(p.ms_played)}</span>
       <span className="text-sm justify-self-end">
-        {dim ? <span className="text-faint">Skipped, not counted</span>
-          : p.item?.rating ? <Stars r={p.item.rating} />
-          : p.item ? <button className="btn btn-secondary s" onClick={() => onRate?.(p)} aria-label={`Rate ${p.track_name}`}>Rate</button>
-          : <button className="btn btn-secondary s" onClick={() => onSave?.(p)} aria-label={`Save ${p.track_name} to backlog`}>Save</button>}
+        {dim ? <span className="text-faint">Skipped, not counted</span> : <PlayAction p={p} onRate={onRate} onSave={onSave} save="Save" />}
       </span>
     </div>
   );
+}
+
+/** Your stars (the track's, else the album's with an "album" suffix), else Rate (play linked to a record), else Save (not in your library). */
+function PlayAction({ p, onRate, onSave, save }: { p: Play; onRate?: (p: Play) => void; onSave?: (p: Play) => void; save: string }) {
+  if (p.item?.rating) return <Stars r={p.item.rating} />;
+  if (p.album_rating) return <span className="stars whitespace-nowrap" aria-label={`Album rated ${p.album_rating} of 5`}>{stars(p.album_rating)}<span className="text-faint text-[11px] tracking-normal"> album</span></span>;
+  return p.item
+    ? <button className="btn btn-secondary s" onClick={() => onRate?.(p)} aria-label={`Rate ${p.track_name}`}>Rate</button>
+    : <button className="btn btn-secondary s" onClick={() => onSave?.(p)} aria-label={`Save ${p.track_name} to backlog`}>{save}</button>;
 }
 
 /* ------------------------------------------------------------------ Spotify content */
@@ -212,7 +385,6 @@ export const OpenSpotify = ({ uri, name }: { uri?: string | null; name?: string 
 export const Attribution = ({ uri, name, children }: { uri?: string | null; name?: string; children?: ReactNode }) =>
   <span className="flex flex-wrap gap-2 items-center"><SpotifyLogo />{children}<OpenSpotify uri={uri} name={name} /></span>;
 
-/** Embed URL derived from the stored URI (TSD §4.3). */
 /** Embed URL derived from the stored URI (TSD §4.3); null for a malformed URI, so nothing is mounted. */
 export const embedUrl = (uri: string) => { const u = safeUri(uri); return u ? `https://open.spotify.com/embed/${u.type}/${u.id}` : null; };
 
@@ -247,7 +419,7 @@ export function ArtTiles({ items, total, meta }: { items: ItemSummary[]; total?:
   const shown = items.slice(0, 20);
   return (
     <>
-      <div className="tiles">{shown.map((it) => (
+      <div className="tiles art">{shown.map((it) => (
         <div key={it.id} className="tile">
           <EmbedSlot uri={it.spotify_uri} compact />
           <Link to={`/item/${it.id}`} className="t text-text">{nameOf(it)}</Link>
@@ -326,4 +498,3 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export { num };

@@ -3,19 +3,24 @@
 import { useCallback, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  autofill, bulkAddAlbumTracks, deleteItem, getItem, getItemListening, isAppError, libraryContains, removeFromSpotifyLibrary,
-  saveToSpotifyLibrary, setStatus, updateItem, type AppError, type ItemDetail, type ItemPatch, type Priority, type Status,
+  autofill, bulkAddAlbumTracks, deleteItem, getItem, getItemListening, libraryContains, linkItems, removeFromSpotifyLibrary,
+  saveToSpotifyLibrary, search, setStatus, unlinkItems, updateItem, toAppError,
+  type AppError, type ItemDetail, type ItemPatch, type ItemSummary, type ItemType, type LinkKind, type Status,
 } from "../api";
+import { XIcon as X } from "@phosphor-icons/react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
+import { Grow, MonthBars, monthLong } from "../components/charts";
 import { Topbar } from "../components/Shell";
 import { useQuickAdd } from "../components/QuickAddContext";
 import {
-  Attribution, Dialog, Dots, EmbedSlot, Empty, ErrorBanner, FreshnessNote, Rating, SkelBlock, SkelRows, SourceTag,
-  StatusBadge, StatusControl, TagChips, useToast,
+  Attribution, CountUp, Dialog, Dots, EmbedSlot, Empty, ErrorBanner, FreshnessNote, PrioritySelect, Rating, SkelBlock, SkelRows, SourceTag, spot,
+  StatusBadge, StatusControl, Switch, TagChips, useToast,
 } from "../components/ui";
 import { useApi, useOnline } from "../hooks/useApi";
 import { useRelease } from "../hooks/useRelease";
 import { useShortcuts, type ShortcutAction } from "../hooks/useShortcuts";
-import { ago, day, nameOf, pl, STATUS, STATUS_ORDER, statusMeta, TYPE } from "../lib/format";
+import { ago, an, day, hm, nameOf, pl, STATUS, STATUS_ORDER, statusMeta, TYPE } from "../lib/format";
+import { EASE, PRESS, RISE, swap } from "../lib/motion";
 
 export default function Item() {
   const id = Number(useParams().id);
@@ -40,10 +45,13 @@ function Detail({ it }: { it: ItemDetail }) {
   const [err, setErr] = useState<{ title: string; e?: AppError; retry?: () => void }>();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [filling, setFilling] = useState(false);
+  const reduce = useReducedMotion();
+  // M9 WI 8: the page's blocks rise in once (arrival); under reduced motion RISE's children start at rest.
+  const go = { initial: reduce ? false : "hidden", animate: "show" } as const;
 
   const run = async (title: string, p: () => Promise<unknown>) => {
     setErr(undefined);
-    try { await p(); return true; } catch (e) { setErr({ title, e: isAppError(e) ? e : undefined, retry: () => run(title, p) }); return false; }
+    try { await p(); return true; } catch (e) { setErr({ title, e: toAppError(e), retry: () => run(title, p) }); return false; }
   };
   const patch = (title: string, pt: ItemPatch) => run(title, () => updateItem(it.id, pt));
 
@@ -59,7 +67,9 @@ function Detail({ it }: { it: ItemDetail }) {
   useShortcuts(useCallback((a: ShortcutAction) => { if (typeof a === "object" && !edit) changeStatus(STATUS_ORDER[a.status - 1]); }, [changeStatus, edit]));
 
   const listening = useApi(() => (r2 ? getItemListening(it.id) : Promise.resolve(null)), [r2, it.id]);
-  const saved = useApi(() => (r3 && online && it.spotify_uri ? libraryContains([it.spotify_uri]) : Promise.resolve(null)), [r3, online, it.spotify_uri]);
+  // Spotify library save/remove takes track and album URIs only (API.md §5): never for artists.
+  const savable = r3 && !!it.spotify_uri && it.type !== "artist";
+  const saved = useApi(() => (savable && online ? libraryContains([it.spotify_uri!]) : Promise.resolve(null)), [savable, online, it.spotify_uri]);
 
   const artistLink = it.links.find((l) => l.kind === "by_artist" && l.direction === "from")?.item;
   const albumLink = it.links.find((l) => l.kind === "on_album" && l.direction === "from")?.item;
@@ -68,9 +78,9 @@ function Detail({ it }: { it: ItemDetail }) {
   const artistName = artistLink ? nameOf(artistLink) : it.artist_names.join(", ");
   const back = it.in_backlog ? "backlog" : "library";
 
-  const head = edit ? <EditForm it={it} artistName={artistName} onDone={() => nav(`/item/${it.id}`)} /> : (
+  const head0 = edit ? <EditForm it={it} artistName={artistName} onDone={() => nav(`/item/${it.id}`)} /> : (
     <div className="flex flex-col gap-1.5">
-      <span className="text-muted text-sm">{TYPE[it.type]}, added {day(it.added_at)}{it.added_via === "phone" ? " from your iPhone" : ""}</span>
+      <span className="text-muted text-sm">{TYPE[it.type]}, added {day(it.added_at)}{it.added_via === "phone" ? " from your iPhone" : it.added_via === "inbox" ? " from your Runout Inbox" : ""}</span>
       <div className="flex flex-wrap gap-2 items-center">
         <h1 className="text-[34px] font-extrabold tracking-[-0.025em]">{name}</h1>
         <Link className="btn btn-secondary s" to={`/item/${it.id}?edit=1`} aria-label={`Edit ${name}`}>Edit</Link>
@@ -83,36 +93,44 @@ function Detail({ it }: { it: ItemDetail }) {
       {it.recommended_by && <span className="text-muted text-sm">Recommended by {it.recommended_by}</span>}
     </div>
   );
+  // Edit and view swap with a short slide (state change): keyed, so only the side that arrives moves.
+  const head = <m.div key={edit ? "edit" : "view"} initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+    transition={swap(reduce, { duration: 0.24, ease: EASE })}>{head0}</m.div>;
 
-  const spotifySave = !r3 || !it.spotify_uri ? null
-    : !online ? <span className="text-faint text-xs">Saved in Spotify can’t change while you’re offline</span>
-    : saved.error ? <span className="text-faint text-xs">Saved in Spotify isn’t available. {saved.error.message}</span>
-    : <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" checked={!!saved.data?.[0]} disabled={saved.loading} onChange={async (e) => {
-        const on = e.target.checked, u = [it.spotify_uri!];
-        if (await run("Couldn’t change your Spotify library.", () => (on ? saveToSpotifyLibrary(u) : removeFromSpotifyLibrary(u)))) toast(on ? `${name} saved in your Spotify library` : `${name} removed from your Spotify library`);
-      }} />Saved in your Spotify library</label>;
+  const spotifySave = !savable ? null
+    : !online ? <span className="text-faint text-xs py-1.5">Saved in Spotify can’t change while you’re offline</span>
+    : saved.error ? <span className="text-faint text-xs py-1.5">Saved in Spotify isn’t available. {saved.error.message}</span>
+    : <Switch label="Saved in your Spotify library" on={!!saved.data?.[0]} disabled={saved.loading} onChange={async (on) => {
+        const u = [it.spotify_uri!];
+        const ok = await run("Couldn’t change your Spotify library.", () => (on ? saveToSpotifyLibrary(u) : removeFromSpotifyLibrary(u)));
+        if (ok) toast(on ? `${name} saved in your Spotify library` : `${name} removed from your Spotify library`);
+        return ok;
+      }} />;
 
   const controls = (
     <div className="field">
       <span className="label">Status</span>
       <StatusControl value={it.status} onChange={changeStatus} />
-      <div className="flex flex-wrap gap-4 items-center text-text-2 text-sm">
-        <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" checked={it.revisit} onChange={async (e) => {
-          const v = e.target.checked; if (await patch("Couldn’t save that change.", { revisit: v })) toast(`${name}: ${v ? "flagged to revisit" : "revisit flag removed"}`, () => updateItem(it.id, { revisit: !v }));
-        }} />Revisit later</label>
-        <label className="flex flex-wrap gap-2 items-center"><input type="checkbox" checked={it.favourite} onChange={async (e) => {
-          const v = e.target.checked; if (await patch("Couldn’t save that change.", { favourite: v })) toast(`${name}: ${v ? "favourite" : "no longer a favourite"}`, () => updateItem(it.id, { favourite: !v }));
-        }} />Favourite</label>
-        {it.in_backlog && <>
-          <label htmlFor="dt-prio">Priority</label>
-          <select id="dt-prio" className="input h-[34px]" value={it.priority ?? ""} onChange={(e) => patch("Couldn’t save that change.", { priority: (e.target.value || null) as Priority | null })}>
-            <option value="">None</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-          </select></>}
-        {spotifySave}
-      </div>
       <div className="flex flex-wrap gap-2 items-center">
         <label className="sr-only" htmlFor="st-note">Note for the next status change</label>
         <input id="st-note" className="input h-[34px] flex-[1_1_260px]" placeholder="Optional note for the next status change" value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
+      {/* Settings-style switch rows (label left, switch right), stacked so each keeps its own hover fill */}
+      <div className="flex flex-col max-w-[380px] pt-1">
+        <Switch label="Revisit later" on={it.revisit} onChange={async (v) => {
+          const ok = await patch("Couldn’t save that change.", { revisit: v });
+          if (ok) toast(`${name}: ${v ? "flagged to revisit" : "revisit flag removed"}`, () => updateItem(it.id, { revisit: !v }));
+          return ok;
+        }} />
+        <Switch label="Favourite" on={it.favourite} onChange={async (v) => {
+          const ok = await patch("Couldn’t save that change.", { favourite: v });
+          if (ok) toast(`${name}: ${v ? "favourite" : "no longer a favourite"}`, () => updateItem(it.id, { favourite: !v }));
+          return ok;
+        }} />
+        {spotifySave}
+        {it.in_backlog && <div className="flex justify-between items-center gap-3 py-1.5">
+          <label htmlFor="dt-prio">Priority</label>
+          <PrioritySelect id="dt-prio" className="input h-[34px] w-auto" value={it.priority ?? ""} onChange={(p) => patch("Couldn’t save that change.", { priority: p || null })} /></div>}
       </div>
     </div>
   );
@@ -127,8 +145,10 @@ function Detail({ it }: { it: ItemDetail }) {
   ) : <>
     <div className="flex flex-wrap gap-8 items-start">
       <div className="field"><span className="label">Your rating</span>
-        <Rating label={`Your rating for ${name}`} value={it.rating} onChange={async (v) => {
-          const old = it.rating; if (await patch("Couldn’t save your rating.", { rating: v })) toast(v ? `Rated ${name} ${v}` : `Rating removed from ${name}`, () => updateItem(it.id, { rating: old }));
+        <Rating label={`Your rating for ${name}`} value={it.rating} onChange={async (v, old) => {
+          const ok = await patch("Couldn’t save your rating.", { rating: v });
+          if (ok) toast(v ? `Rated ${name} ${v}` : `Rating removed from ${name}`, () => updateItem(it.id, { rating: old }));
+          return ok;
         }} />
         <span className="kbd">Arrow keys change by half a star</span></div>
       <div className="field"><span className="label">Tags</span>
@@ -142,26 +162,35 @@ function Detail({ it }: { it: ItemDetail }) {
       <textarea id="dt-notes" className="input" rows={2} placeholder="Context, where you heard it, what to listen for" value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => saveText("notes", notes)} /></div>
   </>;
 
-  const addTrack = () => quickAdd({ suggest: { name: "", artist: artistName, type: "track", from: "plays" } });
+  const addTrack = () => quickAdd({ suggest: { name: "", artist: artistName, type: "track", from: "plays" }, albumId: it.id });
+  const tl = it.track_list ?? [];
+  const played = tl.filter((t) => t.plays).length;
   const tracks = it.type !== "album" ? null : (
     <section className="card flex flex-col gap-3">
-      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">Tracks you’ve added</h2></div>
-      {it.track_list?.length ? it.track_list.map((t) => (
-        <div key={t.position} className="flex justify-between items-baseline gap-3 py-[3px]">
-          <span><span className="font-mono text-faint text-xs mr-2.5">{t.position}</span>{t.item_id ? <Link to={`/item/${t.item_id}`} className="text-text">{t.name}</Link> : t.name}</span>
-        </div>))
-        : onAlbum.length ? onAlbum.map((t) => (
-          <div key={t.id} className="flex justify-between items-baseline gap-3 py-[3px]"><Link to={`/item/${t.id}`} className="text-text">{nameOf(t)}</Link><span className="text-muted text-xs">{statusMeta(t)}</span></div>))
+      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">Tracks you’ve added</h2>
+        {r2 && tl.length > 0 && <span className="font-mono text-text-2 text-xs">{played} of {tl.length} played</span>}</div>
+      {/* how much of the album you've heard: the number gets a bar (M9 WI 8); the accent stays on "Not played yet" */}
+      {r2 && tl.length > 0 && <span className="it-meter" aria-hidden><Grow pct={(played / tl.length) * 100} /></span>}
+      {tl.length ? <m.ol className="it-tracks" {...go}>{tl.map((t, i) => (
+        <m.li key={t.position} variants={RISE} custom={i} whileTap={reduce || !t.item_id ? undefined : PRESS_ROW} className="it-track">
+          <span className="font-mono text-faint text-xs">{t.position}</span>
+          <span className="truncate">{t.item_id ? <Link to={`/item/${t.item_id}`} className="it-stretch text-text">{t.name}</Link> : t.name}</span>
+          {r2 && <span className={`text-xs ${t.plays ? "text-muted" : "text-accent"}`}>{t.plays ? "Played" : "Not played yet"}</span>}
+        </m.li>))}</m.ol>
+        : onAlbum.length ? <m.ol className="it-tracks" {...go}>{onAlbum.map((t, i) => (
+          <m.li key={t.id} variants={RISE} custom={i} whileTap={reduce ? undefined : PRESS_ROW} className="it-track"><span aria-hidden />
+            <span className="truncate"><Link to={`/item/${t.id}`} className="it-stretch text-text">{nameOf(t)}</Link></span>
+            <span className="text-muted text-xs">{statusMeta(t)}</span></m.li>))}</m.ol>
         : <span className="text-muted">None yet. Add tracks to see which ones you haven’t played.</span>}
       <div className="flex flex-wrap gap-2 items-center">
-        <button className="btn btn-secondary s" onClick={addTrack}>Add a track</button>
-        {r3 && it.spotify_uri && !it.track_list?.length && <button className="btn btn-secondary s" disabled={!online} onClick={() => setFilling(true)}>Fill the track list from Spotify</button>}
+        <button className="btn btn-secondary" onClick={addTrack}>Add a track</button>
+        {r3 && it.spotify_uri && !it.track_list?.length && <button className="btn btn-secondary" disabled={!online} onClick={() => setFilling(true)}>Fill the track list from Spotify</button>}
       </div>
     </section>
   );
 
   const artistBody = it.type !== "artist" ? null : (
-    <section className="flex flex-col gap-3">
+    <section className="lit flex flex-col gap-3" onPointerMove={spot}>
       <div className="flex justify-between items-baseline gap-3"><h2 className="section-title">In your library</h2><span className="text-muted text-xs">Only what you’ve saved. This is not the artist’s full discography.</span></div>
       {byArtist.length ? <div className="card pad-s"><div className="list">{byArtist.map((x) => (
         <div key={x.id} className="row grid-cols-[minmax(0,1fr)_140px_130px]">
@@ -180,13 +209,18 @@ function Detail({ it }: { it: ItemDetail }) {
   const l = listening.data;
   const listeningCard = r2 && (
     <div className="card flex flex-col gap-1.5">
-      <div className="flex justify-between items-baseline gap-3"><h2 className="card-title">Your listening</h2>{l && <SourceTag sources={l.sources} />}</div>
+      <h2 className="card-title">Your listening</h2>
       {listening.loading ? <SkelBlock h={60} />
         : listening.error ? <ErrorBanner title="Couldn’t load your listening." error={listening.error} onRetry={listening.reload} />
         : l && l.data.plays ? <>
-          <span className="font-mono text-[22px] font-semibold">{pl(l.data.plays, "play")}</span>
+          <span className="flex flex-wrap gap-x-4 items-baseline"><span className="font-mono text-[22px] font-semibold"><CountUp text={pl(l.data.plays, "play")} /></span>
+            {l.data.ms_total > 0 && <span className="font-mono text-text-2 text-sm">{hm(l.data.ms_total)}</span>}</span>
+          {/* the last 6 months as bars you can point at or step through (shared MonthBars, M9 WI 8) */}
+          {l.data.by_month.some((x) => x.plays) && <div className="it-months"><MonthBars months={l.data.by_month.map((x) => ({ month: x.month, value: x.plays }))} fmt={(v) => pl(v, "play")}
+            label={`Your plays of ${name} by month`} caption={(i) => (i === null ? "Last 6 months." : `${monthLong(l.data.by_month[i].month)}.`)} /></div>}
           <span className="text-text-2 text-sm">{l.data.last_played_local ? `Last played ${ago(l.data.last_played_local).toLowerCase()}.` : ""}{it.type === "album" ? " Counts every track from this album." : it.type === "artist" ? " Counts every track by this artist." : ""}</span>
         </> : <span className="text-text-2">No plays yet.</span>}
+      {l && <SourceTag sources={l.sources} />}{/* under the content, so the title never wraps (Insights InsightCard) */}
       {l && <FreshnessNote freshness={l.freshness} />}
     </div>
   );
@@ -194,11 +228,13 @@ function Detail({ it }: { it: ItemDetail }) {
   const history = (
     <div className="card flex flex-col gap-3">
       <h2 className="card-title">History</h2>
-      {it.history.length ? it.history.map((h, n) => (
-        <div key={n} className="grid grid-cols-[64px_minmax(0,1fr)] gap-2.5 text-sm">
+      {it.history.length ? <ol className="it-hist"><AnimatePresence initial={false}>{it.history.map((h, n) => (
+        // newest first; keyed from the oldest, so a status change you just made slides in on top and the rest stay still
+        <m.li key={it.history.length - n} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+          transition={swap(reduce, { duration: 0.3, ease: EASE })}>
           <span className="font-mono text-faint">{day(h.at)}</span>
           <span className="text-text-2">{h.from ? `${STATUS[h.from]} to ${STATUS[h.to]}${h.note ? `: ${h.note}` : ""}` : h.note || "Added"}</span>
-        </div>)) : <span className="text-muted">No changes yet.</span>}
+        </m.li>))}</AnimatePresence></ol> : <span className="text-muted">No changes yet.</span>}
     </div>
   );
 
@@ -216,18 +252,18 @@ function Detail({ it }: { it: ItemDetail }) {
       <Topbar />
       <Link to={`/${back}`} className="text-sm font-semibold">Back to {back}</Link>
       {err && <ErrorBanner title={err.title} error={err.e} onRetry={err.retry} />}
-      <section className="flex flex-wrap gap-7 items-start">
-        <div className="flex flex-col gap-3 flex-[0_1_360px] min-w-[280px]">
+      <m.section className="lit flex flex-wrap gap-7 items-start" onPointerMove={spot} {...go}>
+        <m.div variants={RISE} className="flex flex-col gap-3 flex-[0_1_360px] min-w-[280px]">
           <EmbedSlot uri={it.spotify_uri} height={it.type === "track" ? 152 : 352} />
           {it.spotify_uri && <Attribution uri={it.spotify_uri} name={name} />}
-        </div>
-        <div className="flex-[1.5_1_520px] min-w-0 flex flex-col gap-[18px]">{head}{!edit && <>{controls}{journal}</>}</div>
-      </section>
+        </m.div>
+        <m.div variants={RISE} custom={1} className="flex-[1.5_1_520px] min-w-0 flex flex-col gap-[18px]">{head}{!edit && <>{controls}{journal}</>}</m.div>
+      </m.section>
       {artistBody}
-      <div className="flex flex-wrap gap-7 items-start">
-        <div className="flex-[1.3_1_420px] min-w-0 flex flex-col gap-3.5">{tracks}</div>
-        <div className="flex-[1_1_320px] min-w-0 flex flex-col gap-5">{listeningCard}{history}{danger}</div>
-      </div>
+      <m.div className="lit flex flex-wrap gap-7 items-start" onPointerMove={spot} {...go}>
+        {tracks && <m.div variants={RISE} custom={2} className="flex-[1.3_1_420px] min-w-0 flex flex-col gap-3.5">{tracks}</m.div>}
+        <m.div variants={RISE} custom={3} className="flex-[1_1_320px] min-w-0 flex flex-col gap-5">{listeningCard}{history}{danger}</m.div>
+      </m.div>
       {confirmDelete && (
         <Dialog title={`Delete ${name}?`} onClose={() => setConfirmDelete(false)} footer={<>
           <button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>Cancel</button>
@@ -241,10 +277,12 @@ function Detail({ it }: { it: ItemDetail }) {
   );
 }
 
-/** Edit mode: name, artist, recommended by (update_item). */
+/** Edit mode: type, name, artist, recommended by (update_item) and links (link_items / unlink_items). */
 function EditForm({ it, artistName, onDone }: { it: ItemDetail; artistName: string; onDone: () => void }) {
   const toast = useToast();
+  const [type, setType] = useState<ItemType>(it.type);
   const [name, setName] = useState(it.display_name ?? "");
+  const [artist0] = useState(artistName); // the field's starting value: a link made with the picker isn't undone on save
   const [artist, setArtist] = useState(artistName);
   const [rec, setRec] = useState(it.recommended_by ?? "");
   const [busy, setBusy] = useState(false);
@@ -252,28 +290,89 @@ function EditForm({ it, artistName, onDone }: { it: ItemDetail; artistName: stri
   const save = async () => {
     setBusy(true); setErr(undefined);
     try {
-      await updateItem(it.id, { display_name: name.trim() || null, recommended_by: rec.trim() || null, ...(it.type !== "artist" && artist !== artistName ? { artist_name: artist.trim() || null } : {}) });
+      await updateItem(it.id, {
+        display_name: name.trim() || null, recommended_by: rec.trim() || null, ...(type !== it.type ? { type } : {}),
+        ...(type !== "artist" && artist !== artist0 ? { artist_name: artist.trim() || null } : {}),
+      });
       onDone(); toast("Changes saved");
-    } catch (e) { setErr(isAppError(e) ? e : undefined); } finally { setBusy(false); }
+    } catch (e) { setErr(toAppError(e)); } finally { setBusy(false); }
   };
   const links = it.links.filter((l) => l.direction === "from");
+  const relink = async (on: boolean, kind: LinkKind, to: ItemSummary) => {
+    setErr(undefined);
+    try { await (on ? linkItems : unlinkItems)(it.id, to.id, kind); toast(`${on ? "Linked" : "Unlinked"}: ${LINK[kind]} ${nameOf(to)}`); }
+    catch (e) { setErr(toAppError(e)); }
+  };
   return (
     <form className="card flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); save(); }}>
       <h2 className="card-title">Edit record</h2>
       {err && <ErrorBanner title="Couldn’t save your changes." error={err} />}
-      <div className="tiles grid-cols-3">
+      <div className="tiles grid-cols-2">
+        <div className="field"><label className="label" htmlFor="ed-type">Type</label>
+          <select id="ed-type" className="input" value={type} disabled={!!it.spotify_uri} aria-describedby={it.spotify_uri ? "ed-type-help" : undefined} onChange={(e) => setType(e.target.value as ItemType)}>
+            {(Object.keys(TYPE) as ItemType[]).map((t) => <option key={t} value={t}>{TYPE[t]}</option>)}
+          </select>
+          {it.spotify_uri && <span id="ed-type-help" className="help">Set by its Spotify link</span>}</div>
         <div className="field"><label className="label" htmlFor="ed-name">Name</label><input id="ed-name" className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
-        {it.type !== "artist" && <div className="field"><label className="label" htmlFor="ed-artist">Artist</label><input id="ed-artist" className="input" value={artist} onChange={(e) => setArtist(e.target.value)} /></div>}
+        {type !== "artist" && <div className="field"><label className="label" htmlFor="ed-artist">Artist</label><input id="ed-artist" className="input" value={artist} onChange={(e) => setArtist(e.target.value)} /></div>}
         <div className="field"><label className="label" htmlFor="ed-rec">Recommended by</label><input id="ed-rec" className="input" value={rec} onChange={(e) => setRec(e.target.value)} /></div>
       </div>
-      {links.length > 0 && <div className="field"><span className="label">Links to other records</span><div className="flex flex-wrap gap-2 items-center">
-        {links.map((l) => <span key={l.kind + l.item.id} className="chip">{l.kind === "by_artist" ? "By" : l.kind === "on_album" ? "On" : "Version of"} {nameOf(l.item)}</span>)}
-      </div></div>}
+      {type !== it.type && <span className="help">Saving as {an(TYPE[type].toLowerCase())} drops links that don’t fit it.</span>}
+      <div className="field"><span className="label">Links to other records</span>
+        <div className="flex flex-wrap gap-2 items-center">
+          {links.length ? links.map((l) => (
+            <button type="button" key={l.kind + l.item.id} className="chip" aria-label={`Remove link: ${LINK[l.kind]} ${nameOf(l.item)}`} onClick={() => relink(false, l.kind, l.item)}>
+              {LINK[l.kind]} {nameOf(l.item)} <X size={12} aria-hidden /></button>))
+            : <span className="text-muted text-sm">None yet.</span>}
+        </div>
+        <LinkPicker it={it} onPick={(kind, to) => relink(true, kind, to)} />
+      </div>
       <div className="flex flex-wrap gap-2 items-center">
         <button type="submit" className="btn btn-primary min-w-[120px]" disabled={busy}>{busy ? <Dots /> : "Save changes"}</button>
         <Link className="btn btn-secondary" to={`/item/${it.id}`}>Cancel</Link>
       </div>
     </form>
+  );
+}
+
+/** Press on a track row; Motion owns the row's transform (RISE), so a CSS scale would be overridden. */
+const PRESS_ROW = { scale: 0.99, transition: PRESS };
+const LINK: Record<LinkKind, string> = { by_artist: "By", on_album: "On", version_of: "Version of" };
+/** Links a record of each type can make, and the type each points at (API.md link_items direction). */
+const LINKABLE: Record<ItemType, { kind: LinkKind; to?: ItemType; label: string }[]> = {
+  track: [{ kind: "on_album", to: "album", label: "On album" }, { kind: "by_artist", to: "artist", label: "By artist" }, { kind: "version_of", label: "Version of" }],
+  album: [{ kind: "by_artist", to: "artist", label: "By artist" }, { kind: "version_of", label: "Version of" }],
+  artist: [{ kind: "version_of", label: "Version of" }],
+};
+
+/** Add a link: pick the kind, search the library (search command), pick a record of the fitting type. */
+function LinkPicker({ it, onPick }: { it: ItemDetail; onPick: (kind: LinkKind, to: ItemSummary) => void }) {
+  const opts = LINKABLE[it.type];
+  const [kind, setKind] = useState<LinkKind>(opts[0].kind);
+  const [q, setQ] = useState("");
+  const want = opts.find((o) => o.kind === kind)?.to ?? it.type; // version_of: same type
+  const hits = useApi(() => (q.trim() ? search(q.trim(), 30, want) : Promise.resolve([])).then((h) => ({ q, h })), [q, want]);
+  const fresh = hits.data?.q === q; // no "nothing matches" flash while the next query runs
+  const rows = (fresh ? hits.data!.h : []).map((h) => h.item).filter((x) => x.id !== it.id).slice(0, 6);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-2 items-center">
+        <label className="sr-only" htmlFor="ed-link-kind">Link kind</label>
+        <select id="ed-link-kind" className="input h-[34px] w-auto" value={kind} onChange={(e) => setKind(e.target.value as LinkKind)}>
+          {opts.map((o) => <option key={o.kind} value={o.kind}>{o.label}</option>)}
+        </select>
+        <label className="sr-only" htmlFor="ed-link-q">Find a record to link</label>
+        <input id="ed-link-q" className="input h-[34px] flex-[1_1_220px]" placeholder={`Find ${an(TYPE[want].toLowerCase())} in your library`} value={q}
+          onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} />
+      </div>
+      {q.trim() && fresh && (rows.length
+        ? <div className="list" role="group" aria-label="Matching records">{rows.map((x) => (
+            <button type="button" key={x.id} className="row grid-cols-[minmax(0,1fr)_auto] text-left bg-transparent border-0 cursor-pointer" aria-label={`Link ${LINK[kind].toLowerCase()} ${nameOf(x)}`} onClick={() => { onPick(kind, x); setQ(""); }}>
+              <span className="flex flex-col gap-0.5 min-w-0"><span className="font-semibold truncate">{nameOf(x)}</span><span className="text-muted text-xs">{TYPE[x.type]}{x.artist_names.length ? `, ${x.artist_names.join(", ")}` : ""}</span></span>
+              <span className="text-text-2 text-sm">Link</span>
+            </button>))}</div>
+        : <span className="text-muted text-sm">No {TYPE[want].toLowerCase()} in your library matches.</span>)}
+    </div>
   );
 }
 
@@ -287,7 +386,7 @@ function FillTracks({ albumId, uri, onClose }: { albumId: number; uri: string; o
   const on = keep ?? new Set(list.map((t) => t.uri));
   const add = async () => {
     try { const r = await bulkAddAlbumTracks(albumId, list.filter((t) => on.has(t.uri)).map(({ uri: u, name }) => ({ uri: u, name }))); onClose(); toast(`${pl(r.length, "track")} added`); }
-    catch (e) { setErr(isAppError(e) ? e : undefined); }
+    catch (e) { setErr(toAppError(e)); }
   };
   return (
     <Dialog title="Fill the track list from Spotify" onClose={onClose} footer={<>

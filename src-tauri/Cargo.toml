@@ -1,6 +1,6 @@
 [package]
 name = "runout"
-version = "0.1.0"
+version = "1.0.0"
 description = "Runout — local-first music notebook for Spotify"
 authors = []
 edition = "2024"
@@ -18,9 +18,30 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+thiserror = "2.0.21"
+chrono = "0.4.45"
+sha2 = "0.11.1"
+rand = "0.10.3"
+tauri-plugin-dialog = "2.8.3"
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
+regex = "1.13.1"
+icu_normalizer = "2.3.0"
+tauri-plugin-autostart = "2.7.0"
+tauri-plugin-single-instance = "2"
+
+[dev-dependencies]
+# tauri::test mock runtime: commands.rs round-trips invokes with the keys src/api.ts sends.
+tauri = { version = "2", features = ["test"] }
+
+[target.'cfg(windows)'.dependencies]
+# Credential Manager delete for --uninstall-cleanup (TSD §4.11); start-up error box (TSD §6); SMTC logger (TSD §4.5).
+# Win32_System_Time: export UTC → local with the zone's rules for that year (TSD §4.8, importer/streaming.rs).
+windows = { version = "0.62.2", features = ["Win32_Security_Credentials", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Networking_Connectivity", "Win32_System_Com", "Win32_System_Time", "Foundation", "Foundation_Collections", "Media_Control"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

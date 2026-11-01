@@ -12,15 +12,18 @@ When I reach one, I stop and point you to the item here. Each item says what to 
 
 | # | Action | When | Takes | Blocks |
 |---|---|---|---|---|
-| U-1 | Request your two Spotify data exports | **Now (M0)** | 2 min | M4 import |
-| U-2 | Download the exports and tell me where they are | When Spotify's emails arrive | 5 min | M4 import |
+| U-1 | Request your two Spotify data exports | **Now (M0)** | 2 min | M4 import · **done** (Extended Streaming History arrived 19 Oct 2026; Account data not seen yet) |
+| U-2 | Download the exports and tell me where they are | When Spotify's emails arrive | 5 min | M4 import · **done 19 Oct 2026** (`Downloads\my_spotify_data.zip`) |
 | U-9 | Approve the screen designs | End of M1 | ~30 min | UI build (M2) · **done 18 Oct 2026** |
-| U-3 | Create the iPhone Shortcut | M6 | 5 min | Phone capture |
-| U-4 | Allow the app through Windows Firewall | M6 | 10 s | Phone capture |
-| U-5 | Use the app daily for 2 weeks, then say go/no-go | End of M6 | 2 weeks | M7 integration |
-| U-6 | Create the Spotify developer app | Start of M5 | 5 min | Release 3 |
-| U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 |
+| U-3 | ~~Create the iPhone Shortcut~~ **dropped 21 Oct 2026** (your decision: phone capture is the Runout Inbox, D33) | — | — | Nothing |
+| U-4 | *(Optional, D33)* Allow the app through Windows Firewall | With U-3 | 10 s | Nothing · **done 20 Oct 2026** |
+| U-5 | Use the app daily for 2 weeks, then sign off the MVP | From the M6 install, in parallel with M7 | 2 weeks | Nothing (MVP final sign-off; D32) |
+| U-6 | Create the Spotify developer app | Start of M5 | 5 min | Release 3 · **done 19 Oct 2026** (redirect `http://127.0.0.1:8888/callback`; client ID kept out of the repo) |
+| U-7 | Approve the Spotify login once | M5 | 1 min | Release 3 · **done 19 Oct 2026** (gate login; live Studio check on test playlist passed 20 Oct 2026) |
 | U-8 | *(Optional)* Ask Spotify developer support one question | Before M5 | 5 min | Nothing |
+| U-10 | Test the Runout Inbox from your phone (on mobile data) | M7 (WI 4) | 5 min | M7 Inbox acceptance · **done 22 Oct 2026** (album → one album item, single track → name-needed track, Inbox emptied, deleted Inbox → Create Inbox) |
+| U-11 | Decide: may Runout look up artist and album names in an open music database (for genres, decades, artist countries)? | Before M10 WI 9 (any time) | 2 min | M10 WI 9 only (Genres & decades); everything else in M10 goes ahead · **done 26 Oct 2026: yes** (names only, MusicBrainz then Wikidata, BRD source M, O8 resolved) |
+| U-12 | Give a project contact for the open music database User-Agent (not about you) | Before M10 WI 9 live lookups | 2 min | Live MusicBrainz/Wikidata lookups only · **done 31 Oct 2026** (project page URL) |
 
 ---
 
@@ -37,7 +40,7 @@ Steps:
 
 **Send back:** "U-1 done" and the date you requested.
 
-**Note:** Spotify doesn't publish how long the exports take. Your request is how we find out (BRD O2).
+**Note:** Spotify doesn't publish how long the exports take. Your request is how we find out (BRD O2). Measured so far: the Extended streaming history took about 1 day; the Account data export and allowed request frequency are still open.
 
 ## U-2 — Download the exports
 
@@ -53,7 +56,9 @@ Steps:
 - I read it locally to check the file format (TSD T1) and to import it.
 - No real values from it are ever committed to the repository.
 
-## U-3 — Create the iPhone Shortcut (M6)
+## U-3 — Create the iPhone Shortcut (optional fallback, D33)
+
+**Optional since 20 Oct 2026:** phone capture is the Runout Inbox playlist (M7), which works on any network. Use this Shortcut only if you also want instant capture on your home Wi-Fi.
 
 **Why only you:** it has to be built on your iPhone.
 
@@ -85,14 +90,14 @@ Also make sure your home Wi-Fi is set to **Private**: Settings → Network & int
 
 **Send back:** nothing, unless you clicked Cancel.
 
-## U-5 — Two weeks of daily use, then go/no-go (end of M6)
+## U-5 — Two weeks of daily use, then MVP sign-off (in parallel with M7)
 
 **Why only you:** whether the app is useful is your call.
 
-Use the app normally for 2 weeks. Then I'll show you the success metrics from your own data (BRD §15). You answer:
-- **Go** to M7 (wiring the listening and Spotify screens),
-- **Fix first**: list what annoyed you, or
-- **Stop**.
+Use the app normally for 2 weeks; M7 work goes on meanwhile (your decision, 20 Oct 2026, BRD D32). Then I'll show you the success metrics from your own data (BRD §15). You answer:
+- **Sign off** the MVP,
+- **Fix first**: list what annoyed you (fixes go in alongside M7), or
+- **Stop** further R2/R3 work.
 
 ## U-9 — Approve the screen designs (end of M1)
 
@@ -117,7 +122,7 @@ Steps:
 3. **Create app**:
    - Name: `Runout`
    - Description: `Personal local music organizer`
-   - Redirect URI: `http://127.0.0.1/callback`, exactly as written, with no port. The app adds a free port at login, which Spotify allows for `127.0.0.1`.
+   - Redirect URI: `http://127.0.0.1:8888/callback`. The dashboard rejects it without a port; the app still uses a free port at login, which Spotify allows for `127.0.0.1` (T3, verified 19 Oct 2026).
    - APIs used: tick **Web API**
    - Save.
 4. Open the app → **Settings** → copy the **Client ID**.
@@ -135,11 +140,30 @@ Steps:
 
 **Why only you:** it's your account consent.
 
-The app opens a Spotify page in your browser listing the permissions. Check that it says *Runout*, then click **Agree**.
+To skip that, put your Client ID in `src-tauri/spotify_client_id.local` (gitignored) before `npm run tauri build`; the exe then has it built in. Otherwise, the first time, the installed app asks for your **Client ID** (from U-6): paste it and click **Save and sign in**. It's saved on this PC, so no environment variable is needed. The app opens a Spotify page in your browser listing the permissions. Check that it says *Runout*, then click **Agree**.
 
 This repeats **every 6 months**, which is Spotify's rule (BRD S7).
 
 **Send back:** nothing. The app confirms the connection.
+
+**Live Studio check (M5): done 20 Oct 2026** — round trip and `--conflict` passed on your test playlist (`48mYdS19…`); you can delete that playlist. Steps kept for a re-run:
+1. In Spotify, make a **test playlist** you don't care about: ~15 tracks, with one track added twice.
+2. Set `RUNOUT_SPOTIFY_CLIENT_ID` to your Client ID in your environment (it stays out of the repo).
+3. Run `cargo run --example studio_roundtrip -- spotify:playlist:<id>` in `src-tauri`, approve the login in the browser, check the cut in Spotify, press Enter, check it's restored.
+4. Run it again with `--conflict` at the end: when it pauses, remove or move any track in Spotify, press Enter; it should print `PASS: apply blocked with conflict`.
+
+## U-10 — Test the Runout Inbox from your phone (M7)
+
+**Why only you:** it needs your phone and your Spotify account.
+
+When M7 has built the Inbox, Runout creates a private playlist **Runout Inbox** in your Spotify account as soon as Spotify is connected. Then, with your phone on **mobile data** (not your home Wi-Fi):
+1. In Spotify, add one song to **Runout Inbox** (song → ⋯ → Add to playlist).
+2. Add one whole album to **Runout Inbox** (album → ⋯ → Add to playlist).
+3. On the PC, press **Check now** in Settings (or wait up to 15 minutes).
+
+Expected: the song and the album appear in the backlog marked “name needed”, and the Inbox is empty again. If you turn on “import artists I follow”, Spotify asks you to approve the login once more (one extra permission).
+
+**Send back:** "U-10 done", or what you saw instead.
 
 ## U-8 — *(Optional)* Ask Spotify developer support (before M5)
 
@@ -160,7 +184,7 @@ If you want certainty, post on the Spotify for Developers community or contact s
 - Tech decisions, design, code, tests and docs.
 - Installing project packages (npm and Rust crates). You may see a tool-permission prompt.
 - Building and installing the app locally. Locally built files carry no "downloaded from internet" mark, so Windows SmartScreen shouldn't appear.
-- Creating a **test playlist** for Playlist Studio checks. This uses your Spotify connection after U-7; I never edit a real playlist first.
+- Running Playlist Studio checks, only ever on the **test playlist** you make (U-7); I never edit a real playlist.
 - Reading the Windows "now playing" data while you listen.
 
 ## When I will stop and come back to you
@@ -170,3 +194,27 @@ I'll also stop, even outside the list above, when:
 - **Scope or compliance changes:** Spotify changes its rules or API in a way that changes what the BRD promises.
 - **The export doesn't match what the BRD assumed:** its real format is missing something the BRD relies on.
 - **Your Student plan doesn't qualify:** the U-6 test shows it isn't accepted for developer apps.
+
+## U-11 — Allow an open music database? (M10, your judgement)
+
+**Why only you:** it changes a promise. Today nothing leaves your PC except to Spotify. This would send **artist and album names** (never anything about you, no account) to MusicBrainz, and to Wikidata when MusicBrainz has nothing. That's BRD O8 and D35.
+
+What you get if yes: the Genres & decades tab (top genres, genres over time, music by decade, the age of your music, where your artists are from) and genres filling gaps in Top tags. One switch turns lookups off and deletes everything looked up. Mockup: `docs/design/screens/m10-insights/6-genres.png`.
+
+What it costs: names of what you listen to go to an outside service, once each (at most one request a second, a first fill of about an hour for artists and a few hours for albums). Licence and match rate are checked before building (TSD T6).
+
+If no: WI 9 is dropped; nothing else changes.
+
+**Send back:** "U-11 yes" or "U-11 no".
+
+**Done:** "U-11 yes", 26 Oct 2026. BRD O8 resolved, source M added to §5.1, NFR-07 and D35 updated; WI 9 goes ahead. The "Today nothing leaves your PC except to Spotify" line above describes the promise before this decision.
+
+## U-12 — A contact for the open music database (M10, your identity)
+
+**Why only you:** MusicBrainz and Wikimedia require every app's User-Agent to name a way to reach its maintainer, and U-11 approved the lookups on that condition, with a contact that says nothing about you. Runout has no public page, repo URL or project email, and I must not use your personal email.
+
+**Do one:** create a dedicated mailbox for the project (e.g. a free address used only for Runout), or give a public project page URL. It goes into the User-Agent as `Runout/<version> ( <contact> )`.
+
+**Send back:** "U-12 <address or URL>". Until then the genre lookups are built and tested but stay off.
+
+**Done:** 31 Oct 2026, contact `github.com/HUMBLEF0OL` (the user's choice of a page over an email; `enrich::CONTACT`). Live lookups are allowed when the music database switch is on.

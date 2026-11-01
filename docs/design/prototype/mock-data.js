@@ -7187,6 +7187,17 @@ window.RUNOUT_MOCK = {
    "on": true,
    "address": "192.168.1.24:47821",
    "code": "482 913"
+  },
+  "inbox": {
+   "state": "ready",
+   "last_check": "2026-10-18T09:30",
+   "imported_last": 0,
+   "waiting": [
+    {
+     "type": "album",
+     "added_at": "2026-10-18T08:12"
+    }
+   ]
   }
  },
  "usage": {

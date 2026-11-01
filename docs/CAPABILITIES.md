@@ -20,7 +20,7 @@ Data sources: **U** user-authored · **S** desktop logger · **E** Spotify data 
 | CAP-10 | Search everything (titles, notes, reviews, tags) | M1 · M2 · M3 · M6 | FR-014 | U |
 | CAP-11 | Rediscover: revisit list, top-rated, stale backlog, incomplete reviews, saved filters | M1 · M2 · M3 · M6 | FR-013 | U |
 | CAP-12 | Home dashboard: counts, in progress, recent activity | M1 · M2 · M3 · M6 | FR-015 | U |
-| CAP-13 | Share a song from Spotify on iPhone straight into the backlog (name confirmed later on the PC) | M1 · M2 · M3 · M6 | FR-018 | U |
+| CAP-13 | *(Optional fallback, D33)* Share a song from Spotify on iPhone over the home Wi-Fi straight into the backlog (name confirmed later on the PC) | M1 · M2 · M3 · M6 | FR-018 | U |
 | CAP-14 | Export your data (JSON with provenance) | M1 · M2 · M3 · M6 | FR-020, 025 | U |
 | CAP-15 | Automatic weekly backups (max 3, compressed), restore with verification | M1 · M2 · M3 · M6 | FR-021 | U |
 | CAP-16 | Delete a record or the whole library; choose what uninstall removes | M1 · M2 · M3 · M6 | FR-022, 024 | U |
@@ -53,6 +53,22 @@ Data sources: **U** user-authored · **S** desktop logger · **E** Spotify data 
 | CAP-32 | See your Spotify Top 50 (4 weeks / 6 months / 1 year) and add to backlog | M1 · M2 · M5 · M7 | FR-041 | A |
 | CAP-33 | See your last 50 plays from any device; save or rate them | M1 · M2 · M5 · M7 | FR-041 | A |
 | CAP-34 | Save or remove items in your Spotify library | M1 · M2 · M5 · M7 | FR-042 | A |
+| CAP-36 | Capture from the phone anywhere: add a song or album to the “Runout Inbox” Spotify playlist; Runout moves it into the backlog (name confirmed on the PC) | M7 (design, UI and backend built in M7; D33) | FR-046 | A → U on confirm |
+
+## Deep listening insights — M10 (D35; design in [design/M10-insights-v3.md](design/M10-insights-v3.md))
+
+All computed on your PC from sources U, S and E. Milestones column: M10 does design, UI, backend and integration in one milestone.
+
+| ID | Capability | Milestones | FRs | Sources |
+|---|---|---|---|---|
+| CAP-37 | Report for any week, month, year, all time or custom range, compared with the period before, the same period last year or your usual, like for like when one side has less data | M10 | FR-047, 048, 032 | U, S, E |
+| CAP-38 | Trends since your first play: lifetime months you can brush, eras, rising/fading/back-again artists, your fingerprint year by year, a calendar per year, your tags over time | M10 | FR-047 | S, E (+U tags) |
+| CAP-39 | Discovery: new artists per period, when and with what you first heard them, which ones stuck | M10 | FR-047 | S, E |
+| CAP-40 | How you listen: how plays end, skips by hour, quick bails, shuffle, devices, offline share, finished tracks, sessions and deep dives | M10 | FR-047 | E (+S after the logger change) |
+| CAP-41 | Records: firsts, bests, streaks, next milestone, on this day, forgotten favourites | M10 | FR-047 | S, E |
+| CAP-42 | Explore: compare artists, albums or tracks over any span, filter by hour, weekday, device or shuffle; ready-made questions; save a view; copy as CSV | M10 | FR-047 | U, S, E |
+| CAP-43 | Your data: what each source covers, gaps shown as no data, import history, re-import a newer export, a reminder to request one | M10 | FR-048, 027 | S, E (metadata) |
+| CAP-44 | Genres and decades: top genres, genres over time, music by decade, where your artists are from (open music database approved, U-11 = yes 26 Oct 2026) | M10 WI 9 | FR-047 | S, E + M (open music database, names only; O8 resolved) |
 
 ## Not capabilities (explicitly excluded)
 In-app audio playback (beyond Spotify’s own embed) · BPM/mood/energy · Spotify recommendations · popularity · other users’ playlists · podcasts/episodes · stats from Spotify API data · reading Spotify’s internal files · cloud sync · multiple users · native mobile app.

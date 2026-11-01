@@ -6,20 +6,35 @@
 
 | Attribute | Value |
 |---|---|
-| Document version | 0.6 |
+| Document version | 0.7 |
 | Status | Scope finalized; one accepted compliance risk documented (section 11.1); ready for technical design |
-| Date | 18 October 2026 |
-| Supersedes | Version 0.5 |
+| Date | 19 October 2026 |
+| Supersedes | Version 0.6 |
 | Product type | Personal productivity / media management application |
 | Primary user | Individual music listener (single user; Spotify Development Mode allows up to 5) |
-| Platform | Windows desktop; iOS quick-capture via Shortcuts |
+| Platform | Windows desktop; phone capture via the Runout Inbox Spotify playlist (R3, D33); iOS Shortcut over home Wi-Fi as an optional fallback |
 | Data strategy | Local-first; no hosted backend |
 | Cost target | ₹0 new project expenditure (existing Spotify Premium is a user expense) |
 | Playback provider | Spotify |
 
 ## 0. Change History
 
-### 0.1 Changes in Version 0.6 (design-first delivery)
+### 0.1 Changes in Version 0.7 (agentic delivery)
+
+| Ref | Change |
+|---|---|
+| P1 | Milestone efforts re-estimated for agentic development (D31): Claude Code agents build and review in parallel. M3 took about 3 hours against a 3–4 week estimate. Section 14 now gives build hours plus the real-world waits (user actions, daily use, soak runs) that agents cannot shorten. |
+| P2 | O2 partly resolved (S14, section 16 assumption): the Extended streaming history export arrived about 1 day after the request for one account (19 Oct 2026). Account data export delivery and allowed request frequency remain open. |
+| P3 | O1 resolved (S1): a Premium Student plan qualifies for Development Mode. Tested 19 Oct 2026 with the user's own developer app: PKCE login and GET /me returned 200 with product = premium. |
+| P4 | O4 and O5 resolved by the technical design and built in M5: playlist snapshots kept 30 days, Spotify cache entries 7 days, both swept at startup and daily; disconnect deletes both at once. |
+| P5 | U-5 no longer gates M7 (D32, user decision 20 Oct 2026): M7 starts once M6 code, installer and U-3/U-4 pass. Two weeks of daily use and the section 15 metrics run in parallel; their review is the MVP’s final sign-off. |
+| P6 | Phone capture moves to the Runout Inbox playlist (D33, FR-046, user decision 20 Oct 2026): works on any network; the iOS Shortcut over home Wi-Fi (FR-018) becomes an optional fallback and leaves the MVP release criteria. |
+| P7 | Last.fm relay dropped from future candidates (D34, user decision 21 Oct 2026); replaced by deep listening analytics built into Runout on its own logged and imported plays. |
+| P8 | Deep listening analytics moved from future candidates into scope as milestone M10 (D35, user decision 24 Oct 2026): period reports with coverage-aware comparisons, trends, discovery, listening behaviour, records, an explorer and a data-coverage view, all computed locally from sources U, S and E (FR-047, FR-048; design in docs/design/M10-insights-v3.md). Genres, release decades and artist countries need an open music database and wait for the user's approval (U-11, O8). |
+| P9 | Genres and decades approved (U-11 = yes, user decision 26 Oct 2026; O8 resolved; D35, NFR-07): Runout may send artist and album names only to an open music database (MusicBrainz, Wikidata as fallback) over HTTPS, at most 1 request per second, to add genres, release decades and artist countries to the deep analytics. New data source M in 5.1; its results are kept in separate tables and deleted with one switch that also stops lookups (docs/design/M10-insights-v3.md section 7). |
+| P10 | Source M lookups take names only from sources U, S and E in library.db, never from Spotify-provided data (source A), so Spotify Content is not sent to another service (S8, S10; review of M10 WI 9, 31 Oct 2026). |
+
+### 0.2 Changes in Version 0.6 (design-first delivery)
 
 | Ref | Change |
 |---|---|
@@ -27,7 +42,7 @@
 | P2 | Delivery order changed to design, then UI on mock data, then backend, then integration (D30). Milestones renumbered M0–M8 (section 14); dates in sections 11, 12, 15 and 18 follow. |
 | P3 | New hard stop: the user approves all screen designs before UI build (end of M1). |
 
-### 0.2 Changes in Version 0.5 (document review fixes)
+### 0.3 Changes in Version 0.5 (document review fixes)
 
 | Ref | Change |
 |---|---|
@@ -40,13 +55,13 @@
 | R7 | “Unfinished albums” defined from user-entered track lists; logger private-session limitation and pause toggle; reconciliation by track name with artist tie-breaker, one-to-one. |
 | R8 | Priorities aligned (FR-018 P0, FR-042 P1); O3 and O6 resolved by the technical design; NFR-12/13/14 made testable; S6 and S14 bases clarified. |
 
-### 0.3 Changes in Version 0.4
+### 0.4 Changes in Version 0.4
 
 | Ref | Change |
 |---|---|
 | N1 | Product named Runout (was the working title “Personal Music Manager”). Versions 0.1–0.3 merged into this single document. |
 
-### 0.4 Changes in Version 0.3 (audit fixes)
+### 0.5 Changes in Version 0.3 (audit fixes)
 
 | Ref | Change |
 |---|---|
@@ -66,7 +81,7 @@
 | L1 | Read-only playlist analysis from the Account Data export added to Release 2. |
 | L2–L6 | Other-service links constraint; embed-playback claim removed; proposed retention values; milestone dependency noted; references hyperlinked. |
 
-### 0.5 Changes in Version 0.2
+### 0.6 Changes in Version 0.2
 
 | Area | Change |
 |---|---|
@@ -109,7 +124,7 @@ Spotify plays the music; Runout manages the user’s relationship with that musi
 | Real listening story | Lifetime history: desktop plays live; all devices (including phone) up to the latest Spotify data export. Time per artist, skips, patterns, year in review. |
 | Opinions vs habits | “Rated 5★ but played twice”; “played 80 times, never rated”. |
 | Cleaner playlists | Find duplicates and dead weight (from Release 2, read-only); decide keep/cut, preview, apply and undo (Release 3). |
-| Ownership and privacy | Everything local; no account, no cloud, no cost; export any time. |
+| Ownership and privacy | Everything local; only artist and album names go to an open music database for genres and decades, and that can be switched off; no account, no cloud, no cost; export any time. |
 
 ## 2. Business Objectives
 
@@ -167,7 +182,8 @@ A listener who regularly discovers music on desktop and phone, wants to explore 
 - iOS quick-capture through an Apple Shortcut.
 - Desktop listening logger via the Windows media session (SMTC).
 - Import of Spotify Extended Streaming History and Account Data exports (music only).
-- Listening and collection insights derived only from sources U, S and E (section 5).
+- Listening and collection insights derived only from sources U, S and E, with genre, release-decade and artist-country labels from source M (section 5).
+- Deep listening analytics (period reports with coverage-aware comparisons, trends, discovery, listening behaviour, records, an explorer and a data-coverage view), computed locally from sources U, S and E, with genres, release decades and artist countries from an open music database (source M) (M10, D35).
 - Read-only playlist analysis (R2) and Playlist Studio write-back for owned/collaborative playlists (R3).
 - Spotify Web API features listed in Release 3, in Development Mode.
 - Local storage, export, backup (max 3 copies), restore, delete.
@@ -187,7 +203,6 @@ A listener who regularly discovers music on desktop and phone, wants to explore 
 - Paid APIs, paid databases, paid subscriptions to the app.
 ### 4.4 Future candidates (not committed)
 
-- Last.fm relay for near-real-time phone listening history.
 - Progressive web app (PWA) companion served over local Wi-Fi.
 - Cross-device sync via user-owned storage (iCloud Drive / OneDrive file).
 - Custom fields; per-track tracking inside albums.
@@ -197,7 +212,7 @@ A listener who regularly discovers music on desktop and phone, wants to explore 
 
 ### 5.1 Sources
 
-Every piece of data belongs to one of four sources. The source decides what the application may store and what it may analyse.
+Every piece of data belongs to one of five sources. The source decides what the application may store and what it may analyse.
 
 | Source | Contents | Release | May store? | May analyse? |
 |---|---|---|---|---|
@@ -205,8 +220,9 @@ Every piece of data belongs to one of four sources. The source decides what the 
 | S — Desktop logger (Windows SMTC) | Title, artist, album, ms played, play state of desktop plays | R2 | Yes | Yes |
 | E — Spotify data exports | Extended Streaming History and Account Data (playlists) delivered by Spotify to the user | R2 | Yes (minimized) | Yes — accepted risk, see 11.1 |
 | A — Spotify Platform (Web API, oEmbed) | Metadata, artwork, playlists, top items, recent plays | MVP (embed), R3 (API) | Only temporarily, kept current; never for embeds | No — display and user actions only |
+| M — Open music database (MusicBrainz, Wikidata) | Genres, release year and artist country, looked up by artist and album name. Only those names are sent, never anything about the user. The names come only from library.db data of sources U, S and E (listening events and user items), never from Spotify-provided data (source A, the Web API or oEmbed) | R2 (M10) | Yes, in separate tables; one switch deletes them and stops lookups | Yes — only as labels on insights from U, S and E |
 
-Separation rule: Insights may be computed only from sources U, S and E. Source A data is displayed and used to perform user-requested actions; it never feeds statistics, trends or profiles (Spotify Developer Policy III.13).
+Separation rule: Insights may be computed only from sources U, S and E; source M only adds genre, release-decade and artist-country labels to them. Source A data is displayed and used to perform user-requested actions; it never feeds statistics, trends or profiles (Spotify Developer Policy III.13).
 
 ### 5.2 Promotion rule
 
@@ -283,9 +299,10 @@ Revisit is a flag, not a status, so it can be set on any item regardless of its 
 
 Full-text search across titles, artists, notes, reviews and tags.
 
-#### 6.1.9 Mobile quick-capture (iOS Shortcut)
+#### 6.1.9 Mobile quick-capture (Runout Inbox; iOS Shortcut fallback)
 
-- User shares a Spotify link from the Spotify iOS app to an Apple Shortcut.
+- Fallback (optional, same Wi-Fi as the PC): the user shares a Spotify link from the Spotify iOS app to an Apple Shortcut.
+- Primary (R3, D33): on connecting Spotify, Runout creates a private “Runout Inbox” playlist in the user’s account. From any device and any network the user adds tracks (or a whole album) to it in Spotify; Runout checks it at start, every 15 minutes while running and on demand, adds each new track to the backlog as Planned and “name needed”, saves a batch of tracks added together from one album as that album, and removes imported tracks from the Inbox. Optional settings import newly saved albums and newly followed artists. If the user deletes the Inbox, Runout offers to recreate it rather than doing so silently.
 - Transport: a local-network listener on the PC (O6, resolved in the technical design). A shared-file transport remains a fallback option.
 - The listener is off by default, accepts connections from the local network only, requires a pairing code, accepts only Spotify links, validates and rate-limits input (NFR-18).
 - The item lands in the backlog as Planned, marked “name needed” until the user confirms its name on the PC.
@@ -328,6 +345,7 @@ A play is any listening event with ≥ 30 seconds played, applied identically to
 | Collection | Backlog growth, completion rate, time from Planned to Explored, rating distribution, tag trends, reviews per month | U |
 | Cross | Ratings vs plays, backlog items never played, loved but not played recently | U + S/E |
 | Year in review | Personal annual summary on demand | U, S, E |
+| Deep analytics (M10) | Period reports with coverage-aware comparisons, lifetime trends and eras, artist arcs, discovery and stick rate, music ratio, listening fingerprint (own baseline only), how plays end, skips, shuffle, devices, sessions, records, explorer, data coverage | U, S, E |
 
 - Each insight states which data sources it uses.
 - The Insights page shows data freshness: “Desktop: live · All devices: up to <latest export date>”.
@@ -373,7 +391,7 @@ Priority: P0 must have for the release; P1 should have; P2 could have.
 | FR-015 | Dashboard of local counts and activity. | MVP | P0 |
 | FR-016 | Open any record in Spotify. | MVP | P0 |
 | FR-017 | Show Spotify’s official embed on detail pages; optional compact embeds in lists, max 20 per page, visible items only; store nothing from oEmbed except a user-confirmed title; non-persistent web view; placeholder offline. | MVP | P0 |
-| FR-018 | Receive captured links from an iOS Shortcut per 6.1.9 and NFR-18; store them as “name needed” until confirmed. | MVP | P0 |
+| FR-018 | Receive captured links from an iOS Shortcut over the home network per 6.1.9 and NFR-18 (optional fallback; off by default); store them as “name needed” until confirmed. | MVP | P2 |
 | FR-019 | Store all user data locally; work offline. | MVP | P0 |
 | FR-020 | Documented JSON export with per-field provenance. | MVP | P0 |
 | FR-021 | Compressed backup, max 3 copies, size warning; restore with verification. | MVP | P0 |
@@ -401,6 +419,9 @@ Priority: P0 must have for the release; P1 should have; P2 could have.
 | FR-043 | Delete all unpromoted Spotify-provided data within 5 days of disconnect. | R3 | P0 |
 | FR-044 | Follow Spotify design guidelines wherever Spotify metadata or artwork is shown. | MVP/R3 | P0 |
 | FR-045 | Record local usage counters (app opens, page visits, capture duration) for the success metrics; never transmitted. | MVP | P1 |
+| FR-046 | Runout Inbox: create a private “Runout Inbox” playlist on connect (re-create only on request); import its tracks into the backlog as “name needed” per 5.2; save a batch from one album as the album; remove imported tracks from the Inbox; optional import of newly saved albums and followed artists. | R3 | P1 |
+| FR-047 | Deep listening analytics: period reports, trends, discovery, listening behaviour, records, an explorer and a data-coverage view, computed locally from sources U, S and E only, with genre, decade and country labels from source M; heuristics are labelled as estimates; scores are never shared or exported. | R2 | P1 |
+| FR-048 | Coverage-aware comparisons: a comparison between two periods uses only sources that cover both periods; gaps in the data are shown as no data, never as silence. | R2 | P0 |
 
 ## 8. Key User Journeys
 
@@ -420,9 +441,9 @@ Expected result: Capture in seconds without Spotify API access.
 
 ### Journey B — Capture from phone
 
-1. User taps Share in Spotify iOS and picks the Shortcut.
+1. In Spotify on the phone, the user adds the track (or album) to the Runout Inbox playlist; on the home Wi-Fi the optional Shortcut works too.
 
-2. Shortcut delivers the link to the desktop app.
+2. Runout picks it up at its next check (or at once via the Shortcut) and removes it from the Inbox.
 
 3. Item appears in the backlog as Planned, marked “name needed”; the user confirms the name later on the PC (short links resolve when online).
 
@@ -522,13 +543,13 @@ A local relational database with no server (SQLite is the leading candidate; fin
 
 | ID | Requirement | Acceptance expectation |
 |---|---|---|
-| NFR-01 | Local-first | All core functions work offline; only embeds, short-link resolution and R3 features need internet. |
+| NFR-01 | Local-first | All core functions work offline; only embeds, short-link resolution, R3 features and open music database lookups (source M) need internet. |
 | NFR-02 | No hosting | No cloud server required. |
 | NFR-03 | No paid dependencies | Free tools and libraries only. |
 | NFR-04 | Performance | On a reference dataset of 10,000 records and 500,000 listening events, on a typical Windows laptop: search and filter results < 200 ms; screen navigation < 500 ms; import of 10 years of history < 60 s; app start < 3 s. |
 | NFR-05 | Data integrity | Interrupted operations never corrupt the library. |
 | NFR-06 | Recovery | A backup restores and verifies successfully. |
-| NFR-07 | Privacy | No telemetry; no remote transmission of personal data. |
+| NFR-07 | Privacy | No telemetry; no remote transmission of personal data. Besides Spotify, the only thing sent off the PC is artist and album names to the open music database (source M, 5.1), over HTTPS, at most 1 request per second, with a switch that stops lookups and deletes the results. |
 | NFR-08 | Credential security | Spotify tokens stored in Windows Credential Manager; never in the database, logs or exports. |
 | NFR-09 | Graceful degradation | Expired login, lapsed Premium, API errors or offline state never block core features; the cause is shown clearly. |
 | NFR-10 | Write safety | No change reaches Spotify without explicit confirmation and a preview. |
@@ -547,7 +568,7 @@ Basis: Documented = stated in official Spotify documentation; Interpretation = o
 
 | # | Topic | Finding | Basis | Impact |
 |---|---|---|---|---|
-| S1 | Premium requirement | Development Mode needs the owner to hold active Premium; app stops if it lapses. Plan tiers not specified. | Documented / Student: Unverified | Verify in M5 (O1). |
+| S1 | Premium requirement | Development Mode needs the owner to hold active Premium; app stops if it lapses. Plan tiers not specified by Spotify. Tested: a Premium Student account works (PKCE login and GET /me returned 200 with product = premium, 19 Oct 2026). | Documented / Student: Verified | Resolved in M5 gate (O1). |
 | S2 | User limit | 5 users in Development Mode; extended quota only for organizations with 250k+ MAU. | Documented | Accepted: personal use. |
 | S3 | Playlists | Items readable only for owned/collaborative playlists; write endpoints available. | Documented | Playlist Studio scope. |
 | S4 | Top items | Top 50 for ~4 weeks / ~6 months / ~1 year. | Documented | Display only. |
@@ -560,7 +581,7 @@ Basis: Documented = stated in official Spotify documentation; Interpretation = o
 | S11 | Client internals | User Guidelines prohibit reverse-engineering and circumventing Spotify technology. | Documented | No reading of client files or code. |
 | S12 | Windows media session | Spotify publishes it to Windows; any app may read it; no Spotify term addresses it. | Interpretation | Desktop logger permitted. |
 | S13 | Data export contents | Lifetime, all devices, JSON; includes IP and user agent; no track duration. | Documented | Minimized import; canonical play rule. |
-| S14 | Export delivery time and frequency | Not stated in Spotify documentation (third-party guides cite up to 30 days). | Unverified | Measure in M0 (O2). |
+| S14 | Export delivery time and frequency | Not stated in Spotify documentation. Measured for one account: the Extended streaming history export arrived about 1 day after the request (requested 18 Oct, received 19 Oct 2026). Account data export not yet received; allowed request frequency unknown. | Partly verified | Delivery time measured in M4; frequency open (O2). |
 | S15 | Licence | Developer licence covers private personal use. | Documented | Fits the product. |
 | S16 | oEmbed / embeds | No authentication needed (tested); embed unaltered; no local caching; no excessive calls. | Documented + tested | FR-017. |
 | S17 | Definition of Spotify Content | Includes data “made available … by Spotify”, which may include the user’s data export. | Documented; application to exports is Interpretation | Accepted risk 11.1. |
@@ -573,7 +594,7 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 
 - Release 2 (which uses export data) ships before any Spotify registration and needs none.
 - Export-derived insights never combine with, enrich, or are enriched by Web API data. This includes Playlist Studio, which uses only the user’s ratings and tags.
-- Insights are displayed only to the user; nothing is shared or transmitted.
+- Insights are displayed only to the user; nothing is shared or transmitted. Only artist and album names go to the open music database (source M); never plays, insights or anything about the user.
 - Optional: the user may ask Spotify developer support for guidance (O7). If guidance is restrictive, Release 3 remains usable while Spotify-connected, with Listening Log insights disabled, or Release 3 is dropped.
 ## 12. Risks and Mitigations
 
@@ -603,7 +624,7 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 - Ratings, notes, tags, flags persist after restart.
 - Search, filters, backlog, rediscovery and dashboard reflect the local library accurately and meet the NFR-04 targets for records (search, navigation, start).
 - Embeds display on detail pages; list embeds respect the 20-item limit; nothing from oEmbed is stored except confirmed titles; offline placeholder works.
-- iOS Shortcut capture lands an item in the backlog; listener (if used) meets NFR-18.
+- If the optional Wi-Fi phone capture is enabled, its listener meets NFR-18 (D33: phone capture moved to the Runout Inbox, Release 3).
 - Export with provenance, backup (max 3, compressed, size warning) and verified restore work.
 - Uninstall behaves per FR-024.
 - All core functions work offline; nothing is transmitted silently.
@@ -624,21 +645,23 @@ Decision (D26): accepted for private, single-user, non-commercial use, with thes
 - A playlist edit round-trips with preview, confirmation and undo.
 - Playlist from filter creates the expected playlist.
 - Top items and recent plays display, and “Add to backlog” follows the Promotion Rule; save to library round-trips.
+- Runout Inbox: created on connect; a track added to it on the phone lands in the backlog as “name needed”; a whole album added at once lands as one album item; imported tracks leave the Inbox (D33).
 - All core and R2 features work with Spotify disconnected.
 - Spotify design guidelines are met wherever Spotify data appears.
 ## 14. Milestones
 
-| Milestone | Contents | Exit criterion | Indicative effort |
+| Milestone | Contents | Exit criterion | Indicative effort (agentic) |
 |---|---|---|---|
 | M0 Foundations | Scaffold, proof script; user requests both Spotify data exports | Documents reviewed and consistent; app runs; exports requested | Done |
-| M1 Design | Design spec (docs/DESIGN.md) and every screen designed in direction D, with empty, offline and error states | All screens designed; user approves the designs | ~1 week |
-| M2 UI build | All screens in React on typed mock data: tokens, components, embeds, keyboard, accessibility | Journeys A–H clickable on mock data | 3–4 weeks |
-| M3 Backend: MVP core | Database, link parsing, library, Promotion Rule, search, capture listener, export, backup, delete, usage counters | Core tests and MVP performance checks pass | 3–4 weeks |
-| M4 Backend: listening and insights | Desktop logger, export import, play rule, reconciliation, matching, playlist check-up, insight queries | Lifetime history imported; no double counts; insights hand-verified | 3–4 weeks |
-| M5 Backend: Spotify connected | Gate: O1 (Premium plan) and optional O7; login; R3-1 to R3-7 logic | Test-playlist round-trip passes | 3–4 weeks |
-| M6 Integration: MVP release | MVP screens on real data, installer, phone capture | MVP criteria pass; 2 weeks of daily use measured against section 15 | 1–2 weeks |
-| M7 Integration: R2 and R3 | Listening, insights and Spotify screens on real data | R2 and R3 criteria pass | ~2 weeks |
+| M1 Design | Design spec (docs/DESIGN.md) and every screen designed in direction D, with empty, offline and error states | All screens designed; user approves the designs | Done |
+| M2 UI build | All screens in React on typed mock data: tokens, components, embeds, keyboard, accessibility | Journeys A–H clickable on mock data | Done |
+| M3 Backend: MVP core | Database, link parsing, library, Promotion Rule, search, capture listener, export, backup, delete, usage counters | Core tests and MVP performance checks pass | Done (about 3 h agentic) |
+| M4 Backend: listening and insights | Desktop logger, export import, play rule, reconciliation, matching, playlist check-up, insight queries | Lifetime history imported; no double counts; insights hand-verified | 4–6 h agentic, plus export download (U-2) and a 24 h logger run |
+| M5 Backend: Spotify connected | Gate: O1 (Premium plan) and optional O7; login; R3-1 to R3-7 logic | Test-playlist round-trip passes | 4–6 h agentic, after the O1 gate (U-6) |
+| M6 Integration: MVP release | MVP screens on real data, installer | MVP criteria pass on the installed build; 2 weeks of daily use measured against section 15, reviewed as the MVP’s final sign-off (runs in parallel with M7, D32) | 4–6 h agentic, plus U-3/U-4; 2 weeks of daily use (U-5) in parallel, not blocking M7 |
+| M7 Integration: R2 and R3 | Listening, insights and Spotify screens on real data; Runout Inbox (phone capture) | R2 and R3 criteria pass | 3–4 h agentic |
 | M8 Future candidates | Selected items from 4.4 | Per item | As needed |
+| M10 Deep listening insights | Insights v3 (FR-047, FR-048): logger stores track length, shuffle and running intervals; rollups; Report, Trends, Discovery, How you listen, Records, Explore and Your data tabs; Genres & decades (U-11 approved 26 Oct 2026) | docs/MILESTONES.md M10 acceptance passes on the installed build with the user's real history | 6 to 10 h agentic; WI 9 approved (U-11) |
 
 ## 15. Business Success Metrics
 
@@ -661,7 +684,7 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 - Albums, tracks and artists are separate first-class entities.
 - Local persistence is mandatory; no new project expenditure is acceptable.
 - The user is willing to enter some metadata manually when automatic retrieval is unavailable.
-- The user can request Spotify data exports periodically; delivery time is unknown (O2).
+- The user can request Spotify data exports periodically; the Extended streaming history took about 1 day for one account; request frequency is unknown (O2).
 - The Spotify desktop app continues to publish now-playing information to Windows.
 - Core workflows must not break when Spotify API access is unavailable.
 - The first implementation targets Windows.
@@ -700,24 +723,30 @@ Measured from local usage counters (FR-045) and the user’s records; nothing is
 | D28 | Default backup folder? | Documents\Runout\Backups, outside application data, so uninstall never removes it |
 | D29 | Which UI direction? | D · Pulse: listening story plus the user’s opinions; Spotify-compatible dark theme, amber accent, never Spotify’s look (docs/DESIGN.md) |
 | D30 | Delivery order? | Design, then UI on mock data, then backend, then integration; each milestone starts from current specs and a written plan |
+| D31 | How is effort estimated? | Agentic development: build and review hours per milestone, plus the real-world waits agents cannot shorten (user actions, 24 h logger run, 2 weeks of daily use). Calibrated on M3: about 3 hours against a 3–4 week estimate |
+| D32 | Does daily use gate R2/R3 integration? | No (user decision 20 Oct 2026). M7 starts once M6 code, installer and U-3/U-4 pass. U-5 (2 weeks of daily use, section 15 metrics) runs in parallel and is the MVP’s final sign-off; findings feed fixes, not a gate |
+| D33 | How is music captured from the phone? | Through a private “Runout Inbox” Spotify playlist that Runout creates on connect and empties as it imports (R3), because a Wi-Fi listener needs the phone and PC on the same network. The iOS Shortcut stays as an optional fallback (user decision 20 Oct 2026) |
+| D34 | Is phone listening history relayed through Last.fm? | No (user decision 21 Oct 2026). Last.fm-style deep analytics are a future candidate built into Runout on its own data (desktop logger and data export, sources U, S, E); no Last.fm account or scrobbling |
+| D35 | Are deep listening analytics built? | Yes (user decision 24 Oct 2026, M10): Last.fm-depth insights computed locally from sources U, S and E, with coverage-aware comparisons. Not built: BPM, energy and mood (no permitted source), mainstream scores and comparisons with other people (no other listeners), discovery source (not in the export), a free-text question box (needs an AI model; NFR-03, NFR-07). Genres, release decades and artist countries come from an open music database (MusicBrainz, Wikidata as fallback; source M), approved by the user 26 Oct 2026 (U-11, O8): artist and album names only, over HTTPS, at most 1 request per second, results kept apart and deleted with one switch that also stops lookups. |
 
 ## 18. Remaining Open Items
 
 | # | Item | Owner | Resolve by |
 |---|---|---|---|
-| O1 | Does a Premium Student plan qualify for Development Mode? (S1) | User — create app and test one call | Start of M5 |
-| O2 | Export delivery time and allowed request frequency (S14) | User — request both exports in M0 | M4 |
+| O1 | Does a Premium Student plan qualify for Development Mode? (S1). Resolved: yes, PKCE login and GET /me returned 200 with product = premium (19 Oct 2026). | Resolved by the user (developer app created, one call tested) | Done |
+| O2 | Export delivery time and allowed request frequency (S14). Partly resolved: Extended streaming history took about 1 day (one account, 19 Oct 2026); Account data export delivery and allowed frequency still open. | User — request both exports in M0 | M4 |
 | O3 | Technology stack and detailed technical design | Resolved: Tauri 2 + React + SQLite (docs/TSD.md) | Done |
-| O4 | Playlist snapshot retention — proposed 30 days | Technical design to confirm | M5 |
-| O5 | Spotify cache expiry — proposed 7 days | Technical design to confirm | M5 |
+| O4 | Playlist snapshot retention. Resolved: 30 days (TSD §5.2; built in M5, swept at startup and daily). | Resolved by technical design | Done |
+| O5 | Spotify cache expiry. Resolved: 7 days (TSD §5.2; built in M5, swept at startup and daily). | Resolved by technical design | Done |
 | O6 | iOS capture transport: local-network listener or shared file | Resolved: local-network listener (docs/TSD.md §5.1) | Done |
 | O7 | Optional: ask Spotify developer support about export-data analysis in a registered app (11.1) | User | Before M5 |
+| O8 | May Runout send artist and album names to an open music database (MusicBrainz, Wikidata) to add genres, release decades and artist countries to the deep analytics? Resolved: yes (user, 26 Oct 2026, U-11): names only, added as source M in 5.1, NFR-07 updated. Licence and rate limit verified; match rate still to be measured (TSD T6). | Resolved by the user (U-11); agent measures the match rate (TSD T6) | Done |
 
 ## 19. Final Product Definition
 
 Runout is a local-first music organization, exploration and reflection tool that works alongside Spotify. It lets one listener manage albums, tracks and artists; maintain a backlog; document opinions; track exploration; rediscover music; understand their lifetime listening from their own data; and refine their own Spotify playlists safely.
 
-Its value is not playing music. Its value is helping the user remember, organize, explore and understand their musical life, while keeping personal data local, staying within Spotify’s rules, and adding no recurring cost.
+Its value is not playing music. Its value is helping the user remember, organize, explore and understand their musical life, while keeping personal data local (only artist and album names go to an open music database, and the user can switch that off), staying within Spotify’s rules, and adding no recurring cost.
 
 ## 20. References
 
@@ -734,4 +763,3 @@ Its value is not playing music. Its value is helping the user remember, organize
 - Embeds Terms of Use — https://developer.spotify.com/documentation/embeds/terms
 - Understanding my data — https://support.spotify.com/us/article/understanding-my-data/
 - Spotify User Guidelines — https://www.spotify.com/us/legal/user-guidelines/
-- Last.fm scrobbling documentation — https://www.last.fm/api/scrobbling

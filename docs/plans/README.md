@@ -5,7 +5,7 @@ One plan per milestone, written before it starts (MILESTONES spec-driven rule). 
 2. **Backend** — M3, M4, M5 implement the whole contract in Rust. Starts only when M2 is done.
 3. **Integration** — M6, M7 switch the UI to the real commands. Starts only when M3, M4 and M5 are all done (or a backend milestone is formally stopped, e.g. R3 after a failed O1 gate).
 
-No phase overlaps the next. Inside the backend phase, M4 and M5 may run in parallel once M3 is done.
+Work is agentic (BRD D31): each milestone is hours of parallel agent build and external review, gated by the user actions and real-use periods it names. No phase overlaps the next. Inside the backend phase, M4 and M5 may run in parallel once M3 is done.
 
 | # | Plan | Builds | Starts when | Unblocks |
 |---|---|---|---|---|
@@ -14,13 +14,16 @@ No phase overlaps the next. Inside the backend phase, M4 and M5 may run in paral
 | 3 | [M3-backend-mvp.md](M3-backend-mvp.md) | Backend phase: Rust core for API.md §3 | M2 done | M4, M5 |
 | 4 | [M4-listening-insights.md](M4-listening-insights.md) | Backend phase: Rust for API.md §4 | M3 done (WI 4 needs U-2) | integration phase |
 | 5 | [M5-spotify-connected.md](M5-spotify-connected.md) | Backend phase: Rust for API.md §5 | M3 done + O1 gate | integration phase |
-| 6 | [M6-integration-mvp.md](M6-integration-mvp.md) | Integration phase: MVP screens on real commands, installer | M3, M4, M5 all done | M7 (go/no-go) |
-| 7 | [M7-integration-r2-r3.md](M7-integration-r2-r3.md) | Integration phase: R2/R3 screens on real commands | M6 done, go decision | M8 |
+| 6 | [M6-integration-mvp.md](M6-integration-mvp.md) | Integration phase: MVP screens on real commands, installer | M3, M4, M5 all done | M7 (U-5 in parallel, D32; U-3/U-4 optional, D33) |
+| 7 | [M7-integration-r2-r3.md](M7-integration-r2-r3.md) | Integration phase: R2/R3 screens on real commands **+ Runout Inbox** (phone capture, D33) | M6 done (apart from U-5) | M8 |
+| 8 | [M8-stabilization-ui.md](M8-stabilization-ui.md) | Stabilization & UI Polish: end-to-end functionality hardening, gap resolution, UI streamline via taste skill | M7 done | M9 |
+| 9 | [M9-motion-ui.md](M9-motion-ui.md) | Interactive UI refinement: taste skill at motion 7, screen by screen (Settings first) | M8 UI audit done | M10 |
+| 10 | [M10-deep-insights.md](M10-deep-insights.md) | Deep listening insights (Insights v3, D35): contract, schema + logger, definitions, coverage engine, seven listening tabs; Genres & decades gated by U-11 | M9 WI 3 + WI 5 done (met 24 Oct 2026); runs alongside M9 WI 8–9 | — |
 
 ```
  FRONTEND            BACKEND                      INTEGRATION
  M1 ─U-9─► M2 ─────► M3 ─┬─► M4 ─┐               
- (all screens,           └─► M5 ─┴─(all done)──► M6 ─U-5 go─► M7
+ (all screens,           └─► M5 ─┴─(all done)──► M6 ───────► M7 (+ Runout Inbox, D33) ──► M8 (Stabilize & Taste UI)
   mock data)              (M4 ∥ M5)
 ```
 

@@ -1,0 +1,27 @@
+[
+ {
+  "ts": "2026-07-03T10:00:00Z",
+  "platform": "windows",
+  "ms_played": 100000,
+  "conn_country": "ZZ",
+  "ip_addr": "198.51.100.23",
+  "master_metadata_track_name": "Fixture Video",
+  "master_metadata_album_artist_name": "Fixture Lanterns",
+  "master_metadata_album_album_name": "Paper Tides",
+  "spotify_track_uri": "spotify:track:R9ubusu9jXPA383NR0esNm",
+  "episode_name": null,
+  "episode_show_name": null,
+  "spotify_episode_uri": null,
+  "audiobook_title": null,
+  "audiobook_uri": null,
+  "audiobook_chapter_uri": null,
+  "audiobook_chapter_title": null,
+  "reason_start": "switched-to-video",
+  "reason_end": "trackdone",
+  "shuffle": false,
+  "skipped": false,
+  "offline": false,
+  "offline_timestamp": null,
+  "incognito_mode": false
+ }
+]

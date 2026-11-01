@@ -4,27 +4,29 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import raw from "../../docs/design/prototype/mock-data.json";
 import type {
-  AppError, Backup, Counts, Draft, ItemDetail, ItemFilter, ItemSummary, NewItem, Page, Play, Range, Source,
-  SpotifyEntry, Status, Unresolved, ItemPatch, SavedFilter, Tag, LoggerStatus, Freshness,
+  AppError, Backup, Counts, Draft, ItemDetail, ItemFilter, ItemSummary, LinkKind, NewItem, Page, Play, Range, Source,
+  SpotifyEntry, Status, Unresolved, ItemPatch, SavedFilter, Tag, LoggerStatus, Freshness, InboxStatus, CrossDupe,
 } from "../api";
-import { invalidate } from "../api";
+import { invalidate, MOCK } from "../api";
 import { dev, onDevChange } from "./devState";
-import { parseLink } from "./link";
+import { parseLink } from "../lib/link";
 import { setToday } from "../lib/format";
+import { genresDecades, insightsV3, monthCoverage, rangeCoverage } from "./insightsV3";
 
 const D: any = raw;
 const L = D.listening;
 const TODAY = D.meta.today as string;
-setToday(TODAY);
+// Pin "today" only when mocks drive the whole UI: real MVP data (M6) keeps the real clock.
+if (MOCK) setToday(TODAY);
 const DELAY = 150;
 
 /* ------------------------------------------------------------------ store */
 interface MItem {
   id: number; type: ItemSummary["type"]; display_name: string | null; spotify_uri: string | null; status: Status;
   priority: ItemSummary["priority"]; rating: number | null; favourite: boolean; revisit: boolean; in_backlog: boolean;
-  backlog_order: number | null; tags: string[]; artist: string | null; album: string | null; artist_id: number | null;
+  backlog_order: number | null; tags: string[]; artist: string | null; album: string | null; artist_id: number | null; album_id: number | null;
   added_at: string; modified_at: string; review: string | null; notes: string | null; recommended_by: string | null;
-  explored_at: string | null; reviewed_at: string | null; via_phone: boolean; tracklist: string[] | null;
+  explored_at: string | null; reviewed_at: string | null; via_phone: boolean; via_inbox?: boolean; tracklist: string[] | null;
   provenance: Record<string, "user" | "promoted">;
 }
 interface MHist { item_id: number; from: Status | null; to: Status; at: string; note: string | null }
@@ -35,12 +37,14 @@ let order = 0;
 const items: MItem[] = D.items.map((i: any) => ({
   id: i.id, type: i.type, display_name: i.display_name, spotify_uri: i.spotify_uri, status: i.status, priority: i.priority,
   rating: i.rating, favourite: i.favourite, revisit: i.revisit, in_backlog: i.in_backlog,
-  backlog_order: i.in_backlog ? ++order : null, tags: [...i.tags], artist: blank(i.artist), album: blank(i.album), artist_id: i.artist_id ?? null,
+  backlog_order: i.in_backlog ? ++order : null, tags: [...i.tags], artist: blank(i.artist), album: blank(i.album), artist_id: i.artist_id ?? null, album_id: null,
   added_at: i.added_at,
   modified_at: history.filter((h) => h.item_id === i.id).reduce((m, h) => (h.at > m ? h.at : m), i.reviewed_at || i.added_at),
   review: blank(i.review), notes: blank(i.notes), recommended_by: blank(i.recommended_by), explored_at: i.explored_at,
   reviewed_at: i.reviewed_at, via_phone: !!i.via_phone, tracklist: i.tracklist ?? null, provenance: { ...i.provenance },
 }));
+for (const t of items) if (t.type === "track" && t.album) t.album_id = items.find((x) => x.type === "album" && x.display_name === t.album && x.artist === t.artist)?.id ?? null;
+const versions: { from: number; to: number }[] = []; // version_of links (by_artist and on_album live on the item)
 // Phone captures: a parsed link becomes a name-needed item (TSD §4.2); a short link waits in unresolved_capture.
 let unresolved: Unresolved[] = [];
 for (const c of D.captures) {
@@ -48,7 +52,7 @@ for (const c of D.captures) {
   if (p.state === "ok") {
     items.push({
       id: nextId(), type: p.type!, display_name: null, spotify_uri: p.uri!, status: "planned", priority: null, rating: null,
-      favourite: false, revisit: false, in_backlog: true, backlog_order: ++order, tags: [], artist: null, album: null, artist_id: null,
+      favourite: false, revisit: false, in_backlog: true, backlog_order: ++order, tags: [], artist: null, album: null, artist_id: null, album_id: null,
       added_at: c.received_at, modified_at: c.received_at, review: null, notes: null, recommended_by: null, explored_at: null,
       reviewed_at: null, via_phone: true, tracklist: null, provenance: {},
     });
@@ -58,7 +62,7 @@ for (const c of D.captures) {
 const tags: Tag[] = [...new Set(items.flatMap((i) => i.tags))].sort().map((name, n) => ({ id: n + 1, name, description: null, item_count: 0 }));
 let savedFilters: SavedFilter[] = D.saved_filters.map((f: any) => ({ id: f.id, name: f.name, definition: f.definition }));
 const settings = {
-  library_path: D.settings.library_path, backup_dir: D.settings.backup_dir, backup_weekly: true, size_warn_mb: 100, artwork_default: false,
+  library_path: D.settings.library_path, backup_dir: D.settings.backup_dir, backup_weekly: true, size_warn_mb: 100, artwork_default: false, export_reminder: false, music_db: true,
 };
 const capture = { on: D.settings.capture.on, address: D.settings.capture.address.split(":")[0], port: Number(D.settings.capture.address.split(":")[1]), code: D.settings.capture.code };
 let backups: Backup[] = D.settings.backups.map((b: any) => ({
@@ -67,10 +71,29 @@ let backups: Backup[] = D.settings.backups.map((b: any) => ({
 }));
 const logger = { ...D.settings.logger, paused_until: null as string | null, paused: false };
 let spotify = { connected: !!D.spotify.connected };
+// Runout Inbox (TSD §5.3): `waiting` = what the phone added to the Inbox playlist since the last check.
+const inbox = { ...D.settings.inbox, waiting: [...D.settings.inbox.waiting], saved_albums: false, followed_artists: false, needs_reconnect: false };
+const inboxStatus = (): InboxStatus => ({ state: inbox.state, playlist_uri: inbox.state === "none" ? null : playlistUri("Runout Inbox"), last_check: inbox.last_check, imported_last: inbox.imported_last, saved_albums: inbox.saved_albums, followed_artists: inbox.followed_artists, needs_reconnect: inbox.followed_artists && inbox.needs_reconnect });
 const savedInSpotify = new Set<string>();
 const lastApply = new Map<string, { undo_id: number; applied_at: string; expires_at: string }>();
 
 /** artist_name → find or create the artist item and link by_artist (API.md NewItem/ItemPatch). */
+/** Mirrors Rust `status::apply_side_effects`: into explored/not_for_me sets explored_at and leaves the backlog;
+ *  out of them clears explored_at, and back to planned rejoins the backlog at the end. */
+function statusEffects(it: MItem, from: Status | null, to: Status) {
+  const done = (s: Status | null) => s === "explored" || s === "not_for_me";
+  if (done(to)) { it.explored_at = TODAY; it.in_backlog = false; it.backlog_order = null; }
+  else if (done(from)) {
+    it.explored_at = null;
+    if (to === "planned") { it.in_backlog = true; it.backlog_order ??= Math.max(0, ...items.map((i) => i.backlog_order ?? 0)) + 1; }
+  }
+}
+/** Mirrors Rust `tags::rewrite_saved_filters`: saved filters naming `from` (ignoring case) now name `to`, deduped. */
+function rewriteFilters(from: string, to: string) {
+  const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  savedFilters = savedFilters.map((f) => !f.definition.tags?.some((t) => eq(t, from)) ? f : { ...f, definition: { ...f.definition,
+    tags: f.definition.tags.map((t) => (eq(t, from) ? to : t)).filter((t, n, a) => a.findIndex((x) => eq(x, t)) === n) } });
+}
 function setArtist(it: MItem, name: string | null | undefined) {
   const n = name?.trim();
   if (it.type === "artist") return;
@@ -78,11 +101,20 @@ function setArtist(it: MItem, name: string | null | undefined) {
   let a = items.find((x) => x.type === "artist" && x.display_name?.toLowerCase() === n.toLowerCase());
   if (!a) {
     a = { ...it, id: nextId(), type: "artist", display_name: n, spotify_uri: null, status: "planned", priority: null, rating: null, favourite: false, revisit: false,
-      in_backlog: false, backlog_order: null, tags: [], artist: null, album: null, artist_id: null, review: null, notes: null, recommended_by: null,
+      in_backlog: false, backlog_order: null, tags: [], artist: null, album: null, artist_id: null, album_id: null, review: null, notes: null, recommended_by: null,
       explored_at: null, reviewed_at: null, via_phone: false, tracklist: null, provenance: { display_name: "user" } };
     items.push(a);
   }
   it.artist = a.display_name; it.artist_id = a.id;
+}
+/** link_items direction (API.md): track → album on_album, item → artist by_artist, version → original version_of. */
+function link(fromId: number, toId: number, kind: LinkKind) {
+  const it = need(fromId), to = need(toId);
+  if (fromId === toId) fail("validation", "A record can't link to itself.");
+  if (kind === "by_artist") { if (to.type !== "artist" || it.type === "artist") fail("validation", "By artist links a record to an artist."); it.artist_id = to.id; it.artist = to.display_name; }
+  if (kind === "on_album") { if (to.type !== "album" || it.type !== "track") fail("validation", "On album links a track to an album."); it.album_id = to.id; it.album = to.display_name; }
+  if (kind === "version_of" && !versions.some((v) => v.from === fromId && v.to === toId)) versions.push({ from: fromId, to: toId });
+  it.modified_at = TODAY;
 }
 function nextId() { return Math.max(0, ...items.map((i) => i.id)) + 1; }
 const byId = (id: number) => items.find((i) => i.id === id);
@@ -96,8 +128,8 @@ function summary(i: MItem): ItemSummary {
   return {
     id: i.id, type: i.type, display_name: i.display_name, spotify_uri: i.spotify_uri, status: i.status, priority: i.priority,
     rating: i.rating, favourite: i.favourite, revisit: i.revisit, in_backlog: i.in_backlog, backlog_order: i.backlog_order,
-    tags: [...i.tags], artist_names: artist ? [artist] : [], album_name: i.type === "track" ? i.album : null,
-    recommended_by: i.recommended_by, added_via: i.via_phone ? "phone" : "pc", added_at: i.added_at, modified_at: i.modified_at,
+    tags: [...i.tags], artist_names: artist ? [artist] : [], album_name: i.type !== "track" ? null : i.album_id != null ? byId(i.album_id)?.display_name ?? null : i.album,
+    recommended_by: i.recommended_by, notes: i.notes, added_via: i.via_inbox ? "inbox" : i.via_phone ? "phone" : "pc", added_at: i.added_at, modified_at: i.modified_at,
   };
 }
 function detail(i: MItem): ItemDetail {
@@ -105,12 +137,20 @@ function detail(i: MItem): ItemDetail {
   const artistItem = i.artist_id != null ? byId(i.artist_id) : undefined;
   if (artistItem && artistItem.id !== i.id) links.push({ kind: "by_artist", direction: "from", item: summary(artistItem) });
   if (i.type === "artist") items.filter((x) => x.artist_id === i.id && x.id !== i.id).forEach((x) => links.push({ kind: "by_artist", direction: "to", item: summary(x) }));
-  if (i.type === "track" && i.album) { const al = items.find((x) => x.type === "album" && x.display_name === i.album && x.artist === i.artist); if (al) links.push({ kind: "on_album", direction: "from", item: summary(al) }); }
-  if (i.type === "album") items.filter((x) => x.type === "track" && x.album === i.display_name && x.artist === i.artist).forEach((x) => links.push({ kind: "on_album", direction: "to", item: summary(x) }));
+  const al = i.album_id != null ? byId(i.album_id) : undefined;
+  if (al) links.push({ kind: "on_album", direction: "from", item: summary(al) });
+  items.filter((x) => x.album_id === i.id).forEach((x) => links.push({ kind: "on_album", direction: "to", item: summary(x) }));
+  for (const v of versions) {
+    const other = v.from === i.id ? byId(v.to) : v.to === i.id ? byId(v.from) : undefined;
+    if (other) links.push({ kind: "version_of", direction: v.from === i.id ? "from" : "to", item: summary(other) });
+  }
   return {
     ...summary(i), review: i.review, notes: i.notes, recommended_by: i.recommended_by, explored_at: i.explored_at,
     reviewed_at: i.reviewed_at, provenance: { ...i.provenance }, links,
-    track_list: i.tracklist ? i.tracklist.map((name, n) => ({ position: n + 1, name, item_id: items.find((x) => x.type === "track" && x.display_name === name && x.album === i.display_name)?.id ?? null })) : null,
+    track_list: i.tracklist ? i.tracklist.map((name, n) => {
+      const unf = L.unfinished.find((u: any) => u.item_id === i.id); // first `played` tracks count as played (prototype rule)
+      return { position: n + 1, name, item_id: items.find((x) => x.album_id === i.id && x.display_name === name)?.id ?? null, plays: !unf || n < unf.played ? 3 : 0 };
+    }) : null,
     history: history.filter((h) => h.item_id === i.id).reverse().sort((a, b) => b.at.localeCompare(a.at)).map(({ from, to, at, note }) => ({ from, to, at, note })),
   };
 }
@@ -123,6 +163,19 @@ function counts(): Counts {
 }
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b.slice(0, 10)) - Date.parse(a.slice(0, 10))) / 86400000);
 const nameKey = (i: MItem) => (i.display_name ?? "\uffff").toLowerCase();
+
+/** Dev state "heavy": a backlog of ~2,400 records (the mock backlog repeated with new ids, priorities and ages spread).
+ *  Read-only: writes to these ids fail, which is fine for checking layout and scale. */
+function heavyBacklog(f: ItemFilter): Page<ItemSummary> {
+  const base = filterItems({ ...f, offset: 0, limit: 1e6 }).rows;
+  const prio: ItemSummary["priority"][] = ["high", "medium", "medium", "low", "low", null, null, null];
+  const rows = Array.from({ length: 90 }, (_, k) => base.map((it, n) => {
+    const d = new Date(TODAY); d.setDate(d.getDate() - ((k * 7 + n * 3) % 900));
+    return { ...it, id: it.id + (k + 1) * 100_000, priority: k ? prio[(k + n) % prio.length] : it.priority, added_at: k ? d.toISOString().slice(0, 10) : it.added_at };
+  })).flat();
+  const offset = f.offset ?? 0, limit = Math.min(Math.max(f.limit ?? 50, 1), LIST_MAX_LIMIT); // as Rust clamps it (library/filters.rs MAX_LIMIT)
+  return { rows: rows.slice(offset, offset + limit), total: rows.length, offset };
+}
 
 function filterItems(f: ItemFilter): Page<ItemSummary> {
   let rows = items.filter((i) =>
@@ -138,21 +191,32 @@ function filterItems(f: ItemFilter): Page<ItemSummary> {
   const k = key[sort];
   rows = [...rows].sort((a, b) => (k(a) < k(b) ? -1 : k(a) > k(b) ? 1 : a.id - b.id));
   if (f.desc ?? (sort === "added_at" || sort === "modified_at" || sort === "rating")) rows.reverse();
-  const offset = f.offset ?? 0, limit = f.limit ?? 50;
+  const offset = f.offset ?? 0, limit = Math.min(Math.max(f.limit ?? 50, 1), LIST_MAX_LIMIT); // as Rust clamps it (library/filters.rs MAX_LIMIT)
   return { rows: rows.slice(offset, offset + limit).map(summary), total: rows.length, offset };
 }
 
 const freshness = (): Freshness => ({ logger_last_event: L.freshness.logger_last, export_latest_event: L.freshness.export_until });
 const sourced = <T,>(data: T, sources: Source[]) => ({ data, sources, freshness: freshness() });
+const PLAYS_MAX_PAGE = 200;
+const LIST_MAX_LIMIT = 10_000;
 const RANGE_DAYS: Record<Range, number> = { "7d": 7, "30d": 30, "12m": 365, all: 1e6 };
 const sumByName = (type: MItem["type"], name: string, by?: string) => items.find((i) => i.type === type && i.display_name === name && (!by || type === "artist" || i.artist === by));
 function play(e: any, n: number): Play {
-  const it = e.item_id != null ? byId(e.item_id) : sumByName("track", e.track, e.artist);
+  const linked = e.item_id != null ? byId(e.item_id) : undefined;
+  const it = linked?.type === "track" ? linked : sumByName("track", e.track, e.artist); // item is the track record (API.md §4)
+  const al = linked?.type === "album" ? linked : sumByName("album", e.album, e.artist);
   return {
     id: n + 1, ended_at_local: e.ended_at, ms_played: e.ms, counts_as_play: e.counts, skipped: e.skipped, track_name: e.track,
-    artist_name: e.artist, album_name: e.album, source: e.source, spotify_uri: e.spotify_uri ?? null, item: it ? summary(it) : null,
+    artist_name: e.artist, album_name: e.album, source: e.source, spotify_uri: e.spotify_uri ?? null, item: it ? summary(it) : null, album_rating: al?.rating ?? null,
   };
 }
+/** Dev state "heavy": ~26k plays over 400 days, the mock plays repeated a day further back each cycle (paging, long days). */
+let heavy: Play[] | undefined;
+const heavyPlays = (): Play[] => (heavy ??= Array.from({ length: 400 }, (_, k) => allPlays().map((p) => {
+  const d = new Date(p.ended_at_local); d.setDate(d.getDate() - k);
+  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}${p.ended_at_local.slice(10)}`;
+  return { ...p, id: p.id + k * 1_000_000, ended_at_local: iso };
+})).flat().sort((a, b) => b.ended_at_local.localeCompare(a.ended_at_local)));
 const allPlays = (): Play[] => [...L.recent, ...L.export_sample].sort((a: any, b: any) => b.ended_at.localeCompare(a.ended_at)).map(play);
 function loggerStatus(): LoggerStatus {
   const np = L.recent.find((e: any) => e.now_playing);
@@ -163,7 +227,7 @@ function loggerStatus(): LoggerStatus {
     now_playing: np && state === "listening" ? { track_name: np.track, artist_name: np.artist, album_name: np.album, spotify_uri: np.spotify_uri, ms_played: np.ms, duration_ms: np.duration_ms, item: it ? summary(it) : null } : null,
   };
 }
-const months = (n: number) => Array.from({ length: n }, (_, k) => { const d = new Date(TODAY.slice(0, 7) + "-01T00:00"); d.setMonth(d.getMonth() - (n - 1 - k)); return d.toISOString().slice(0, 7); });
+const months = (n: number) => Array.from({ length: n }, (_, k) => { const d = new Date(TODAY.slice(0, 7) + "-01T00:00"); d.setMonth(d.getMonth() - (n - 1 - k)); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }); // local, not toISOString (UTC shifts a month east of UTC)
 
 // What oEmbed / Spotify would say about the sample links (prototype dialogs.js SUGGEST).
 const SUGGEST: Record<string, { title: string; artist: string; type: "album" | "artist"; tracks?: string[] }> = {
@@ -186,7 +250,10 @@ function draftFor(uri: string): Draft {
     tracks: pl.tracks.map((t: any) => ({ uri: trackUri(t.track, t.artist), name: t.track, artist: t.artist, rating: t.rating, tags: t.tags, dupe_of: t.duplicate_of != null ? trackUri(t.track, t.artist) : null })),
   };
 }
+/** As Rust (API.md §5): library save/remove/contains take track and album URIs only. */
+const trackOrAlbum = (uris: string[]) => uris.every((u) => /^spotify:(track|album):/.test(u)) || fail("validation", "Only tracks and albums can be saved in your Spotify library.");
 const spotifyOn = () => spotify.connected || fail("spotify_auth", "Connect Spotify in Settings first.");
+const noUndo = (uri: string) => lastApply.has(uri) || fail("not_found", "There's no recent change to undo.");
 const plusDays = (iso: string, d: number) => new Date(Date.parse(iso) + d * 86400000).toISOString().slice(0, 16);
 
 /* ------------------------------------------------------------------ commands */
@@ -196,7 +263,6 @@ const H: Record<string, Handler> = {
   get_dashboard: () => ({
     counts: counts(),
     in_progress: items.filter((i) => i.status === "in_progress").sort((a, b) => b.modified_at.localeCompare(a.modified_at)).map(summary),
-    recent_activity: [...history].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8).map((h) => ({ item: summary(byId(h.item_id)!), from: h.from, to: h.to, at: h.at })),
     name_needed: items.filter((i) => !i.display_name).map(summary), unresolved,
     planned: items.filter((i) => i.in_backlog && i.status === "planned").length,
     explored_this_month: items.filter((i) => i.explored_at?.startsWith(TODAY.slice(0, 7))).length,
@@ -205,30 +271,37 @@ const H: Record<string, Handler> = {
     started_at: Object.fromEntries(items.filter((i) => i.status === "in_progress").map((i) => [i.id,
       history.filter((h) => h.item_id === i.id && h.to === "in_progress").reduce((m, h) => (h.at > m ? h.at : m), "") || i.added_at])),
   }),
-  list_items: ({ filter }) => filterItems(filter ?? {}),
+  list_items: ({ filter }) => (dev.view === "heavy" && filter?.in_backlog ? heavyBacklog(filter) : filterItems(filter ?? {})),
   get_item: ({ id }) => detail(need(id)),
   create_item: ({ input }: { input: NewItem }) => {
     if (input.spotify_uri && existingFor(input.spotify_uri)) fail("duplicate", "That's already in your library.", { existing_id: existingFor(input.spotify_uri) });
     if (!input.spotify_uri && !input.display_name?.trim()) fail("validation", "Give it a name or paste a link.");
+    if (input.spotify_uri && input.spotify_uri.split(":")[1] !== input.type) fail("validation", "The type must match the Spotify link.");
     const it: MItem = {
       id: nextId(), type: input.type, display_name: input.display_name?.trim() || null, spotify_uri: input.spotify_uri, status: input.status ?? "planned",
       priority: input.priority ?? null, rating: null, favourite: false, revisit: false, in_backlog: input.in_backlog ?? true,
       backlog_order: (input.in_backlog ?? true) ? Math.max(0, ...items.map((i) => i.backlog_order ?? 0)) + 1 : null,
-      tags: input.tags ?? [], artist: null, album: null, artist_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: input.notes?.trim() || null,
+      tags: input.tags ?? [], artist: null, album: null, artist_id: null, album_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: input.notes?.trim() || null,
       recommended_by: input.recommended_by || null, explored_at: null, reviewed_at: null, via_phone: false, tracklist: null,
       provenance: {},
     };
     items.push(it);
+    statusEffects(it, null, it.status);
     setArtist(it, input.artist_name);
+    if (input.album_id != null && it.type === "track") link(it.id, input.album_id, "on_album");
     const set = { display_name: !!it.display_name, artist: !!it.artist, notes: !!it.notes, recommended_by: !!it.recommended_by, priority: !!it.priority };
     for (const [k, on] of Object.entries(set)) if (on) it.provenance[k] = input.promoted_fields?.includes(k) ? "promoted" : input.provenance;
+    if (it.spotify_uri) it.provenance.spotify_uri = "promoted"; // TSD 4.2: a pasted or shared link is promoted
     history.push({ item_id: it.id, from: null, to: it.status, at: TODAY, note: "Added" });
     return detail(it);
   },
   update_item: ({ id, patch }: { id: number; patch: ItemPatch }) => {
     const it = need(id);
+    if (patch.type && patch.type !== it.type && it.spotify_uri) fail("validation", "A record with a Spotify link keeps its type.");
     const { promoted_fields, artist_name, ...rest } = patch;
     Object.assign(it, rest);
+    if (it.type === "artist") { it.artist = null; it.artist_id = null; }
+    if (it.type !== "track") { it.album = null; it.album_id = null; }
     if (artist_name !== undefined) { setArtist(it, artist_name); it.provenance.artist = promoted_fields?.includes("artist") ? "promoted" : "user"; }
     if (patch.display_name !== undefined) it.display_name = patch.display_name?.trim() || null;
     if (patch.review !== undefined) it.reviewed_at = TODAY;
@@ -242,15 +315,25 @@ const H: Record<string, Handler> = {
     const it = need(id);
     if (it.status !== status) {
       history.push({ item_id: it.id, from: it.status, to: status, at: TODAY, note: note ?? null });
+      statusEffects(it, it.status, status);
       it.status = status;
-      if (status === "explored" || status === "not_for_me") { it.explored_at = TODAY; it.in_backlog = false; it.backlog_order = null; }
       it.modified_at = TODAY;
     }
     return detail(it);
   },
-  delete_item: ({ id }) => { need(id); items.splice(items.findIndex((i) => i.id === id), 1); },
-  link_items: () => undefined,
-  unlink_items: () => undefined,
+  delete_item: ({ id }) => {
+    need(id); items.splice(items.findIndex((i) => i.id === id), 1);
+    items.forEach((x) => { if (x.artist_id === id) { x.artist_id = null; x.artist = null; } if (x.album_id === id) { x.album_id = null; x.album = null; } });
+    versions.splice(0, versions.length, ...versions.filter((v) => v.from !== id && v.to !== id));
+  },
+  link_items: ({ fromId, toId, kind }) => link(fromId, toId, kind),
+  unlink_items: ({ fromId, toId, kind }) => {
+    const it = need(fromId);
+    if (kind === "by_artist" && it.artist_id === toId) { it.artist_id = null; it.artist = null; }
+    if (kind === "on_album" && it.album_id === toId) { it.album_id = null; it.album = null; }
+    if (kind === "version_of") versions.splice(0, versions.length, ...versions.filter((v) => v.from !== fromId || v.to !== toId));
+    it.modified_at = TODAY;
+  },
   reorder_backlog: ({ ids }: { ids: number[] }) => { ids.forEach((id, n) => { const it = byId(id); if (it) it.backlog_order = n + 1; }); },
   parse_link: ({ raw }) => { const p = parseLink(raw); return p.uri && existingFor(p.uri) ? { ...p, existing_id: existingFor(p.uri) } : p; },
   resolve_link: ({ raw }) => {
@@ -261,11 +344,12 @@ const H: Record<string, Handler> = {
   list_unresolved: () => unresolved,
   retry_unresolved: () => { if (dev.view === "offline") return { resolved: 0 }; const n = unresolved.length; unresolved = []; return { resolved: n }; },
   discard_unresolved: ({ id }) => { unresolved = unresolved.filter((u) => u.id !== id); },
-  search: ({ q, limit }) => {
+  search: ({ q, limit, type }) => {
     const s = String(q).toLowerCase().trim();
     if (!s) return [];
     const hits: { item: ItemSummary; snippet: string; field: string }[] = [];
     for (const i of items) {
+      if (type && i.type !== type) continue;
       const fields: [string, string | null][] = [["name", i.display_name], ["artist", i.artist], ["album", i.album], ["tags", i.tags.join(" ")], ["review", i.review], ["notes", i.notes], ["recommended_by", i.recommended_by]];
       const f = fields.find(([, v]) => v?.toLowerCase().includes(s));
       if (f) { const v = f[1]!; const at = v.toLowerCase().indexOf(s); hits.push({ item: summary(i), field: f[0], snippet: (at > 30 ? "…" : "") + v.slice(Math.max(0, at - 30), at + s.length + 50) }); }
@@ -273,15 +357,18 @@ const H: Record<string, Handler> = {
     return hits.slice(0, limit ?? 50);
   },
   list_tags: () => tags.map((t) => ({ ...t, item_count: items.filter((i) => i.tags.includes(t.name)).length })),
-  rename_tag: ({ id, name }) => { const t = tags.find((x) => x.id === id) ?? fail("not_found", "Tag not found."); items.forEach((i) => (i.tags = i.tags.map((x) => (x === t.name ? name : x)))); t.name = name; return { ...t }; },
+  rename_tag: ({ id, name }) => { const t = tags.find((x) => x.id === id) ?? fail("not_found", "Tag not found."); items.forEach((i) => (i.tags = i.tags.map((x) => (x === t.name ? name : x)))); rewriteFilters(t.name, name); t.name = name; return { ...t }; },
   merge_tags: ({ fromId, intoId }) => {
     const a = tags.find((x) => x.id === fromId) ?? fail("not_found", "Tag not found."); const b = tags.find((x) => x.id === intoId) ?? fail("not_found", "Tag not found.");
     items.forEach((i) => { if (i.tags.includes(a.name)) i.tags = [...new Set(i.tags.map((x) => (x === a.name ? b.name : x)))]; });
-    tags.splice(tags.indexOf(a), 1); return { ...b };
+    rewriteFilters(a.name, b.name); tags.splice(tags.indexOf(a), 1); return { ...b };
   },
   delete_tag: ({ id }) => { const t = tags.find((x) => x.id === id); if (t) { items.forEach((i) => (i.tags = i.tags.filter((x) => x !== t.name))); tags.splice(tags.indexOf(t), 1); } },
   list_saved_filters: () => savedFilters,
-  save_filter: ({ name, definition }) => { const f = { id: Math.max(0, ...savedFilters.map((x) => x.id)) + 1, name, definition }; savedFilters = [...savedFilters, f]; return f; },
+  save_filter: ({ name, definition }) => {
+    // Like Rust: tags trimmed, empties and case-insensitive duplicates dropped, so rename/merge can rewrite them.
+    if (definition.tags) definition = { ...definition, tags: definition.tags.map((t: string) => t.trim()).filter((t: string, n: number, a: string[]) => t && a.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === n) };
+    const f = { id: Math.max(0, ...savedFilters.map((x) => x.id)) + 1, name, definition }; savedFilters = [...savedFilters, f]; return f; },
   delete_saved_filter: ({ id }) => { savedFilters = savedFilters.filter((f) => f.id !== id); },
   get_rediscover: () => ({
     revisit: items.filter((i) => i.revisit).map(summary),
@@ -291,7 +378,13 @@ const H: Record<string, Handler> = {
   }),
   get_online: () => dev.view !== "offline",
   get_settings: () => ({ ...settings }),
-  update_settings: ({ patch }) => Object.assign(settings, patch) && { ...settings },
+  update_settings: ({ patch }) => {
+    if ("library_path" in patch || "backup_dir" in patch) fail("validation", "Use the folder pickers to change paths.");
+    if ("music_db" in patch) fail("validation", "Use the music database switch for this setting.");
+    return Object.assign(settings, patch) && { ...settings };
+  },
+  set_music_db: ({ on }) => { settings.music_db = on; return { ...settings }; },
+  get_genres_decades: () => genresDecades(settings.music_db, freshness()),
   get_capture: () => ({ ...capture }),
   set_capture_enabled: ({ on }) => { capture.on = on; return { ...capture }; },
   new_pairing_code: () => { capture.code = String(100000 + Math.floor(Math.random() * 900000)).replace(/(\d{3})(\d{3})/, "$1 $2"); return { ...capture }; },
@@ -304,8 +397,8 @@ const H: Record<string, Handler> = {
   pick_backup: () => backups[0]?.path ?? null,
   check_backup: () => ({ ok: true, schema_version: 1, counts: counts() }),
   restore_backup: () => ({ ok: true, schema_version: 1, counts: counts() }),
-  choose_backup_dir: () => "D:\\Backups\\Runout",
-  move_library: () => "D:\\Music\\Runout\\library.db",
+  choose_backup_dir: () => (settings.backup_dir = "D:\\Backups\\Runout"),
+  move_library: () => (settings.library_path = "D:\\Music\\Runout\\library.db"),
   delete_library: ({ confirm }) => { if (confirm !== "DELETE") fail("validation", "Type DELETE in capitals to confirm."); items.splice(0); },
   record_page_visit: () => undefined,
   get_success_metrics: () => ({ ...D.usage, moved_after_14d_pct: 62, explored_rated_pct: 81 }),
@@ -317,32 +410,44 @@ const H: Record<string, Handler> = {
   resume_logger: () => { logger.paused = false; logger.paused_until = null; return loggerStatus(); },
   list_plays: ({ q }) => {
     const days = RANGE_DAYS[q.range as Range] ?? 1e6;
-    let rows = allPlays().filter((p) => daysBetween(p.ended_at_local, TODAY) < days);
+    if (q.date != null && !/^\d{4}-\d{2}-\d{2}$/.test(q.date)) fail("validation", "Pick a day as YYYY-MM-DD.");
+    let rows = (dev.view === "heavy" ? heavyPlays() : allPlays()).filter((p) => (q.date ? p.ended_at_local.startsWith(q.date) : daysBetween(p.ended_at_local, TODAY) < days));
     if (q.tab === "unrated") rows = rows.filter((p) => p.counts_as_play && p.item && p.item.rating == null);
     if (q.tab === "missing") rows = rows.filter((p) => !p.item);
-    return { rows: rows.slice(q.offset, q.offset + q.limit), total: rows.length, offset: q.offset };
+    const limit = Math.min(Math.max(q.limit, 1), PLAYS_MAX_PAGE); // as Rust clamps it (insights/plays.rs MAX_PAGE)
+    return { rows: rows.slice(q.offset, q.offset + limit), total: rows.length, offset: q.offset };
   },
   list_unmatched: () => L.unmatched.map((u: any, n: number) => ({ norm_key: `${u.artist}|${u.track}`.toLowerCase(), track_name: u.track, artist_name: u.artist, plays: u.plays, detail: u.detail, suggestion: u.choice, event_id: 1000 + n,
     candidates: [sumByName("track", u.track, u.artist), ...items.filter((i) => i.type === "album" && i.artist === u.artist)].filter(Boolean).map((i) => summary(i!)) })),
   link_play: ({ eventId }) => { L.unmatched = L.unmatched.filter((_: any, n: number) => 1000 + n !== eventId); },
   get_item_listening: ({ id }) => {
     const st = L.item_stats[String(id)];
-    const mine = allPlays().filter((p) => p.item?.id === id && p.counts_as_play);
+    // A play counts for its track, the track's album and artist, and the album's artist (Rust insights SRC).
+    const feeds = (t?: MItem) => { const al = t?.album_id != null ? byId(t.album_id) : undefined; return t ? [t.id, t.artist_id, al?.id, al?.artist_id] : []; };
+    const mine = allPlays().filter((p) => p.counts_as_play && feeds(p.item ? byId(p.item.id) : undefined).includes(id));
     const by_month = months(6).map((month) => ({ month, plays: mine.filter((p) => p.ended_at_local.startsWith(month)).length }));
     return sourced({ plays: st?.plays ?? 0, ms_total: (st?.plays ?? 0) * 240000, last_played_local: st?.last ?? null, by_month }, ["U", "S", "E"]);
   },
   pick_import_source: () => "Documents\\spotify-export\\my_spotify_data.zip",
   preview_import: () => ({ ...L.import_preview, files: ["Streaming_History_Audio_2025-2026_0.json", "Streaming_History_Audio_2026_1.json", "Playlist1.json"] }),
   run_import: () => ({ batch_id: 2, added: L.import_preview.music - L.import_preview.overlap, duplicates: L.import_preview.overlap, reconciled: 41, playlists: L.import_preview.playlists, took_ms: 4200 }),
-  list_imports: () => [{ id: 1, kind: "extended", imported_at: "2026-10-05T10:12", record_count: L.import_preview.music, latest_event_utc: L.freshness.export_until }],
+  list_imports: () => [{ id: 1, kind: "extended", imported_at: "2026-10-05T04:42:00Z", record_count: L.import_preview.music, latest_event_utc: L.freshness.export_until }],
   get_freshness: () => freshness(),
   get_listening_insights: ({ range }) => {
     const ch = L.charts[range];
-    const row = (r: any) => ({ name: r.name, by: r.by, plays: r.plays, hours: r.hours, item_id: r.item_id ?? null, rating: r.rating ?? null, status: r.status ?? null });
-    return sourced({
-      top_artists: ch.artists.map(row), top_albums: ch.albums.map(row), top_tracks: ch.tracks.map(row), monthly: L.monthly, heatmap: L.heatmap,
-      skip_rate: L.skip_rate, phone_share: L.phone_share, totals: { ...L.stats[range], private_excluded: L.private_excluded, artists_total: L.artists_total },
-    }, ["U", "S", "E"]);
+    const k = dev.view === "heavy" ? 37 : 1; // a long-time listener: same shape, ~37x the volume
+    const row = (r: any, i: number) => ({ name: k > 1 && i === 1 ? `${r.name} and the Orchestra of the Long Name Society` : r.name, by: r.by, plays: r.plays * k, hours: Math.round(r.hours * k * 10) / 10, item_id: r.item_id ?? null, rating: r.rating ?? null, status: r.status ?? null });
+    const st = L.stats[range];
+    // FR-048: like for like over coverage.compared_sources; desktop-only past the export's end (insightsV3.ts).
+    const coverage = rangeCoverage(range), hidden = coverage.no_compare_reason != null, like = coverage.compared_sources.includes("E") ? 1 : 0.4;
+    const cmp = (now: number, prev: number) => (hidden ? [now * k, 0] : [Math.round(now * k * like), Math.round(prev * k * like)]);
+    const [plays_cmp, plays_prev] = cmp(st.plays, st.plays_prev), [ms_cmp, ms_prev] = cmp(st.ms, st.ms_prev);
+    return { coverage, ...sourced({
+      top_artists: ch.artists.map(row), top_albums: ch.albums.map(row), top_tracks: ch.tracks.map(row), heatmap: L.heatmap,
+      monthly: L.monthly.map((m: { month: string; hours: number }) => ({ ...m, hours: Math.round(m.hours * (k > 1 ? 4.2 : 1) * 10) / 10, coverage: monthCoverage(m.month) })),
+      skip_rate: L.skip_rate, phone_share: L.phone_share,
+      totals: { ...st, plays: st.plays * k, plays_prev, ms: st.ms * k, ms_prev, plays_cmp, ms_cmp, unrated_plays: st.unrated_plays * k, private_excluded: L.private_excluded, artists_total: L.artists_total * (k > 1 ? 9 : 1) },
+    }, ["U", "S", "E"]) };
   },
   get_collection_insights: () => {
     const ms = months(12);
@@ -362,6 +467,7 @@ const H: Record<string, Handler> = {
     return sourced({
       rated_vs_played: take("played_not_rated"), never_played_backlog: take("backlog_never_played"), loved_but_forgotten: take("loved_not_played"),
       unfinished_albums: L.unfinished.filter((u: any) => byId(u.item_id)).map((u: any) => ({ item: summary(byId(u.item_id)!), played: u.played, total: u.total })),
+      unfinished_unknown: items.filter((i) => i.type === "album" && !i.tracklist).length,
     }, ["U", "S", "E"]);
   },
   get_year_review: () => {
@@ -369,6 +475,7 @@ const H: Record<string, Handler> = {
     const row = (r: any, type: MItem["type"]) => ({ ...r, item_id: sumByName(type, r.name, r.by)?.id ?? null, rating: null, status: null });
     return sourced({ ...y, top_artist: row(y.top_artist, "artist"), top_album: row(y.top_album, "album") }, ["U", "S", "E"]);
   },
+  ...insightsV3((type, name) => items.find((i) => i.type === type && i.display_name === name), freshness),
   list_exported_playlists: () => D.playlists.map((p: any, n: number) => ({ id: n + 1, name: p.name, tracks: p.tracks.length, dupes: p.dupes, low: p.low })),
   get_playlist_checkup: ({ id }) => {
     const p = D.playlists[id - 1] ?? fail("not_found", "Playlist not found.");
@@ -377,14 +484,14 @@ const H: Record<string, Handler> = {
 
   /* R3 */
   get_spotify_status: () => (spotify.connected ? { state: "connected", display_name: "You", renew_by: D.spotify.renew_by } : { state: "disconnected", display_name: null, renew_by: null }),
-  connect_spotify: () => { spotify = { connected: true }; return H.get_spotify_status({}); },
+  connect_spotify: () => { spotify = { connected: true }; inbox.needs_reconnect = false; if (inbox.state === "none") inbox.state = "ready"; return H.get_spotify_status({}); },
   disconnect_spotify: () => { spotify = { connected: false }; savedInSpotify.clear(); lastApply.clear(); },
   list_spotify_playlists: () => (spotifyOn(), D.playlists.map((p: any) => ({ uri: playlistUri(p.name), name: p.name, tracks: p.tracks.length, owned: true, collaborative: false }))),
   load_studio_draft: ({ playlistUri: uri }) => (spotifyOn(), draftFor(uri)),
-  preview_studio_apply: ({ draft, keep }: { draft: Draft; keep: string[] }) => ({ removed: draft.tracks.length - keep.length, reordered: 0, added: 0 }),
+  preview_studio_apply: ({ draft, keep }: { draft: Draft; keep: string[] }) => (spotifyOn(), { removed: draft.tracks.length - keep.length, reordered: 0, added: 0 }),
   apply_studio_draft: ({ draft }: { draft: Draft }) => { spotifyOn(); const r = { undo_id: lastApply.size + 1, applied_at: TODAY, expires_at: plusDays(TODAY, 30) }; lastApply.set(draft.playlist_uri, r); return { undo_id: r.undo_id, expires_at: r.expires_at }; },
-  get_last_apply: ({ playlistUri: uri }) => lastApply.get(uri) ?? null,
-  undo_last_apply: ({ playlistUri: uri }) => { lastApply.delete(uri); },
+  get_last_apply: ({ playlistUri: uri }) => (spotifyOn(), lastApply.get(uri) ?? null),
+  undo_last_apply: ({ playlistUri: uri }) => { spotifyOn(); noUndo(uri); lastApply.delete(uri); },
   create_playlist_from_filter: ({ filterId, name }) => {
     spotifyOn();
     const f = savedFilters.find((x) => x.id === filterId) ?? fail("not_found", "Saved filter not found.");
@@ -397,34 +504,87 @@ const H: Record<string, Handler> = {
     return { playlist_uri: playlistUri(name), added: rows.filter((r) => r.spotify_uri).length, skipped_no_uri: rows.filter((r) => !r.spotify_uri).length };
   },
   autofill: ({ uri }) => {
+    spotifyOn();
     const s = SUGGEST[String(uri).split(":")[2]];
     if (!s) return { fields: {} };
     return { fields: { display_name: s.title, artist: s.artist || undefined, year: s.type === "album" ? 2020 : undefined }, track_list: s.tracks?.map((name, n) => ({ uri: `spotify:track:${fakeId(name)}`, name, position: n + 1 })) };
   },
   bulk_add_album_tracks: ({ albumId, tracks: ts }: { albumId: number; tracks: { uri: string; name: string }[] }) => {
+    spotifyOn();
     const al = need(albumId);
-    return ts.map((t) => {
-      const it: MItem = { ...al, id: nextId(), type: "track", display_name: t.name, spotify_uri: t.uri, album: al.display_name, tags: [], rating: null, backlog_order: null, in_backlog: false, provenance: { display_name: "promoted" }, added_at: TODAY, modified_at: TODAY, tracklist: null, review: null, notes: null };
-      items.push(it); history.push({ item_id: it.id, from: null, to: it.status, at: TODAY, note: "Added from album" }); return summary(it);
+    if (al.type !== "album") fail("validation", "Tracks can only be added to an album.");
+    // As Rust: a track already in the library (by spotify_uri) is linked to the album, not added or returned.
+    return ts.flatMap((t) => {
+      const have = byId(existingFor(t.uri) ?? -1);
+      if (have) { if (have.type === "track") Object.assign(have, { album: al.display_name, album_id: al.id }); return []; }
+      const it: MItem = { ...al, id: nextId(), type: "track", status: "planned", display_name: t.name, spotify_uri: t.uri, album: al.display_name, album_id: al.id, tags: [], rating: null, favourite: false, revisit: false, backlog_order: null, in_backlog: false, provenance: { display_name: "promoted", spotify_uri: "promoted" }, via_phone: false, added_at: TODAY, modified_at: TODAY, explored_at: null, reviewed_at: null, tracklist: null, review: null, notes: null, recommended_by: null };
+      items.push(it); history.push({ item_id: it.id, from: null, to: it.status, at: TODAY, note: "Added from album" }); return [summary(it)];
     });
   },
-  get_top_items: ({ kind, range }) => (spotifyOn(), D.spotify[`top_${kind}`][range].map((e: any) => entry(e.track ?? e.artist, e.artist, kind === "artists" ? "artist" : "track"))),
+  get_top_items: ({ kind, range }) => {
+    spotifyOn();
+    const type = kind === "artists" ? "artist" : "track";
+    const top: SpotifyEntry[] = D.spotify[`top_${kind}`][range].map((e: any) => entry(e.track ?? e.artist, e.artist, type));
+    // Dev state "heavy": Spotify's full 50 (Rust asks for limit=50), so the 21-40 and 41-50 sets show.
+    const more = (i: number) => { const b = top[i % top.length]; const n = `${b.name} (Live ${Math.floor(i / top.length)})`; return entry(n, type === "artist" ? n : b.artist, type); };
+    return dev.view === "heavy" ? Array.from({ length: 50 }, (_, i) => (i < top.length ? top[i] : more(i))) : top;
+  },
   get_recent_plays_api: () => (spotifyOn(), D.spotify.recent.map((e: any) => ({ ...entry(e.track, e.artist, "track"), uri: e.spotify_uri, played_at: e.at }))),
-  library_contains: ({ uris }: { uris: string[] }) => uris.map((u) => savedInSpotify.has(u)),
-  save_to_spotify_library: ({ uris }: { uris: string[] }) => { uris.forEach((u) => savedInSpotify.add(u)); },
-  remove_from_spotify_library: ({ uris }: { uris: string[] }) => { uris.forEach((u) => savedInSpotify.delete(u)); },
+  library_contains: ({ uris }: { uris: string[] }) => (spotifyOn(), trackOrAlbum(uris), uris.map((u) => savedInSpotify.has(u))),
+  save_to_spotify_library: ({ uris }: { uris: string[] }) => { spotifyOn(); trackOrAlbum(uris); uris.forEach((u) => savedInSpotify.add(u)); },
+  remove_from_spotify_library: ({ uris }: { uris: string[] }) => { spotifyOn(); trackOrAlbum(uris); uris.forEach((u) => savedInSpotify.delete(u)); },
+  find_cross_playlist_dupes: ({ playlistUri: uri }): CrossDupe[] => {
+    spotifyOn();
+    const others = D.playlists.filter((p: any) => playlistUri(p.name) !== uri).map((p: any) => ({ uri: playlistUri(p.name), name: p.name, uris: new Set(draftFor(playlistUri(p.name)).tracks.map((t) => t.uri)) }));
+    const seen = new Set<string>();
+    return draftFor(uri).tracks.flatMap((t) => {
+      const in_ = others.filter((o: any) => o.uris.has(t.uri)).map((o: any) => ({ uri: o.uri, name: o.name }));
+      if (!in_.length || seen.has(t.uri)) return [];
+      seen.add(t.uri); return [{ uri: t.uri, playlists: in_ }];
+    });
+  },
+  get_inbox: () => inboxStatus(),
+  create_inbox: () => { spotifyOn(); inbox.state = "ready"; return inboxStatus(); },
+  check_inbox: () => {
+    spotifyOn();
+    if (inbox.state === "missing") fail("not_found", "The Runout Inbox is gone."); // as Rust: deleted in Spotify
+    if (inbox.state !== "ready") return { imported: 0, albums: 0, skipped: 0 };
+    // As Rust: each waiting entry becomes a name-needed item (added_via inbox) and leaves the Inbox.
+    const got = inbox.waiting.splice(0).map((w: { type: "album" | "track"; added_at: string }) => {
+      const id = nextId();
+      const it: MItem = { ...items[0], id, type: w.type, display_name: null, spotify_uri: `spotify:${w.type}:${fakeId("inbox" + id)}`, status: "planned", priority: null, rating: null, favourite: false, revisit: false, in_backlog: true, backlog_order: order + id, tags: [], artist: null, album: null, artist_id: null, album_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: null, recommended_by: null, explored_at: null, reviewed_at: null, via_phone: false, via_inbox: true, tracklist: null, provenance: {} };
+      items.push(it); history.push({ item_id: id, from: null, to: "planned", at: TODAY, note: "From the Runout Inbox" });
+      return it;
+    });
+    inbox.last_check = TODAY; inbox.imported_last = got.length;
+    const r = { imported: got.length, albums: got.filter((i: MItem) => i.type === "album").length, skipped: 0 };
+    if (r.imported) emit("inbox-imported", r);
+    return r;
+  },
+  set_inbox_options: ({ savedAlbums, followedArtists }: { savedAlbums: boolean; followedArtists: boolean }) => {
+    spotifyOn();
+    if (followedArtists && !inbox.followed_artists) inbox.needs_reconnect = true; // the sign-in lacks user-follow-read
+    Object.assign(inbox, { saved_albums: savedAlbums, followed_artists: followedArtists }); return inboxStatus();
+  },
 };
 
 /* ------------------------------------------------------------------ dev states + transport */
 // Shell commands keep working in every state so the rail and banners still render.
 const SHELL = new Set(["get_counts", "get_freshness", "get_online", "get_logger_status", "get_spotify_status", "record_page_visit", "parse_link"]);
-const NO_EMPTY = new Set([...SHELL, "get_item", "get_settings", "get_capture", "list_backups"]);
-const NETWORK = new Set(["connect_spotify", "list_spotify_playlists", "load_studio_draft", "apply_studio_draft", "undo_last_apply",
-  "create_playlist_from_filter", "create_playlist_from_items", "get_top_items", "get_recent_plays_api", "library_contains", "save_to_spotify_library", "remove_from_spotify_library"]);
+const NO_EMPTY = new Set([...SHELL, "get_item", "get_settings", "get_capture", "list_backups", "get_inbox"]);
+const NETWORK = new Set(["connect_spotify", "list_spotify_playlists", "load_studio_draft", "apply_studio_draft", "undo_last_apply", "autofill",
+  "create_playlist_from_filter", "create_playlist_from_items", "get_top_items", "get_recent_plays_api", "library_contains", "save_to_spotify_library", "remove_from_spotify_library",
+  "find_cross_playlist_dupes", "create_inbox", "check_inbox"]);
 /** Empty state: same shape, no rows (arrays → [], counts → 0). */
 const emptied = (v: unknown): unknown =>
-  Array.isArray(v) ? [] : typeof v === "number" ? 0 : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "freshness" || k === "sources" ? x : emptied(x)])) : v;
+  Array.isArray(v) ? [] : typeof v === "number" ? 0 : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "freshness" || k === "sources" || k === "coverage" ? x : emptied(x)])) : v;
 const until = (cond: () => boolean) => new Promise<void>((res) => { if (cond()) return res(); const off = onDevChange(() => { if (cond()) { off(); res(); } }); });
+
+/** API.md §5 commands that answer `conflict`, with the "conflict" dev state's message (check.py). */
+const CONFLICT: Record<string, string> = {
+  apply_studio_draft: "The playlist changed on Spotify since the draft was loaded. Reload the draft.",
+  undo_last_apply: "This playlist changed on Spotify since you applied, so undo would erase those changes. The undo was dropped.",
+};
 
 export async function mockCall<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   const h = H[cmd];
@@ -434,6 +594,19 @@ export async function mockCall<T>(cmd: string, args: Record<string, unknown>): P
     await until(() => dev.view !== "loading");
     if (dev.view === "error") throw { code: "io", message: "Runout couldn't read your library file.", detail: "library.db is locked by another process" } as AppError;
     if (dev.view === "offline" && NETWORK.has(cmd)) fail("offline", "You're offline. This needs Spotify.");
+    if (dev.view === "conflict" && cmd in CONFLICT) {
+      if (cmd === "undo_last_apply") { spotifyOn(); noUndo(args.playlistUri as string); lastApply.delete(args.playlistUri as string); } // Rust drops a dead undo
+      fail("conflict", CONFLICT[cmd]);
+    }
+    if (dev.view === "busy" && (cmd === "apply_studio_draft" || cmd === "undo_last_apply")) {
+      spotifyOn(); if (cmd === "undo_last_apply") noUndo(args.playlistUri as string);
+      fail("spotify_busy", "Spotify hasn't finished the last change to this playlist yet.", { retry_after_s: 90 });
+    }
+  }
+  // As Rust: a write that failed without a 4xx may have landed, so its effect stays (API.md apply / create rows).
+  if (dev.view === "partial" && (cmd === "apply_studio_draft" || cmd.startsWith("create_playlist_from"))) {
+    const r = h(args) as { playlist_uri?: string };
+    throw { code: "internal", message: "Spotify didn't answer the last write, so it may have been applied.", detail: r.playlist_uri } as AppError;
   }
   const out = h(args);
   return structuredClone(dev.view === "empty" && !NO_EMPTY.has(cmd) ? emptied(out) : out) as T;
@@ -456,7 +629,7 @@ onDevChange(() => {
 /** Dev helper: simulate an iPhone share arriving (capture-received). */
 export function simulateCapture() {
   const id = nextId();
-  const it: MItem = { ...items[0], id, type: "album", display_name: null, spotify_uri: `spotify:album:${fakeId("capture" + id)}`, status: "planned", priority: null, rating: null, favourite: false, revisit: false, in_backlog: true, backlog_order: order + id, tags: [], artist: null, album: null, artist_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: null, recommended_by: null, explored_at: null, reviewed_at: null, via_phone: true, tracklist: null, provenance: {} };
+  const it: MItem = { ...items[0], id, type: "album", display_name: null, spotify_uri: `spotify:album:${fakeId("capture" + id)}`, status: "planned", priority: null, rating: null, favourite: false, revisit: false, in_backlog: true, backlog_order: order + id, tags: [], artist: null, album: null, artist_id: null, album_id: null, added_at: TODAY, modified_at: TODAY, review: null, notes: null, recommended_by: null, explored_at: null, reviewed_at: null, via_phone: true, tracklist: null, provenance: {} };
   items.push(it); history.push({ item_id: id, from: null, to: "planned", at: TODAY, note: "Shared from iPhone" });
   emit("capture-received", summary(it)); invalidate();
 }

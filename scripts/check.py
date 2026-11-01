@@ -5,6 +5,7 @@ correction is automatable (see CLAUDE.md, "the loop").
 ponytail: runs the full suite on every stop; gate on changed files if cargo gets slow."""
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -12,8 +13,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TAURI = ROOT / "src-tauri"
-ALLOWED_HOSTS = {"open.spotify.com", "spotify.link", "api.spotify.com", "accounts.spotify.com", "127.0.0.1", "localhost"}
+ALLOWED_HOSTS = {"open.spotify.com", "spotify.link", "api.spotify.com", "accounts.spotify.com", "127.0.0.1", "localhost",
+                 "musicbrainz.org", "www.wikidata.org"}  # open music database, source M (U-11, TSD §5.4)
 HOOK = "--hook" in sys.argv
+# Parallel sessions/agents building at once hit "paging file is too small" (os error 1455, 20 Oct 2026).
+os.environ.setdefault("CARGO_BUILD_JOBS", "2")
+for _s in (sys.stdout, sys.stderr):
+    _s.reconfigure(encoding="utf-8", errors="replace")  # cp1252 console crashed on test output
 failures = []
 if HOOK and json.load(sys.stdin).get("stop_hook_active"):
     sys.exit(0)  # already continuing because of this hook; don't loop
@@ -23,7 +29,7 @@ if HOOK:
 
 def run(name, cmd, cwd):
     print(f"--- {name}", flush=True)
-    r = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, text=True)
+    r = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode:
         failures.append(name)
         print((r.stdout + r.stderr)[-3000:])
@@ -37,22 +43,442 @@ def source_files():
 
 def check_hosts():
     # TSD §7: only allow-listed outbound hosts may appear in code.
+    # Rust test modules are skipped: hostile test inputs (open.rs) are never contacted.
+    code = lambda p: re.split(r"#\[cfg\(test\)\]\s*mod tests\b", p.read_text(encoding="utf-8"))[0] if p.suffix == ".rs" else p.read_text(encoding="utf-8")
     bad = [f"{p.relative_to(ROOT)}: {h}" for p in source_files()
-           for h in re.findall(r"https?://([\w.-]+)", p.read_text(encoding="utf-8"))
+           for h in re.findall(r"https?://([\w.-]+)", code(p))
            if h not in ALLOWED_HOSTS]
     if bad:
         failures.append("allowed hosts")
         print("--- allowed hosts: FAIL\n" + "\n".join(bad))
 
 
+def check_one_item_summary():
+    # Review M3 6-10: event payloads use library::items::summary; a hand-built ItemSummary drifts from API.md.
+    bad = [str(p.relative_to(ROOT)) for p in (TAURI / "src").rglob("*.rs")
+           if "library" not in p.parts and "json_object('id'" in p.read_text(encoding="utf-8")]
+    if bad:
+        failures.append("one ItemSummary")
+        print("--- one ItemSummary: FAIL (build it with library::items::summary)\n" + "\n".join(bad))
+
+
+def check_events():
+    # Review M3 step 11: every MVP event in API.md §6, and each 'literal' in its payload, is emitted
+    # somewhere in Rust (capture-disabled {reason:'error'} was specified but never sent).
+    # non-test code only: a test's expected payload doesn't prove the app sends it
+    rs = "\n".join(re.split(r"#\[cfg\(test\)\]\r?\nmod tests", p.read_text(encoding="utf-8"))[0]
+                   for p in (TAURI / "src").rglob("*.rs"))
+    if "emit(" not in rs:
+        return
+    spec = (ROOT / "docs/API.md").read_text(encoding="utf-8")
+    sec = re.search(r"^## 6\..*?(?=^## )", spec, re.S | re.M).group(0)
+    rows = re.findall(r"^\| `([a-z-]+)` \| (.*?) \| MVP \|$", sec, re.M)
+    bad = [f"API.md section 6 '{ev}': {lit} never appears as a Rust string literal"
+           for ev, payload in rows for lit in [ev, *re.findall(r"'([a-z_]+)'", payload)]
+           if f'"{lit}"' not in rs]
+    if not rows:
+        bad.append("no MVP events parsed from API.md §6 (table format changed?)")
+    if bad:
+        failures.append("events")
+        print("--- events: FAIL\n" + "\n".join(bad))
+
+
+def check_settings_paths():
+    # API.md §1 (pickers by Rust): update_settings must refuse both paths the UI may not choose.
+    p = TAURI / "src/settings.rs"
+    if not p.exists():
+        return
+    m = re.search(r"pub fn merge\(.*?\n}\n", p.read_text(encoding="utf-8"), re.S)
+    missing = [k for k in ("library_path", "backup_dir") if not m or f'"{k}"' not in m.group(0)]
+    if missing:
+        failures.append("settings paths")
+        print("--- settings paths: FAIL (settings::merge must refuse) " + ", ".join(missing))
+
+
+def check_db_swap_closes_logger_run():
+    # Review M10 WI 2: restore / Delete library replaced library.db under a running logger, and a stale
+    # logger_run id then stretched an old run to now. Every command that swaps the rows goes through
+    # Logger::swap_db (logger lock held). move_library keeps the same rows, so it isn't listed.
+    p = TAURI / "src" / "commands.rs"
+    bad = []
+    fn_re = r"\n(?:pub(?:\(crate\))? )?fn (\w+).*?(?=\n(?:#\[|(?:pub(?:\(crate\))? )?fn )|\Z)"
+    for m in re.finditer(fn_re, p.read_text(encoding="utf-8"), re.S):
+        body = m.group(0)
+        if re.search(r"restore_locked\(|cleanup::delete_library\(", body) and "swap_db(" not in body:
+            bad.append(f"commands.rs: {m.group(1)} must run inside Logger::swap_db")
+    if bad:
+        failures.append("db swap closes logger run")
+        print("--- db swap closes logger run: FAIL\n" + "\n".join(bad))
+
+
+def check_restore_marker_guards():
+    # Review M3 close: while a failed restore's marker exists, pre-restore may be the real library
+    # (TSD §4.10); each of these must check it (delete_library didn't, and wiped it).
+    bad = []
+    for f, fn in (("backup.rs", "restore_locked"), ("state.rs", "move_library"), ("cleanup.rs", "delete_library")):
+        p = TAURI / "src" / f
+        if not p.exists():
+            continue
+        m = re.search(rf"fn {fn}\(.*?(?=\n\s*(?:pub(?:\(crate\))? )?fn |\Z)", p.read_text(encoding="utf-8"), re.S)
+        if not m or "marker(" not in m.group(0):
+            bad.append(f"{f}: {fn} must refuse while backup::marker(..) exists")
+    if bad:
+        failures.append("restore marker guards")
+        print("--- restore marker guards: FAIL\n" + "\n".join(bad))
+
+
 def check_no_oembed_or_tokens_logged():
     # TSD §7: tokens never logged.
-    pat = re.compile(r"(println!|log::\w+!|tracing::\w+!|console\.log)\(.*(token|secret|refresh)", re.I)
-    bad = [f"{p.relative_to(ROOT)}:{i}" for p in source_files()
+    pat = re.compile(r"(e?println!|dbg!|log::\w+!|tracing::\w+!|console\.log)\(.*(token|secret|refresh|client_id|verifier)", re.I)
+    examples = list((TAURI / "examples").glob("*.rs")) if (TAURI / "examples").exists() else []
+    bad = [f"{p.relative_to(ROOT)}:{i}" for p in list(source_files()) + examples
            for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if pat.search(line)]
     if bad:
         failures.append("no secrets in logs")
         print("--- no secrets in logs: FAIL\n" + "\n".join(bad))
+
+
+def check_no_debug_output():
+    # Review M10 WI 9-spec: uncommitted perf probes (eprintln!("LAP ..")) broke cargo fmt and would
+    # print timings in the app. Non-test Rust prints nothing; lib.rs's non-Windows fatal_box is the one exception.
+    bad = [f"{p.relative_to(ROOT)}:{i}" for p in (TAURI / "src").rglob("*.rs") if p.name != "lib.rs"
+           for i, line in enumerate(re.split(r"#\[cfg\(test\)\]\s*mod tests\b", p.read_text(encoding="utf-8"))[0].splitlines(), 1)
+           if re.search(r"\b(e?println|dbg)!\(", line)]
+    if bad:
+        failures.append("no debug output")
+        print("--- no debug output: FAIL (no eprintln!/println!/dbg! outside tests)\n" + "\n".join(bad))
+
+
+def check_kb_placeholders():
+    # Review M10 WI 9-spec: open-music-db.md kept __PROBE_MIN__ under a **Verified** tag.
+    bad = [f"{p.relative_to(ROOT)}:{i}" for p in (ROOT / "docs/kb").glob("*.md")
+           for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if re.search(r"__[A-Z_]+__", line)]
+    if bad:
+        failures.append("kb placeholders")
+        print("--- kb placeholders: FAIL (fill or remove)\n" + "\n".join(bad))
+
+
+def check_spotify_rules():
+    # M5 plan rules (BRD 11.1, D27; TSD §7; KB client-ID decision) for src-tauri/src/spotify/:
+    # Playlist Studio etc. never touch listening data or exported playlists; nothing logs; no
+    # token/client id/verifier/code is interpolated into a string (errors, details, panics).
+    d = TAURI / "src" / "spotify"
+    if not d.exists():
+        return
+    data = re.compile(r"listening_\w+|exported_playlist")
+    logs = re.compile(r"\b(println!|eprintln!|print!|eprint!|dbg!|log::\w+!|tracing::\w+!)")
+    interp = re.compile(r"\{[^{}\"]*\b(access|refresh|token|client_id|verifier|code|secret)\w*[^{}\"]*\}")
+    # audit M5: the same names passed as positional args after the format string (`"{}", t.refresh`)
+    positional = re.compile(r"\"\s*,.*\b(access|refresh|access_token|refresh_token|client_id|verifier|code_verifier|secret)\b")
+    bad = []
+    # examples run against the real credential: same data + interpolation rules (they may print)
+    examples = list((TAURI / "examples").glob("*.rs")) if (TAURI / "examples").exists() else []
+    for p in list(d.rglob("*.rs")) + examples:
+        rel = p.relative_to(ROOT).as_posix()
+        in_spotify = p.parent.name == "spotify"
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if in_spotify and data.search(line):
+                bad.append(f"{rel}:{i}: spotify/ must not reference listening_* tables / exported_playlist")
+            if in_spotify and logs.search(line):
+                bad.append(f"{rel}:{i}: no logging in spotify/ (tokens, client id)")
+            if re.search(r"format!|panic!|assert\w*!|with_detail|AppError|e?print(ln)?!", line) and (
+                    interp.search(line) or positional.search(line)):
+                bad.append(f"{rel}:{i}: secret-looking value interpolated into a string")
+            # audit M5: a Credential Manager read error is not "signed out" (it must not be cached
+            # or trigger the sweeper's cache delete); keep the Err
+            if in_spotify and re.search(r"load_tokens\([^)]*\)\.ok\(\)", line):
+                bad.append(f"{rel}:{i}: load_tokens(..).ok() turns a read error into 'signed out'")
+            # audit M5: examples never share the app's credential (a refresh there rotates the
+            # app's refresh token and signs the app out)
+            # audit r6: Spotify::new(..) passes the same credential, and so does the literal name
+            code = line.split("//", 1)[0]
+            if not in_spotify and re.search(r"cleanup::CREDENTIAL|Spotify::new\(|Runout/spotify", code):
+                bad.append(f"{rel}:{i}: examples must not use the app's credential (CREDENTIAL / Spotify::new / Runout/spotify)")
+    # Studio: every fn that writes a playlist (calls replace(..)) holds studio_lock across the
+    # whole check -> snapshot -> chunks sequence, so two applies/undos never interleave.
+    studio = d / "studio.rs"
+    if studio.exists():
+        # audit M5 (r3): the signature may span lines (replace's does); a regex that skips a fn
+        # silently disables every rule below, so the fns it must find are asserted
+        fn_re = r"\n(?:pub(?:\(crate\))? )?(?:async )?fn (\w+)\b[^{;]*\{(.*?)\n\}"
+        found = {m.group(1) for m in re.finditer(fn_re, studio.read_text(encoding="utf-8"), re.S)}
+        for need in ("replace", "apply_studio_draft", "undo_last_apply", "load_studio_draft"):
+            if need not in found:
+                bad.append(f"{studio.relative_to(ROOT).as_posix()}: check.py's fn regex no longer finds {need}; fix the regex")
+        for m in re.finditer(fn_re, studio.read_text(encoding="utf-8"), re.S):
+            if m.group(1) != "replace" and re.search(r"\breplace\(", m.group(2)) and "studio_lock" not in m.group(2):
+                bad.append(f"{studio.relative_to(ROOT).as_posix()}: {m.group(1)} calls replace( without sp.studio_lock")
+            # audit M5 (r2): a failed playlist write may still have landed (timeout, 5xx): replace
+            # decides by client::refused(&e) (4xx = not landed, else unknown), never `?` and never
+            # a re-read (a re-read proves nothing, TSD §5.2)
+            if m.group(1) == "replace" and re.search(r"send_json\([^;]*?\)\s*\.await\?", m.group(2), re.S):
+                bad.append(f"{studio.relative_to(ROOT).as_posix()}: replace `?`s a write error; use client::refused(&e) (4xx = not landed, else unknown; TSD §5.2)")
+            if m.group(1) == "replace" and re.search(r"current_uris\(|items\(sp", m.group(2)):
+                bad.append(f"{studio.relative_to(ROOT).as_posix()}: replace re-reads the items; a re-read proves nothing after a failed write (TSD §5.2)")
+    # audit M5 (r3): --probe must check the read Studio decides on (studio::current_uris, whole
+    # list), not a hand-built /items? GET (a fresh limit=1 says nothing about it, G-30)
+    rt = TAURI / "examples/studio_roundtrip.rs"
+    if rt.exists():
+        m = re.search(r"\nasync fn probe_row\b.*?\n\}\n", rt.read_text(encoding="utf-8"), re.S)
+        body = m.group(0) if m else ""
+        if "studio::current_uris(" not in body or "/items?" in body:
+            bad.append("src-tauri/examples/studio_roundtrip.rs: probe_row must read the list with studio::current_uris(, not its own /items? GET (G-30)")
+    # audit M5: status never turns a Credential Manager read error into 'disconnected'
+    spmod = d / "mod.rs"
+    if spmod.exists():
+        fn_re = r"\n    pub (?:async )?fn (status_now|status)\b[^\n]*\{(.*?)\n    \}"
+        for m in re.finditer(fn_re, spmod.read_text(encoding="utf-8"), re.S):
+            if "self.tokens()" in m.group(2):
+                bad.append(f"{spmod.relative_to(ROOT).as_posix()}: {m.group(1)} uses self.tokens(); use load_tokens()?")
+    if bad:
+        failures.append("spotify rules")
+        print("--- spotify rules: FAIL\n" + "\n".join(bad))
+
+
+def check_boundary_values_kept():
+    # audit M5: check_uri trims; a call whose result is thrown away validates one value and uses another.
+    pat = re.compile(r"^\s*(?:spotify::)?check_uri\(.*\)\?;\s*$")
+    bad = [f"{p.relative_to(ROOT).as_posix()}:{i}: check_uri(..)?; discards the trimmed URI; use its result"
+           for p in (TAURI / "src").rglob("*.rs")
+           for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if pat.search(line)]
+    if bad:
+        failures.append("boundary values kept")
+        print("--- boundary values kept: FAIL\n" + "\n".join(bad))
+
+
+def check_cache_schema_in_tsd():
+    # audit M5 / CLAUDE.md flow step 5: every spotify_cache.db column (spotify/cache.rs MIGRATIONS:
+    # CREATE TABLE + ADD COLUMN) is named in TSD §3's spotify_cache.db block.
+    cache, tsd = TAURI / "src/spotify/cache.rs", ROOT / "docs/TSD.md"
+    if not cache.exists():
+        return
+    src = cache.read_text(encoding="utf-8")
+    m = re.search(r"^`spotify_cache\.db`[^\n]*:\n```sql\n(.*?)```", tsd.read_text(encoding="utf-8"), re.S | re.M)
+    block = m.group(1) if m else ""
+    want = []
+    for table, body in re.findall(r"CREATE TABLE (\w+)\((.*?)\);", src, re.S):
+        want += [(table, c) for c in re.findall(r"(?:^|,)\s*(\w+)\s+[A-Z]", body)]
+    want += re.findall(r"ALTER TABLE (\w+) ADD COLUMN (\w+)", src)
+    rows = dict(re.findall(r"^(\w+)\((.*)$", block, re.M))
+    bad = [f"TSD §3 spotify_cache.db: {t}.{c} missing" for t, c in want
+           if not re.search(rf"\b{c}\b", rows.get(t, ""))]
+    if not want:
+        bad.append("no columns parsed from spotify/cache.rs MIGRATIONS (format changed?)")
+    if bad:
+        failures.append("cache schema in TSD")
+        print("--- cache schema in TSD: FAIL\n" + "\n".join(bad))
+
+
+def check_dropped_cache_columns():
+    # M5 audit r1: examples/studio_roundtrip.rs kept querying a column cache migration 4 dropped and
+    # .ok() hid the error. No file under src-tauri/ but cache.rs names a dropped/renamed column.
+    cache = TAURI / "src/spotify/cache.rs"
+    if not cache.exists():
+        return
+    gone = set(re.findall(r"(?:DROP COLUMN|RENAME COLUMN) (\w+)", cache.read_text(encoding="utf-8")))
+    bad = [f"{p.relative_to(ROOT).as_posix()}: names {c} (dropped/renamed by a cache migration)"
+           for d in ("src", "examples", "tests") if (TAURI / d).exists()
+           for p in (TAURI / d).rglob("*.rs") if p != cache
+           for c in gone if re.search(rf"\b{c}\b", p.read_text(encoding="utf-8"))]
+    if bad:
+        failures.append("dropped cache columns")
+        print("--- dropped cache columns: FAIL\n" + "\n".join(bad))
+
+
+def check_no_snapshot_id_compare_in_docs():
+    # M5 audit r1: the M5 plan still said "compare snapshot_id" after the live 2026-10-20 result
+    # (GET serves a stale one); a session following the plan would bring the check back (TSD §5.2).
+    bad = [f"{p.relative_to(ROOT).as_posix()}:{i}" for p in (ROOT / "docs").rglob("*.md")
+           for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+           if re.search(r"compar\w*\s+(?:the\s+)?`?snapshot_id", line, re.I)
+           # audit r2: only the snapshot_id GET is verified stale; items freshness is an Assumption
+           or ("eventually consistent" in line and "snapshot_id" not in line and "Assumption" not in line)]
+    if bad:
+        failures.append("no snapshot_id compare in docs")
+        print("--- no snapshot_id compare in docs: FAIL (Studio checks track content, TSD §5.2)\n" + "\n".join(bad))
+
+
+def check_example_usage():
+    # audit r2: a dev example's `--flag` that its `//!` usage line doesn't name is a step only a
+    # commit message describes (studio_roundtrip --probe).
+    bad = []
+    for p in (ROOT / "src-tauri" / "examples").glob("*.rs"):
+        src = p.read_text(encoding="utf-8")
+        usage = "\n".join(l for l in src.splitlines() if l.startswith("//!"))
+        for flag in re.findall(r'a == "(--[\w-]+)"', src):
+            if flag not in usage:
+                bad.append(f"{p.relative_to(ROOT).as_posix()}: {flag} missing from the //! usage")
+    if bad:
+        failures.append("example usage")
+        print("--- example usage: FAIL\n" + "\n".join(bad))
+
+
+def check_mock_conflicts():
+    # audit M5 / G-9: every API.md §5 command whose notes promise `conflict` fails with it in the
+    # mocks' "conflict" dev state (CONFLICT map in src/mocks/index.ts), so the screen is reachable.
+    mock = ROOT / "src/mocks/index.ts"
+    sec = re.search(r"^## 5\..*?(?=^## )", (ROOT / "docs/API.md").read_text(encoding="utf-8"), re.S | re.M)
+    if not (mock.exists() and sec):
+        return
+    m = re.search(r"const CONFLICT[^=]*=\s*\{(.*?)\n\};", mock.read_text(encoding="utf-8"), re.S)
+    keys = set(re.findall(r"^\s*(\w+):", m.group(1), re.M)) if m else set()
+    bad = []
+    for cmds, notes in re.findall(r"^\| (`[a-z_]+`(?: / `[a-z_]+`)*) \|(.*)$", sec.group(0), re.M):
+        if "`conflict`" in notes:
+            bad += [f"src/mocks/index.ts CONFLICT lacks '{c}' (API.md §5 says it returns conflict)"
+                    for c in re.findall(r"`([a-z_]+)`", cmds) if c not in keys]
+    if bad:
+        failures.append("mock conflicts")
+        print("--- mock conflicts: FAIL\n" + "\n".join(bad))
+
+
+def check_mock_utc_times():
+    # audit M10: a mock *_at / *_utc time without the trailing Z (API.md §1: times are ISO-8601 UTC) hid a UI that read a
+    # UTC imported_at as a local date. Local times are named *_local; *_at / *_utc literals must end in Z.
+    bad = [f"{p.relative_to(ROOT)}:{t.count(chr(10), 0, m.start()) + 1} {m.group(0)}"
+           for p in (ROOT / "src/mocks").glob("*.ts") if not p.name.endswith(".test.ts")
+           for t in [p.read_text(encoding="utf-8")]
+           for m in re.finditer(r'\b\w+_(?:at|utc)\s*:\s*"\d{4}-\d\d-\d\dT[^"]*(?<!Z)"', t)]
+    if bad:
+        failures.append("mock UTC times")
+        print("--- mock UTC times: FAIL (API.md §1: end *_at / *_utc in Z)\n" + "\n".join(bad))
+
+
+def check_mock_r3_parity():
+    # M5 audit round 4: the R3 mocks behave like Rust at the M7 switch (API.md §7, M2 WI 3).
+    # Every API.md §5 command but status/connect/disconnect answers spotify_auth when disconnected
+    # (Rust require_connected); bulk_add_album_tracks skips tracks already in the library; apply
+    # compares the current items with the draft before the snapshot and the write, and apply/undo
+    # never decide on snapshot_id (GET serves a stale one after a write, TSD §5.2, 2026-10-20).
+    mock = (ROOT / "src/mocks/index.ts").read_text(encoding="utf-8")
+    sec = re.search(r"^## 5\..*?(?=^## )", (ROOT / "docs/API.md").read_text(encoding="utf-8"), re.S | re.M)
+    bad = []
+    cmds = re.findall(r"`([a-z_]+)`", " ".join(re.findall(r"^\| (`[a-z_]+`(?: / `[a-z_]+`)*) \|", sec.group(0), re.M))) if sec else []
+    for c in cmds:
+        if c in ("get_spotify_status", "connect_spotify", "disconnect_spotify", "get_inbox"):  # get_inbox: settings only
+            continue
+        m = re.search(rf"^  {c}: (.*?)(?=^  \w+: |^}};)", mock, re.S | re.M)
+        if not m or "spotifyOn()" not in m.group(1):
+            bad.append(f"src/mocks/index.ts: {c} handler lacks spotifyOn() (Rust answers spotify_auth when disconnected)")
+    m = re.search(r"^  bulk_add_album_tracks: (.*?)(?=^  \w+: )", mock, re.S | re.M)
+    if not m or "existingFor(" not in m.group(1) or m.group(1).find("existingFor(") > m.group(1).find("items.push"):
+        bad.append("src/mocks/index.ts: bulk_add_album_tracks must look up existingFor( before items.push (API.md §5)")
+    studio = (TAURI / "src/spotify/studio.rs").read_text(encoding="utf-8")
+    m = re.search(r"pub async fn apply_studio_draft.*?\n}\n", studio, re.S)
+    body = m.group(0) if m else ""
+    if not (0 <= body.find("current_uris(sp") < body.find("Code::Conflict") < body.find("put_snapshot(") < body.find("replace(")):
+        bad.append("src-tauri/src/spotify/studio.rs: apply_studio_draft must read current_uris(, conflict, put_snapshot(, then replace( (TSD §5.2)")
+    if not (0 <= body.find("Code::Conflict") < body.find("unsure_since(") < body.find("put_snapshot(")):
+        bad.append("src-tauri/src/spotify/studio.rs: apply_studio_draft must check unsure_since( (UNSURE_WAIT) after the conflict check and before put_snapshot( (TSD §5.2, audit r5)")
+    for fn in ("apply_studio_draft", "undo_last_apply", "replace"):
+        m = re.search(rf"\n(?:pub )?async fn {fn}\b.*?\n}}\n", studio, re.S)
+        if not m or "snapshot_id(sp" in m.group(0):
+            bad.append(f"src-tauri/src/spotify/studio.rs: {fn} must not decide on snapshot_id( (GET serves a stale one, TSD §5.2)")
+    if bad:
+        failures.append("mock R3 parity")
+        print("--- mock R3 parity: FAIL\n" + "\n".join(bad))
+
+
+def check_insights_no_cache():
+    # M4 acceptance / FR-031: insights read the library DB only, never the Spotify cache (source A).
+    d = TAURI / "src" / "insights"
+    bad = [str(p.relative_to(ROOT)) for p in d.rglob("*.rs") if "spotify_cache" in p.read_text(encoding="utf-8")] if d.exists() else []
+    if bad:
+        failures.append("insights no cache")
+        print("--- insights no cache: FAIL\n" + "\n".join(bad))
+
+
+def check_net_hosts_parity():
+    # TSD §7: net.rs ALLOWED_HOSTS must equal check.py ALLOWED_HOSTS minus the local hosts.
+    m = re.search(r"ALLOWED_HOSTS: \[&str; \d+\] = \[(.*?)\];", (TAURI / "src" / "net.rs").read_text(encoding="utf-8"), re.S)
+    rust = set(re.findall(r'"([^"]+)"', m.group(1))) if m else set()
+    want = ALLOWED_HOSTS - {"127.0.0.1", "localhost"}
+    if rust != want:
+        failures.append("net hosts parity")
+        print(f"--- net hosts parity: FAIL only in net.rs {sorted(rust - want)}, only in check.py {sorted(want - rust)}")
+
+
+def check_enrich_no_spotify():
+    # TSD §5.4 / BRD §5.1 M: names sent to the open music database come from U/S/E only, never source A.
+    d = TAURI / "src" / "enrich"
+    bad = [f"{p.relative_to(ROOT)}: {w}" for p in (d.rglob("*.rs") if d.exists() else [])
+           for w in ("spotify_cache", "cache::", "spotify::") if w in p.read_text(encoding="utf-8")]
+    if bad:
+        failures.append("enrich no spotify")
+        print("--- enrich no spotify: FAIL", *bad, sep="\n")
+
+
+def check_test_temp_dirs():
+    # Tests make temp dirs only through the Drop guards (lib.rs `test_dir::TempDir`, tests/common
+    # `temp_dir`): bare std::env::temp_dir() dirs were never removed (~40k leaked, 1 Nov 2026).
+    allowed = {TAURI / "src" / "lib.rs", TAURI / "tests" / "common" / "mod.rs",
+               TAURI / "src" / "insights" / "v3_tests.rs"}  # TODO: owned by a parallel change; convert, then drop
+    bad = [str(p.relative_to(ROOT)) for d in ("src", "tests") for p in (TAURI / d).rglob("*.rs")
+           if p not in allowed and "std::env::temp_dir()" in p.read_text(encoding="utf-8")]
+    # A guard made as a temporary (`f(&temp_dir("x"))`) is dropped, and the dir removed, mid-test.
+    bad += [f"{p.relative_to(ROOT)}: temporary guard" for d in ("src", "tests") for p in (TAURI / d).rglob("*.rs")
+            if re.search(r"&(common::)?(temp_dir|tmp)\(|TempDir::new\([^)]*\)\s*\.", p.read_text(encoding="utf-8"))]
+    if bad:
+        failures.append("test temp dirs")
+        print("--- test temp dirs: FAIL (use crate::test_dir::TempDir / common::temp_dir)", *bad, sep="\n")
+
+
+def check_migrations_numbered():
+    # TSD §3: MIGRATIONS[i] sets user_version i + 1, so file numbers must be 0001..N with no gap and
+    # one file per number. A gap (two tracks reserving numbers) would skip a migration on upgrade.
+    f = TAURI / "src" / "db" / "mod.rs"
+    if not f.exists():
+        return
+    names = re.findall(r'include_str!\("\.\./\.\./migrations/(\d{4})_[^"]+\.sql"\)', f.read_text(encoding="utf-8"))
+    files = sorted(p.name[:4] for p in (TAURI / "migrations").glob("*.sql"))
+    want = [f"{i:04d}" for i in range(1, len(names) + 1)]
+    if names != want or files != want:
+        failures.append("migrations numbered")
+        print("--- migrations numbered: FAIL", f"MIGRATIONS {names}", f"files {files}", f"want {want}", sep="\n")
+
+
+def check_listening_event_reads():
+    # G-20 / audit 4f53129: listening_event reads go through insights::base (reconciled rows out,
+    # private sessions per setting). A direct read needs `// unfiltered: <reason>` on the line or up to 2 lines above.
+    # Every reader is scanned; importer/ (except playlists.rs) and db/ are the writers and migrations.
+    src = TAURI / "src"
+    read_pat = re.compile(r"\b(?:FROM|JOIN)\s+listening_event\b", re.S)
+    bad = []
+    for p in src.rglob("*.rs"):
+        rel = p.relative_to(src).as_posix()
+        if rel.startswith("db/") or (rel.startswith("importer/") and rel != "importer/playlists.rs"):
+            continue
+        text = p.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        for m in read_pat.finditer(text):
+            i = text.count("\n", 0, m.start())
+            fn = next((f.group(1) for l in reversed(lines[:i + 1]) if (f := re.search(r"\bfn (\w+)", l))), None)
+            if rel == "insights/mod.rs" and fn == "base":
+                continue
+            if not any(re.search(r"// unfiltered: \S", l) for l in lines[max(i - 2, 0):i + 1]):
+                bad.append(f"src-tauri/src/{rel}:{i + 1}: read insights::base, or add `// unfiltered: <reason>`")
+    if bad:
+        failures.append("listening_event reads")
+        print("--- listening_event reads: FAIL\n" + "\n".join(bad))
+
+
+def check_settings_clone_then_assign():
+    # G-20: cloning the settings, releasing the guard, then assigning loses a concurrent change.
+    # Use AppState::edit_settings (one guard from read to write) instead.
+    clone = re.compile(r"settings_now\(|settings\.lock\(\)\.unwrap\(\)\.clone\(\)")
+    assign = re.compile(r"\*[^;\n]*settings\.lock\(\)\.unwrap\(\)\s*=[^=]")
+    bad = []
+    for p in (TAURI / "src").rglob("*.rs"):
+        for body in re.split(r"\n\s*(?:pub(?:\(crate\))? )?fn ", p.read_text(encoding="utf-8")):
+            c = clone.search(body)
+            # also `let mut g = …settings.lock().unwrap(); … *g = s;`
+            guards = [g.group(1) for g in re.finditer(r"let mut (\w+) = [^;]*settings\.lock\(\)\.unwrap\(\);", body)]
+            via_guard = c and any(re.search(rf"\*{g}\s*=[^=]", body[c.end():]) for g in guards)
+            if c and (assign.search(body, c.end()) or via_guard):
+                bad.append(f"{p.relative_to(ROOT)}: fn {body.split('(')[0].split()[-1]} clones settings then assigns; use edit_settings")
+    if bad:
+        failures.append("settings clone-then-assign")
+        print("--- settings clone-then-assign: FAIL\n" + "\n".join(bad))
 
 
 def check_ui_purity():
@@ -71,8 +497,21 @@ def check_ui_purity():
                 bad.append(f"{rel}:{i}: hard-coded source tag fallback; use `?? []`")
             if "]${" in line:  # Tailwind can't see an arbitrary-value class glued to ${...}; the rule is never generated
                 bad.append(f"{rel}:{i}: put a space between ']' and '${{' in class strings")
+            if re.search(r"\be as AppError\b|isAppError\(e\) \? e : undefined", line):  # a non-AppError throw would vanish or crash
+                bad.append(f"{rel}:{i}: convert caught errors with toAppError(e) from api.ts")
             if "@tauri-apps/api" in line and rel != "src/api.ts":
                 bad.append(f"{rel}:{i}: only src/api.ts may import @tauri-apps/api")
+            # audit M5 (r3): a toast's Undo that calls api.* bare drops the promise: a failure or
+            # conflict is silent and nothing reloads; pass the page's handler instead
+            if re.search(r"toast\([^;]*,\s*\(\)\s*=>\s*api\.\w+\([^)]*\)\s*\)", line):
+                bad.append(f"{rel}:{i}: toast undo calls api.* bare; pass a handler that shows errors and reloads")
+    # audit M5 (r3): a failed write may still have changed data (a Spotify write that timed out
+    # keeps an undo, TSD §5.2), so readers refetch after every write command, failed or not
+    api = src / "api.ts"
+    if api.exists():
+        m = re.search(r"\nasync function call<T>.*?\n\}\n", api.read_text(encoding="utf-8"), re.S)
+        if not (m and re.search(r"finally\s*\{[^}]*invalidate\(\)", m.group(0))):
+            bad.append("src/api.ts: call() must invalidate() in a finally (a failed write may have changed data)")
     if bad:
         failures.append("ui purity")
         print("--- ui purity: FAIL\n" + "\n".join(bad))
@@ -99,6 +538,247 @@ def check_contract_and_attribution():
         print("--- contract + attribution: FAIL\n" + "\n".join(sorted(set(bad))))
 
 
+# API.md sections whose commands must be registered in commands.rs.
+COMMAND_SECTIONS = ["3", "4", "5"]
+# Contract first (API.md §7): commands specified, wrapped in api.ts and mocked before their Rust exists.
+# Each still needs its api.ts export and a mock handler; remove a name once commands.rs registers it
+# (the check fails until you do, so nothing stays pending by accident).
+PENDING_RUST: set[str] = set()  # M10 saved Explore views: Rust built in WI 5
+
+# Same for new fields of existing commands (api.ts types + mocks first, Rust serde later). Each must be in
+# src/api.ts; the check fails once src-tauri/src mentions it, so the entry gets removed.
+PENDING_RUST_FIELDS: dict[str, list[str]] = {}
+
+
+def check_commands():
+    # API.md §7: every API.md command in COMMAND_SECTIONS is in commands.rs's generate_handler! list
+    # and has its camelCase export in src/api.ts.
+    cmds = TAURI / "src/commands.rs"
+    if not cmds.exists() or "generate_handler!" not in cmds.read_text(encoding="utf-8"):
+        return
+    spec = (ROOT / "docs/API.md").read_text(encoding="utf-8")
+    want = []
+    for sec in COMMAND_SECTIONS:
+        body = re.search(rf"^## {sec}\..*?(?=^## )", spec, re.S | re.M).group(0)
+        for row in re.findall(r"^\| (`[a-z_]+`(?: / `[a-z_]+`)*) \|", body, re.M):
+            want += re.findall(r"`([a-z_]+)`", row)
+    reg = re.search(r"generate_handler!\[(.*?)\]", cmds.read_text(encoding="utf-8"), re.S).group(1)
+    registered = set(re.findall(r"\w+", reg))
+    api = (ROOT / "src/api.ts").read_text(encoding="utf-8")
+    camel = lambda n: re.sub(r"_(\w)", lambda m: m.group(1).upper(), n)
+    bad = [f"API.md command '{n}' not registered in commands.rs" for n in want if n not in registered and n not in PENDING_RUST]
+    mocks = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "src/mocks").glob("*.ts"))
+    for n in sorted(PENDING_RUST):
+        if n in registered:
+            bad.append(f"commands.rs registers '{n}': remove it from PENDING_RUST in scripts/check.py")
+        if n not in want:
+            bad.append(f"PENDING_RUST '{n}' is not an API.md §3-5 command")
+        if not re.search(rf"\b{n}: ", mocks):
+            bad.append(f"PENDING_RUST '{n}' has no handler in src/mocks/")
+    rs_all = "".join(p.read_text(encoding="utf-8") for p in (TAURI / "src").rglob("*.rs"))
+    for owner, fields in PENDING_RUST_FIELDS.items():
+        for f in fields:
+            if not re.search(rf"\b{f}\??:", api):
+                bad.append(f"PENDING_RUST_FIELDS {owner}.{f} is not in src/api.ts")
+            if f != "date" and re.search(rf"\b{f}\b", rs_all):
+                bad.append(f"src-tauri has '{f}': remove {owner}.{f} from PENDING_RUST_FIELDS in scripts/check.py")
+    print("--- commands: pending Rust: " + ", ".join(sorted(PENDING_RUST)) + "; fields: "
+          + ", ".join(f"{o}.{f}" for o, fs in PENDING_RUST_FIELDS.items() for f in fs))
+    bad += [f"API.md command '{n}' has no `export const {camel(n)}` in src/api.ts" for n in want
+            if not re.search(rf"export const {camel(n)}\b", api)]
+    if not want:
+        bad.append("no commands parsed from API.md (table format changed?)")
+    # Each api.ts wrapper is named camel(cmd), and every arg key it passes is a camelCased parameter of
+    # that command in commands.rs (state/app handles excluded). Commands not in commands.rs yet are skipped.
+    rs = cmds.read_text(encoding="utf-8")
+    calls = re.findall(r'export const (\w+) = [^;]*?\bcall<.*?>\("(\w+)"(.*?)\);\n', api, re.S)
+    for name, cmd, rest in calls:
+        if camel(cmd) != name:
+            bad.append(f"src/api.ts: '{name}' calls '{cmd}' (expected export const {camel(cmd)})")
+        fn = re.search(rf"pub (?:async )?fn {cmd}(?:<[^>]*>)?\((.*?)\) ->", rs, re.S)
+        obj = rest.strip().removeprefix(",").strip()
+        if not fn or not obj.startswith("{"):
+            continue
+        params = {camel(n) for n in re.findall(r"(\w+): (?!St<|State<|AppHandle<|tauri::)", fn.group(1))}
+        depth, keys = 0, [""]
+        for ch in obj[1:]:  # top-level keys of the args object literal
+            if ch in "})]" and depth == 0:
+                break
+            depth += (ch in "{([") - (ch in "})]")
+            if ch == "," and depth == 0:
+                keys.append("")
+            else:
+                keys[-1] += ch
+        for k in (m.group(1) for m in (re.match(r"\s*(\w+)", x) for x in keys) if m):
+            if k not in params:
+                bad.append(f"src/api.ts {name}: arg '{k}' is not a parameter of commands.rs {cmd}({', '.join(sorted(params))})")
+    if not calls:
+        bad.append('no call<...>("cmd") wrappers parsed from src/api.ts')
+    if bad:
+        failures.append("commands")
+        print("--- commands: FAIL" + chr(10) + chr(10).join(bad))
+
+
+def check_release_build():
+    # M6 audit: the installed build ran on mocks (no VITE_MOCK=0 for `vite build`); a custom NSIS language
+    # file replaces Tauri's whole table (27 strings in cli 2.12.3); the pre-uninstall hook runs before the
+    # template closes the app, so the hook must close it before cleaning up.
+    bad = []
+    env = ROOT / ".env.production"
+    if not (env.exists() and re.search(r"^VITE_MOCK=0\s*$", env.read_text(encoding="utf-8"), re.M)):
+        bad.append(".env.production must set VITE_MOCK=0 (tauri build -> npm run build)")
+    if not re.search(r"export const loadMocks = .*VITE_MOCK", (ROOT / "src" / "api.ts").read_text(encoding="utf-8")):
+        bad.append("src/api.ts: loadMocks must check VITE_MOCK beside the import so a real build drops the mocks")
+    lib = (TAURI / "src" / "lib.rs").read_text(encoding="utf-8")
+    if "prevent_close" in lib and "tauri_plugin_single_instance" not in lib:
+        bad.append("src-tauri/src/lib.rs: close hides to tray, so register tauri_plugin_single_instance (one logger, one pause)")
+    conf = json.loads((TAURI / "tauri.conf.json").read_text(encoding="utf-8"))
+    wv2 = conf["app"]["windows"][0].get("additionalBrowserArgs", "")
+    # Setting it replaces wry's defaults, so keep them; background networking off = no idle WebView2 calls (NFR-07).
+    for flag in ("msSmartScreenProtection", "--disable-background-networking", "--disable-component-update"):
+        if flag not in wv2:
+            bad.append(f"tauri.conf.json additionalBrowserArgs lacks {flag} (M6 network capture)")
+    if any(w.get("create") is False for w in conf["app"]["windows"]) and not ("from_config" in lib and "on_new_window" in lib):
+        bad.append("tauri.conf.json window has create:false but lib.rs never builds it (from_config + on_new_window)")
+    lang = TAURI / "windows" / "English.nsh"
+    if lang.exists():
+        keys = re.findall(r"^LangString (\w+) ", lang.read_text(encoding="utf-8"), re.M)
+        if len(keys) < 27 or "addOrReinstall" not in keys:
+            bad.append(f"{lang.relative_to(ROOT)}: {len(keys)} LangStrings; copy Tauri's full English table")
+    hook = TAURI / "windows" / "hooks.nsh"
+    if hook.exists():
+        h = hook.read_text(encoding="utf-8")
+        if "ExecWait" in h and not (0 <= h.find("CheckIfAppIsRunning") < h.find("ExecWait")):
+            bad.append(f"{hook.relative_to(ROOT)}: close the app (CheckIfAppIsRunning) before --uninstall-cleanup")
+    if bad:
+        failures.append("release build")
+        print("--- release build: FAIL\n" + "\n".join(bad))
+
+
+def check_no_mocks_in_build():
+    # M7 plan step 6: the shipped (VITE_MOCK=0) bundle graph holds nothing from src/mocks. Every module that
+    # contributes code is listed in the sourcemaps' `sources`; build them into a temp dir, never dist/.
+    if not (ROOT / "src" / "mocks").exists():
+        return
+    import tempfile
+    with tempfile.TemporaryDirectory() as out:
+        r = subprocess.run(f'npx vite build --mode production --sourcemap --outDir "{out}" --emptyOutDir --logLevel error',
+                           cwd=ROOT, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        maps = list(Path(out).rglob("*.js.map"))
+        bad = [f"{m.name}: {src}" for m in maps for src in json.loads(m.read_text(encoding="utf-8"))["sources"]
+               if re.search(r"(^|[\/])src[\/]mocks[\/]", src)]
+        if r.returncode or not maps:
+            bad.append("production vite build failed or wrote no sourcemaps: " + (r.stdout + r.stderr)[-2000:])
+    if bad:
+        failures.append("no mocks in build")
+        print("--- no mocks in build: FAIL (src/mocks reached the VITE_MOCK=0 bundle)\n" + "\n".join(bad))
+
+
+SPOTIFY_WRITES = re.compile(
+    r"""invoke\(\s*["'`](apply_studio_draft|undo_last_apply|save_to_spotify_library|remove_from_spotify_library|check_inbox"""
+    r"""|create_inbox|create_playlist_from_filter|create_playlist_from_items|connect_spotify)["'`]"""
+    r"""|(activate|byName|nameStarts)\(.*["'`](Check now|Create Inbox|Create playlist|Undo last apply|Saved in your Spotify library|Apply \d)"""
+    r"""|activate\(.*Apply \\+d""")
+# invoke( with a computed command can hide a write: only the wrapper definitions may do it.
+DYNAMIC_INVOKE = re.compile(r"""\binvoke\(\s*(?!["'`])""")
+GATE = re.compile(r"(?<![!\w])(PLAYLIST|INBOX)\b")
+
+
+def check_installed_spotify_writes():
+    # M7 review r3: the installed journeys run on the user's real Spotify account. Every Spotify write (a command or
+    # the UI control that sends it) sits under a top-level `if (` that names PLAYLIST (RUNOUT_TEST_PLAYLIST) or INBOX
+    # (RUNOUT_INBOX), not negated, and opening a block (or carrying the write on its own line). Heuristic: the
+    # nearest column-0 `if (` above the line is its gate.
+    bad = []
+    for f in sorted((ROOT / "scripts" / "installed").glob("*.mjs")):
+        lines = f.read_text(encoding="utf-8").splitlines()
+        text = "\n".join(lines)
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("//"):
+                continue
+            if DYNAMIC_INVOKE.search(line) and "const invoke = (" not in line:
+                bad.append(f"{f.relative_to(ROOT)}:{i + 1}: invoke( with a non-literal command: {line.strip()[:90]}")
+            if not SPOTIFY_WRITES.search(line):
+                continue
+            j = next((j for j in range(i, -1, -1) if lines[j].startswith("if (")), None)
+            gate = lines[j] if j is not None else ""
+            names = {m.group(1) for m in GATE.finditer(gate)}
+            ok = (("PLAYLIST" in names and "process.env.RUNOUT_TEST_PLAYLIST" in text) or
+                  ("INBOX" in names and "process.env.RUNOUT_INBOX" in text)) and (gate.rstrip().endswith("{") or j == i)
+            if not ok:
+                bad.append(f"{f.relative_to(ROOT)}:{i + 1}: Spotify write not gated by RUNOUT_TEST_PLAYLIST/RUNOUT_INBOX: {line.strip()[:90]}")
+    if bad:
+        failures.append("installed journeys gate Spotify writes")
+        print("--- installed journeys gate Spotify writes: FAIL\n" + "\n".join(bad))
+
+
+def check_link_parity():
+    # TSD §4.1: every row of src/lib/link.test.ts TABLE is in links.rs parse_table with the same state,
+    # so the mock parser and the real one agree. `${A}` <-> `{A}`; any other `${...}` <-> a `{}` arg.
+    ts_p, rs_p = ROOT / "src/lib/link.test.ts", TAURI / "src/links.rs"
+    if not (ts_p.exists() and rs_p.exists()):
+        return
+    table = re.search(r"const TABLE.*?= \[(.*?)\n\];", ts_p.read_text(encoding="utf-8"), re.S).group(1)
+    norm = lambda s: re.sub(r"\$\{[^}]*\}", "{}", s.replace("${A}", "{A}"))
+    ts = [(norm(raw), state + (":" + kind if kind else "")) for _, raw, state, kind in
+          re.findall(r'\[([`"])(.*?)\1,\s*\{\s*state:\s*"(\w+)"(?:,\s*type:\s*"(\w+)")?', table)]
+    body = re.search(r"fn parse_table\(\).*?\n    \}\n", rs_p.read_text(encoding="utf-8"), re.S).group(0)
+    rows = re.findall(r'\(\s*(?:format!\(\s*)?"((?:[^"\\]|\\.)*)".*?,\s*(?:ok\("(\w+)"\)|st\((\w+)\))\s*,?\s*\)',
+                      body, re.S)
+    rs = {(raw, f"ok:{kind}" if kind else state.lower()) for raw, kind, state in rows}
+    bad = [f"link.test.ts TABLE row {raw!r} -> {want}: no matching row in links.rs parse_table"
+           for raw, want in ts if (raw, want) not in rs]
+    if not ts:
+        bad.append("no rows parsed from link.test.ts TABLE (format changed?)")
+    if bad:
+        failures.append("link parity")
+        print("--- link parity: FAIL\n" + "\n".join(bad))
+
+
+def check_no_committed_client_id():
+    # M5 plan step 0: the Spotify client ID is never in the repo. Scan every tracked or new
+    # (not ignored) text file for a 32-hex value or an assigned RUNOUT_SPOTIFY_CLIENT_ID.
+    r = subprocess.run("git ls-files --cached --others --exclude-standard", cwd=ROOT, shell=True,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    pat = re.compile(r"\b[0-9a-f]{32}\b|RUNOUT_SPOTIFY_CLIENT_ID\s*[=:]\s*[\"']?[0-9A-Za-z]{32}")
+    skip = {".lock", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".icns", ".woff", ".woff2", ".zip", ".docx", ".pdf"}
+    bad = []
+    for rel in r.stdout.splitlines():
+        p = ROOT / rel
+        if p.suffix.lower() in skip or p.name == "package-lock.json" or not p.is_file():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        bad += [f"{rel}:{i}" for i, line in enumerate(text.splitlines(), 1) if pat.search(line)]
+    if bad:
+        failures.append("no client id in repo")
+        print("--- no client id in repo: FAIL (32-hex value or assigned client ID)\n" + "\n".join(bad))
+
+
+def check_deferrals_tracked():
+    # Nothing deferred may be lost: an unticked acceptance line marked "(open" must name a
+    # G-n row in Known gaps or a U-n hard stop, and every Known gaps row must say where it's fixed.
+    text = (ROOT / "docs" / "MILESTONES.md").read_text(encoding="utf-8")
+    gaps = re.search(r"### Known gaps\n(.*?)\n---", text, re.S)
+    rows = {m.group(1): m.group(2) for m in re.finditer(r"^\| (G-\d+) \|.*\| ([^|]*) \|\s*$", gaps.group(1) if gaps else "", re.M)}
+    bad = [f"Known gaps {g}: empty 'Fix in'" for g, fix in rows.items() if not fix.strip()]
+    for i, line in enumerate(text.splitlines(), 1):
+        if line.startswith("- [ ]") and "(open" in line:
+            refs = re.findall(r"\b([GU]-\d+)\b", line)
+            if not any(r.startswith("U-") or r in rows for r in refs):
+                bad.append(f"docs/MILESTONES.md:{i}: open acceptance line names no Known gaps G-n or U-n")
+    # a "ponytail: no ... yet" comment defers a feature: it must cite a Known gaps G-n (M10 WI 9 review)
+    for p in [*(TAURI / "src").rglob("*.rs"), *(ROOT / "src").rglob("*.ts"), *(ROOT / "src").rglob("*.tsx")]:
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"ponytail: no\b.*\byet\b", line) and not any(g in rows for g in re.findall(r"\bG-\d+\b", line)):
+                bad.append(f"{p.relative_to(ROOT)}:{i}: deferral comment names no Known gaps G-n")
+    if bad:
+        failures.append("deferrals tracked")
+        print("--- deferrals tracked: FAIL\n" + "\n".join(bad))
+
+
 def check_source_map():
     # docs/SOURCE_MAP.md: every source file is mapped; every `built` row exists.
     rows = [line for line in (ROOT / "docs/SOURCE_MAP.md").read_text(encoding="utf-8").splitlines()
@@ -106,12 +786,23 @@ def check_source_map():
     mapped = [re.match(r"\| `([^`]+)`", r).group(1).rstrip("/") for r in rows]
     bad = [f"built but missing: {p}" for p, r in zip(mapped, rows)
            if r.rstrip(" |").endswith("built") and not (ROOT / p).exists()]
+    bad += [f"duplicate row: {p}" for p in sorted({p for p in mapped if mapped.count(p) > 1})]
+    # every example named in the examples row exists, unless its note says "planned"/"not in repo"
+    for p, r in zip(mapped, rows):
+        if p == "src-tauri/examples":
+            for m in re.finditer(r"`([\w.-]+\.rs)`([^`]*)", r):
+                if not (ROOT / p / m.group(1)).exists() and not re.search(r"planned|not in repo", m.group(2)):
+                    bad.append(f"named in the {p}/ row but missing: {m.group(1)}")
     for d in (TAURI / "src", TAURI / "migrations", ROOT / "src"):
         if d.exists():
             for f in (f for f in d.rglob("*") if f.is_file()):
                 rel = f.relative_to(ROOT).as_posix()
                 if not any(rel == m or rel.startswith(m + "/") for m in mapped):
                     bad.append(f"unmapped: {rel}")
+    # M10 WI 5 review: 0011 hid behind the directory row; every migration is named in it.
+    sm = (ROOT / "docs/SOURCE_MAP.md").read_text(encoding="utf-8")
+    bad += [f"migration not named in SOURCE_MAP: {f.stem}" for f in sorted((TAURI / "migrations").glob("*.sql"))
+            if f"`{f.stem}`" not in sm]
     if bad:
         failures.append("source map")
         print("--- source map: FAIL\n" + "\n".join(bad))
@@ -173,6 +864,189 @@ def check_design():
         print("--- design: FAIL\n" + "\n".join(bad))
 
 
+def check_exit_flush():
+    # G-36 review: the RunEvent::Exit hook (also Windows shutdown/sign-out via tao's WM_ENDSESSION) must
+    # save the play in progress; no test sees lib.rs's run closure, so check the wiring here.
+    p = TAURI / "src/lib.rs"
+    m = re.search(r"\.run\(\|[^|]*\|[^)]*?RunEvent::Exit.*?tray::flush_on_exit\(", p.read_text(encoding="utf-8"), re.S) if p.exists() else None
+    if not m:
+        failures.append("exit flush")
+        print("--- exit flush: FAIL (lib.rs .run(|app, e| ...) must call tray::flush_on_exit on RunEvent::Exit)")
+
+
+
+def check_hover_keeps_selected():
+    # M8 (segments) and M9 (switch thumb) review: a :hover rule outranked the selected/checked rule of the same control
+    # and made the selected state unreadable on hover. A hover that paints (color/background/box-shadow/border-color) a control that also has a
+    # :checked / aria-selected / aria-checked rule must exclude that state with :not(...).
+    css = re.sub(r"/\*.*?\*/", "", (ROOT / "src/styles/app.css").read_text(encoding="utf-8"), flags=re.S)
+    rules = [(sel.strip(), body) for sel, body in re.findall(r"([^{}@]+)\{([^{}]*)\}", css)]
+    paints = lambda body: re.search(r"(?<![-\w])(background|color|box-shadow|border-color)\s*:", body)
+    state = re.compile(r':checked|aria-(selected|checked)="true"')
+    bad = []
+    for sel, body in rules:
+        for part in sel.split(","):
+            part = part.strip()
+            if ":hover" not in part or not paints(body) or re.search(r":not\((:checked|\[aria-(selected|checked))", part):
+                continue
+            base = re.split(r"[:\[]", part)[0].strip()
+            if any(state.search(o) and o.strip().startswith(base) and paints(b) for s2, b in rules for o in s2.split(",")):
+                bad.append(part)
+    if bad:
+        failures.append("hover keeps selected")
+        print("--- hover keeps selected: FAIL (add :not(:checked) / :not([aria-selected=\"true\"]) to:)")
+        print("\n".join("  " + b for b in bad))
+    else:
+        print("--- hover keeps selected: ok")
+
+
+def check_reduced_motion_js():
+    # M9 WI 3 review: MotionConfig reducedMotion="user" stops transform animations only. useSpring still glides and
+    # AnimatePresence still fades and waits, so a file using them must also read useReducedMotion and act on it.
+    bad = []
+    for f in (ROOT / "src").rglob("*.tsx"):
+        t = f.read_text(encoding="utf-8")
+        if '"motion/react"' not in t:
+            continue
+        rel = f.relative_to(ROOT).as_posix()
+        if "useSpring(" in t and not ("useReducedMotion" in t and ".jump(" in t):
+            bad.append(f"{rel}: useSpring without a reduced-motion jump()")
+        if "<AnimatePresence" in t and not re.search(r"transition=\{[^}]*reduce", t):
+            bad.append(f"{rel}: AnimatePresence swap without a reduced-motion transition (e.g. swap(reduce, ...))")
+        # M9 WI 5 review: an entrance `initial={{ ... }}` still fades late under reduced motion (MotionConfig drops only
+        # the transform); its element must read `reduce` (initial={reduce ? false : ...} or transition={swap(reduce, ...)}).
+        for mt in re.finditer(r"initial=\{\{", t):
+            tag = t[t.rfind("<m.", 0, mt.start()):mt.end() + 400]
+            if "reduce" not in tag:
+                bad.append(f"{rel}:{t.count(chr(10), 0, mt.start()) + 1}: Motion entrance ignores reduced motion (read `reduce`)")
+    if bad:
+        failures.append("reduced motion (JS)")
+        print("--- reduced motion (JS): FAIL")
+        print("\n".join("  " + b for b in bad))
+    else:
+        print("--- reduced motion (JS): ok")
+
+
+def check_compare_note():
+    # M10 WI 1 review (G-46): a like-for-like delta beside an all-device total misleads unless the page also shows
+    # the coverage note (desktop-only since / no-compare reason), so every page using likeForLike must use compareNote.
+    bad = [f.relative_to(ROOT).as_posix() for f in (ROOT / "src" / "pages").rglob("*.tsx")
+           if "likeForLike(" in (t := f.read_text(encoding="utf-8")) and "compareNote(" not in t]
+    if bad:
+        failures.append("compare note")
+        print("--- compare note: FAIL (likeForLike without compareNote: " + ", ".join(bad) + ")")
+    else:
+        print("--- compare note: ok")
+
+
+def check_series_coverage():
+    # M10 WI 7 review: a month/day series in API.md §4.1 without a `coverage` class draws a no-data month as an empty
+    # column, which reads as silence (API.md §4.1 "gaps ... never silence"). Every such series carries `coverage`.
+    api = (ROOT / "docs" / "API.md").read_text(encoding="utf-8")
+    sec = api.split("### 4.1", 1)[-1].split("\n## 5.", 1)[0]
+    bad = [m.group(0)[:60] for m in re.finditer(r"\{ *(?:month|key|date|day): string[^}]*\}\[\]", sec) if "coverage" not in m.group(0)]
+    if bad:
+        failures.append("series coverage")
+        print("--- series coverage: FAIL (API.md §4.1 month/day series without coverage: " + "; ".join(bad) + ")")
+    else:
+        print("--- series coverage: ok")
+
+
+def check_plays_page():
+    # M9 WI 4 review: Rust clamps list_plays to MAX_PAGE rows; the mock didn't, so paging that asked for more passed
+    # every UI check and stalled in the real app. The mock applies the same cap, and the Recent plays page asks for no more.
+    rs = re.search(r"const MAX_PAGE: i64 = (\d+);", (ROOT / "src-tauri/src/insights/plays.rs").read_text(encoding="utf-8"))
+    mock = re.search(r"const PLAYS_MAX_PAGE = (\d+);", (ROOT / "src/mocks/index.ts").read_text(encoding="utf-8"))
+    page = re.search(r"export const PAGE = (\d+);", (ROOT / "src/pages/Plays.tsx").read_text(encoding="utf-8"))
+    bad = []
+    if not (rs and mock and page):
+        bad.append("MAX_PAGE (plays.rs), PLAYS_MAX_PAGE (mocks) or PAGE (Plays.tsx) not found")
+    # Same for list_items (M9 WI 7): Backlog loads the whole backlog in one call, so it must not ask past Rust's MAX_LIMIT
+    lim = re.search(r"pub const MAX_LIMIT: i64 = ([\d_]+);", (ROOT / "src-tauri/src/library/filters.rs").read_text(encoding="utf-8"))
+    bl = re.search(r"const ALL = ([\d_]+);", (ROOT / "src/pages/Backlog.tsx").read_text(encoding="utf-8"))
+    if not (lim and bl):
+        bad.append("MAX_LIMIT (library/filters.rs) or ALL (Backlog.tsx) not found")
+    elif int(bl.group(1).replace("_", "")) > int(lim.group(1).replace("_", "")):
+        bad.append(f"Backlog.tsx ALL {bl.group(1)} > Rust list_items MAX_LIMIT {lim.group(1)}")
+    ml = re.search(r"const LIST_MAX_LIMIT = ([\d_]+);", (ROOT / "src/mocks/index.ts").read_text(encoding="utf-8"))
+    if lim and (not ml or ml.group(1).replace("_", "") != lim.group(1).replace("_", "")):
+        bad.append("mock LIST_MAX_LIMIT must equal Rust list_items MAX_LIMIT (the mock clamps like Rust)")
+    if rs and mock and page:
+        if rs.group(1) != mock.group(1):
+            bad.append(f"mock PLAYS_MAX_PAGE {mock.group(1)} != Rust MAX_PAGE {rs.group(1)}")
+        if int(page.group(1)) > int(rs.group(1)):
+            bad.append(f"Plays.tsx PAGE {page.group(1)} > Rust MAX_PAGE {rs.group(1)}")
+    if bad:
+        failures.append("plays page")
+        print("--- plays page: FAIL\n" + "\n".join("  " + b for b in bad))
+    else:
+        print("--- plays page: ok")
+
+
+def check_control_consistency():
+    # M9 consistency sweep: radii stay on DESIGN §3's scale (3 bars, 6 thumbnails + small/nested controls, 10 controls,
+    # 16 cards); `.embed` is Spotify's own 12px, `.proto` is dev-only. An aria-pressed toggle keeps one label (WAI-ARIA);
+    # an on/off setting is a Switch instead.
+    css = re.sub(r"/\*.*?\*/", "", (ROOT / "src/styles/app.css").read_text(encoding="utf-8"), flags=re.S)
+    ok = {"0", "3px", "6px", "10px", "16px", "50%", "inherit"}
+    bad = []
+    for sel, body in re.findall(r"([^{}@]+)\{([^{}]*)\}", css):
+        if re.search(r"\.(embed|proto)\b", sel):
+            continue
+        for v in re.findall(r"border-radius:\s*([^;]+)", body):
+            if any(t not in ok and not t.startswith("var(--radius-") for t in v.split()):
+                bad.append(f"app.css {sel.strip()[:50]}: border-radius {v.strip()} off the 3/6/10/16 scale")
+    for f in (ROOT / "src").rglob("*.tsx"):
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"aria-pressed=\{[^}]+\}[^>]*>\{[^}]*\?", line):
+                bad.append(f"{f.relative_to(ROOT)}:{i}: aria-pressed button with a changing label (use Switch or a fixed label)")
+            # M10 WI 9 review: DESIGN §5 "btn-danger: destructive"; a delete styled btn-light read as a safe action.
+            for cls in re.findall(r"<button[^>]*className=\"([^\"]*)\"[^>]*>[^<{]*\b(?:delete|discard)\b[^<]*</button>", line, re.I):
+                if "btn-danger" not in cls.split():
+                    bad.append(f"{f.relative_to(ROOT)}:{i}: a delete/discard button must be btn-danger (DESIGN §5)")
+    # Spotify's compact player cuts off its play button below 280 px (measured on a real album, 24 Oct 2026) (M9 Home, then Rediscover artwork
+    # mode on the 150 px tile grid): the artwork set's columns must never go below that.
+    art = re.search(r"\.tiles\.art\s*\{[^}]*minmax\((\d+)px", css)
+    if not art or int(art.group(1)) < 280:
+        bad.append("app.css .tiles.art: artwork columns must be minmax(>= 280px) (Spotify compact player, measured 24 Oct 2026)")
+    if 'className="tiles art"' not in (ROOT / "src/components/ui.tsx").read_text(encoding="utf-8"):
+        bad.append("ui.tsx ArtTiles: the artwork set must use the .tiles.art grid")
+    if bad:
+        failures.append("control consistency")
+        print("--- control consistency: FAIL")
+        print("\n".join("  " + b for b in bad))
+    else:
+        print("--- control consistency: ok")
+
+
+def check_doc_line_endings():
+    # M7 r8: a scripted edit stored docs/MILESTONES.md with CRLF and a lone CR (462-line diff for a
+    # 2-line change, blame lost). Staged/committed .md must be LF only.
+    out = subprocess.run(["git", "ls-files", "--eol", "--", "*.md"], cwd=ROOT, capture_output=True, text=True).stdout
+    bad = [l.split("	")[-1] for l in out.splitlines() if l.split()[:1] and l.split()[0] in ("i/crlf", "i/mixed")]
+    if bad:
+        failures.append("doc line endings")
+        print("--- doc line endings: FAIL (store as LF): " + ", ".join(bad))
+
+
+
+def check_doc_drift():
+    # M7 close review: a blank line split G-39 off the Known gaps table, and kb/SOURCE_MAP still
+    # pointed at U-10 as pending after it was done.
+    ms = (ROOT / "docs/MILESTONES.md").read_text(encoding="utf-8")
+    if re.search(r"\n\n\| G-\d+ \|", ms):
+        failures.append("doc drift")
+        print("--- doc drift: FAIL (blank line inside the Known gaps table: a G-n row renders as text)")
+    ua = (ROOT / "docs/USER_ACTIONS.md").read_text(encoding="utf-8")
+    done = set(re.findall(r"^\| (U-\d+) \|.*\*\*done", ua, re.M))
+    for f in [ROOT / "docs/SOURCE_MAP.md", *sorted((ROOT / "docs/kb").glob("*.md"))]:
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            for u in done:
+                if re.search(rf"(Not yet[^.|]*|open|stub-tested; live|live:) \(?{u}\)?(?![\d])(?! done)", line):
+                    failures.append("doc drift")
+                    print(f"--- doc drift: FAIL {f.relative_to(ROOT)}:{n} points at {u} as pending, but USER_ACTIONS marks it done")
+
+
 if (TAURI / "Cargo.toml").exists():
     run("cargo fmt", "cargo fmt --check", TAURI)
     run("cargo clippy", "cargo clippy --all-targets -- -D warnings", TAURI)
@@ -182,10 +1056,49 @@ if (ROOT / "package.json").exists():
     run("vitest", "npx vitest run --passWithNoTests", ROOT)
 check_hosts()
 check_no_oembed_or_tokens_logged()
+check_no_debug_output()
+check_kb_placeholders()
+check_one_item_summary()
+check_events()
+check_settings_paths()
+check_restore_marker_guards()
+check_db_swap_closes_logger_run()
+check_insights_no_cache()
+check_net_hosts_parity()
+check_enrich_no_spotify()
+check_migrations_numbered()
+check_test_temp_dirs()
+check_spotify_rules()
+check_boundary_values_kept()
+check_cache_schema_in_tsd()
+check_mock_conflicts()
+check_mock_r3_parity()
+check_mock_utc_times()
+check_dropped_cache_columns()
+check_no_snapshot_id_compare_in_docs()
+check_example_usage()
+check_no_committed_client_id()
+check_deferrals_tracked()
+check_listening_event_reads()
+check_settings_clone_then_assign()
 check_ui_purity()
 check_contract_and_attribution()
+check_commands()
+check_release_build()
+check_no_mocks_in_build()
+check_installed_spotify_writes()
+check_link_parity()
 check_source_map()
 check_design()
+check_exit_flush()
+check_hover_keeps_selected()
+check_reduced_motion_js()
+check_compare_note()
+check_series_coverage()
+check_plays_page()
+check_control_consistency()
+check_doc_line_endings()
+check_doc_drift()
 
 if HOOK and not failures:
     sys.exit(0)

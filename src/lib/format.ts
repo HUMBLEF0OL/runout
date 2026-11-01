@@ -38,6 +38,10 @@ export const age = (iso: string) => {
   return pl(Math.round(d / 30), "month");
 };
 export const hm = (ms: number) => { const m = Math.round(ms / 60000); return m >= 60 ? (m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`) : `${m}m`; };
+/** Listening time that stays short at any history size: "13h 26m" up to 100 hours, then whole hours ("9,843 h"). */
+export const hmBig = (ms: number) => (ms < 360_000_000 ? hm(ms) : `${num(Math.round(ms / 3_600_000))} h`);
+/** Chart hours: "1.9 h" under 10, then whole hours with grouping ("1,284 h"). */
+export const hrs = (h: number) => (h < 10 ? `${h.toFixed(1)} h` : `${num(Math.round(h))} h`);
 export const mmss = (ms: number) => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 export const stars = (r: number | null) => (r ? "★".repeat(Math.floor(r)) + (r % 1 ? "½" : "") : "");
 

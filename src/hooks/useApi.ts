@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getOnline, onEvent, onInvalidate, type AppError } from "../api";
 
 export interface ApiState<T> { data: T | undefined; error: AppError | undefined; loading: boolean; reload: () => void }
 
-/** Run a read command, refetch whenever data changes (any write command, dev state switch). */
-export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = []): ApiState<T> {
+/** Run a read command, refetch whenever data changes (any write command, dev state switch).
+ *  `live: false` reads once per deps change and on `reload()` only: for data the user is editing (Studio draft),
+ *  where a refetch triggered by an unrelated write would swap it out under them. Its `loading` is true for every
+ *  fetch (deps change, reload), so the old data, still in `data`, is never shown as current. */
+export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = [], live = true): ApiState<T> {
   const [state, setState] = useState<{ data?: T; error?: AppError; loading: boolean }>({ loading: true });
   const seq = useRef(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -16,14 +19,30 @@ export function useApi<T>(fn: () => Promise<T>, deps: unknown[] = []): ApiState<
       (error: AppError) => { if (n === seq.current) setState({ error, loading: false }); },
     );
   }, deps);
-  useEffect(() => { run(); return onInvalidate(run); }, [run]);
-  return { data: state.data, error: state.error, loading: state.loading && state.data === undefined, reload: run };
+  useEffect(() => { run(); return live ? onInvalidate(run) : undefined; }, [run, live]);
+  return { data: state.data, error: state.error, loading: state.loading && (!live || state.data === undefined), reload: run };
 }
 
-/** Online state from `get_online` + `online-changed` (TSD §4.3). Embeds and short links depend on it. */
-export function useOnline(): boolean {
-  const { data } = useApi(getOnline);
-  const [live, setLive] = useState<boolean | undefined>();
-  useEffect(() => onEvent("online-changed", setLive), []);
-  return live ?? data ?? false; // unknown = offline: no embed mounts before get_online answers (TSD §4.3)
+// One shared online state for every subscriber (every EmbedSlot uses it): one `get_online` per subscribe
+// cycle and one `online-changed` listener, instead of one of each per component.
+let online: boolean | undefined;
+const subs = new Set<() => void>();
+const setOnline = (v: boolean) => { if (v !== online) { online = v; subs.forEach((f) => f()); } };
+let stop: (() => void) | undefined;
+function subscribeOnline(fn: () => void) {
+  subs.add(fn);
+  if (subs.size === 1) {
+    const unEvent = onEvent("online-changed", setOnline);
+    const unInvalidate = onInvalidate(() => getOnline().then(setOnline, () => {})); // dev state switch
+    getOnline().then(setOnline, () => {});
+    stop = () => { unEvent(); unInvalidate(); };
+  }
+  return () => { subs.delete(fn); if (!subs.size) { stop?.(); online = undefined; } };
+}
+
+/** Online state from `get_online` + `online-changed` (TSD §4.3). Embeds and short links depend on it.
+ *  `unknown` is the answer before the first probe: offline by default, so no embed mounts early (TSD §4.3);
+ *  the offline banner passes true so it doesn't flash on every start. */
+export function useOnline(unknown = false): boolean {
+  return useSyncExternalStore(subscribeOnline, () => online ?? unknown);
 }

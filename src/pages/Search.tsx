@@ -12,7 +12,7 @@ const FIELD: Record<string, string> = { recommended_by: "recommended by", tags: 
 function Snip({ text, q }: { text: string; q: string }) {
   const i = text.toLowerCase().indexOf(q.toLowerCase());
   if (!q || i < 0) return <>{text}</>;
-  return <>{text.slice(0, i)}<mark className="bg-[rgba(245,181,68,0.3)] text-text rounded-bar">{text.slice(i, i + q.length)}</mark>{text.slice(i + q.length)}</>;
+  return <>{text.slice(0, i)}<mark>{text.slice(i, i + q.length)}</mark>{text.slice(i + q.length)}</>;
 }
 
 export default function Search() {

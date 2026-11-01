@@ -1,5 +1,5 @@
 // M2 acceptance evidence: journeys A–H (BRD §8) driven KEYBOARD ONLY against the mock-data UI in headless Edge (CDP).
-// Usage: node scripts/journeys.mjs   (needs Vite on http://localhost:1420; `npx vite --port 1420 --strictPort`)
+// Usage: node scripts/journeys.mjs   (needs Vite on http://127.0.0.1:1420; `npx vite --port 1420 --strictPort`)
 // User actions use Input.dispatchKeyEvent / Input.insertText only. Runtime.evaluate is used for assertions, focus-ring
 // reads and the external iPhone-share event. Exits non-zero on any FAIL. Screenshots → docs/design/screens/m2-journeys/.
 import { spawn } from "node:child_process";
@@ -7,7 +7,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const APP = process.env.APP_URL ?? "http://localhost:1420";
+const APP = process.env.APP_URL ?? "http://127.0.0.1:1420";
 const EDGE = process.env.EDGE ?? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const OUT = new URL("../docs/design/screens/m2-journeys/", import.meta.url);
 const SHOTS = decodeURIComponent(OUT.pathname.replace(/^\/([A-Za-z]:)/, "$1"));
@@ -28,7 +28,7 @@ await new Promise((r) => (ws.onopen = r));
 let seq = 0; const pending = new Map();
 ws.onmessage = (m) => { const d = JSON.parse(m.data); if (pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } };
 const send = (method, params = {}) => new Promise((res, rej) => { pending.set(++seq, (d) => (d.error ? rej(new Error(`${method}: ${d.error.message}`)) : res(d.result))); ws.send(JSON.stringify({ id: seq, method, params })); });
-const done = (code) => { try { ws.close(); edge.kill(); } catch { /* gone */ } setTimeout(() => { try { rmSync(profile, { recursive: true, force: true }); } catch { /* locked */ } process.exit(code); }, 500); };
+const done = (code) => { try { ws.close(); edge.kill(); } catch { /* gone */ } setTimeout(() => { try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); } catch { /* locked */ } process.exit(code); }, 500); };
 
 /* ------------------------------------------------------------------ page reads (assertions only) */
 // Accessible name, close enough for buttons/links/inputs: aria-label, aria-labelledby, <label>, text, title.
@@ -86,6 +86,13 @@ const byName = (s) => `nm(el) === ${JSON.stringify(s)}`;
 const nameStarts = (s) => `nm(el).startsWith(${JSON.stringify(s)})`;
 /** Tab to a control and activate it with Enter. */
 const activate = async (pred, opts) => { await tabTo(pred, opts); await key("Enter"); await sleep(250); };
+/** Settings tabs (M9): Tab to the selected tab, then arrow keys until `name` is selected (roving tablist). */
+async function pickTab(name) {
+  await tabTo(`el.getAttribute("role") === "tab" && el.getAttribute("aria-selected") === "true"`, { what: "Settings tabs" });
+  for (let i = 0; i < 10 && !(await js(`document.activeElement.textContent === ${JSON.stringify(name)}`)); i++) await key("ArrowRight");
+  if (!(await js(`document.activeElement.getAttribute("aria-selected") === "true" && document.activeElement.textContent === ${JSON.stringify(name)}`))) throw new Error(`no Settings tab ${name}`);
+  await sleep(400);
+}
 /** Move via a rail link (keyboard) to a route. */
 async function go(label, hash) {
   await activate(`el.matches(".rail a") && ${byName(label)}`, { what: `rail link ${label}` });
@@ -122,7 +129,7 @@ async function devPanel(open) {
   await waitFor(`document.querySelector("details.proto").open === ${open}`);
 }
 async function devState(view) {
-  const order = ["normal", "empty", "loading", "offline", "error"];
+  const order = ["normal", "empty", "loading", "offline", "error", "conflict", "partial", "busy", "heavy"]; // devState.ts VIEWS
   await devPanel(true);
   await tabTo(`el.matches("details.proto select") && el.closest("label").textContent.startsWith("State")`, { what: "dev State select" });
   const now = await js(`document.activeElement.value`);
@@ -199,14 +206,19 @@ await step("A8 quick add offline: short link → Save for later → queued", asy
   await waitFor(`!txt().includes("You’re offline.")`);
 });
 
-/* B — capture from phone (the share itself is outside the app: dev panel "iPhone share", reached by keyboard) */
+/* B — capture from phone via the Runout Inbox (D33): the phone's add to the Inbox playlist is outside the app (mock dataset) */
 let needBefore = 0;
-await step("B1 iPhone share arrives → backlog shows it as Name needed", async () => {
+await step("B1 Settings → Runout Inbox → Check now → backlog shows it as Name needed", async () => {
   await go("Backlog", "#/backlog");
   needBefore = await js(`$$(".badge.need").length`);
-  await devPanel(true);
-  await activate(`el.matches("details.proto a") && el.textContent === "iPhone share"`, { what: "dev panel iPhone share" });
-  await devPanel(false);
+  await go("Settings", "#/settings");
+  await pickTab("Inbox");
+  await waitFor(`txt().includes("Runout Inbox · ready")`);
+  await activate(byName("Check now"), { what: "Inbox Check now" });
+  await toast(/1 item from your Inbox saved to the backlog as Name needed/);
+  await waitFor(`txt().includes("1 item imported")`);
+  await shot("B0-inbox-checked");
+  await go("Backlog", "#/backlog");
   await waitFor(`$$(".badge.need").length === ${needBefore + 1}`);
   await shot("B1-share-name-needed");
 });
@@ -296,7 +308,7 @@ await step("D3 update artist status and notes", async () => {
 });
 
 /* E — rediscover */
-const shelfCount = `$$("main section[aria-label]").map((s) => s.getAttribute("aria-label") + ":" + s.querySelectorAll(".tiles > *").length).join("|")`;
+const shelfCount = `$$("main section[aria-label]").map((s) => s.getAttribute("aria-label") + ":" + s.querySelectorAll(":is(.tiles, .rd-rail) > *").length).join("|")`;
 await step("E1 filter by tag", async () => {
   await go("Rediscover", "#/rediscover");
   await waitFor(`$$("main section[aria-label]").length > 0`);
@@ -310,13 +322,15 @@ await step("E1 filter by tag", async () => {
 await step("E2 filter by rating and Revisit flag", async () => {
   await tabTo(`el.id === "rd-min"`, { what: "Rating filter" });
   await key("ArrowDown"); await waitFor(`document.activeElement.value === "4"`);
-  await activate(`el.getAttribute("aria-pressed") !== null && nm(el).startsWith("Revisit only")`, { what: "Revisit only" });
-  await waitFor(`document.activeElement.getAttribute("aria-pressed") === "true"`);
+  await tabTo(`el.getAttribute("role") === "switch" && ${byName("Revisit only")}`, { what: "Revisit only" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === true`);
   await waitFor(`$$("main section[aria-label]").map((s) => s.getAttribute("aria-label")).includes("Flagged to revisit") && txt().includes("Con Todo El Mundo")`);
   await shot("E2-filter-rating-revisit");
 });
 await step("E3 artwork set ends with Open Spotify; record opens with Open Spotify", async () => {
-  await activate(byName("Show artwork"), { what: "Show artwork" });
+  await tabTo(`el.getAttribute("role") === "switch" && ${byName("Artwork")}`, { what: "Artwork switch" });
+  await key(" ");
   await waitFor(`$$("main a").some((a) => a.textContent === "Open Spotify") && $$("main img[alt=Spotify]").length > 0`);
   await shot("E3-artwork-open-spotify");
   await activate(`el.tagName === "A" && el.textContent === "Con Todo El Mundo"`, { what: "record in shelf" });
@@ -344,6 +358,368 @@ await step("F2 Insights shows freshness per source", async () => {
   await waitFor(`/Desktop plays: live\\. All devices: up to your export of /.test(document.querySelector("main .freshness")?.textContent ?? "")`);
   await waitFor(`$$("main *").some((e) => e.children.length === 0 && /^From: .*Desktop log.*Spotify export/.test(e.textContent))`);
   await shot("F4-insights-freshness");
+});
+
+/* I — Insights v3 (M10 WI 6): the period header and the Report, keyboard only */
+const reportReady = () => waitFor(`!!document.querySelector('[aria-label$=" in numbers"]') && !document.querySelector('[aria-busy="true"]')`, 8000);
+const periodRadio = `el.getAttribute("role") === "radio" && el.getAttribute("aria-checked") === "true" && !!el.closest('[aria-label="Period length"]')`;
+await step("I1 Report: ‹ steps back a month; the deep link and label follow", async () => {
+  await reportReady();
+  await waitFor(`location.hash.startsWith("#/insights") && document.querySelector(".in3-step output")?.textContent === "Oct 2026"`);
+  await activate(byName("Previous month"), { what: "Previous month" });
+  await waitFor(`location.hash === "#/insights/report?grain=month&at=2026-09&vs=prev" && document.querySelector(".in3-step output").textContent === "Sep 2026"`);
+  await reportReady();
+  await waitFor(`/^Every day of September$/.test($$("main h2").map((h) => h.textContent).find((t) => t.startsWith("Every day")) ?? "")`);
+  if (!(await js(`document.activeElement.getAttribute("aria-label") === "Previous month"`))) throw new Error("focus left the stepper");
+  await js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`); // evidence only: show the top
+  await sleep(1000); // let arrivals settle
+  await shot("I1-report-month");
+});
+await step("I2 compare with the same month last year, then switch the grain to Year", async () => {
+  await tabTo(`el.matches("select") && ${byName("Compare with")}`, { what: "Compare with" });
+  await key("ArrowDown");
+  await waitFor(`location.hash.endsWith("vs=last_year") && txt().includes("September 2025")`);
+  await tabTo(periodRadio, { back: true, what: "Period length" });
+  await key("ArrowRight");
+  await waitFor(`location.hash === "#/insights/report?grain=year&vs=prev"`); // the current year links as "now"; a year has no separate "same period last year"
+  await reportReady();
+  await waitFor(`$$("main h2").some((h) => h.textContent === "Every month of 2026")`);
+});
+await step("I3 the day chart and Most played answer the keyboard; the fingerprint can't be selected", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/report?grain=month&at=2026-09&vs=prev` });
+  await reportReady();
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el).startsWith("Listening time per day")`, { what: "day chart" });
+  await key("Home");
+  await waitFor(`/^Tue 1 Sep: /.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await tabTo(`el.getAttribute("role") === "tab" && el.getAttribute("aria-selected") === "true" && !!el.closest('[aria-label="Most played"]')`, { what: "Most played tabs" });
+  await key("ArrowRight");
+  await waitFor(`document.querySelector('[role="tabpanel"][aria-label="Albums"]')?.querySelectorAll(".in3-rank").length === 10`);
+  const sel = await js(`getComputedStyle(document.querySelector(".in3-radar")).userSelect`);
+  if (sel !== "none") throw new Error(`fingerprint user-select ${sel}`);
+  await scanButtons();
+  await sleep(1000); // let arrivals settle
+  await shot("I2-report-most-played");
+});
+await step("I4 deep link to a week vs your usual; coverage banner past the export's end", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/report?grain=week&at=2026-10-14&vs=usual` });
+  await reportReady();
+  await waitFor(`document.querySelector(".in3-step output")?.textContent === "Week of 12 Oct 2026" && document.querySelector('[aria-label="Compare with"]').value === "usual"`);
+  await waitFor(`/From 3 Oct, only plays on this PC are counted/.test(document.querySelector(".banner.warn")?.textContent ?? "")`);
+  await waitFor(`txt().includes("Days listened on this PC")`);
+  if (!(await js(`document.querySelector('[aria-label="Next week"]').getAttribute("aria-disabled") === "true"`))) throw new Error("Next week should be inert: no future periods");
+  await js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`); // evidence only: show the top
+  await sleep(1000); // let arrivals settle
+  await shot("I3-report-week-coverage");
+});
+await step("I5 Report states: loading, error, heavy, empty", async () => {
+  await devState("loading"); // a live read keeps its data while it refetches: open the Report afresh to see it load
+  await send("Page.navigate", { url: `${APP}/#/insights/report?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load the report\./.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`); // evidence only: show the top
+  await sleep(1000); // let arrivals settle
+  await shot("I4-report-error");
+  await devState("heavy");
+  await reportReady();
+  await waitFor(`$$(".in3-rank").length === 10`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("long names push the page sideways");
+  await js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`); // evidence only: show the top
+  await sleep(1000); // let arrivals settle
+  await shot("I5-report-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await reportReady();
+});
+
+/* T — Insights v3 Trends (M10 WI 7): brush a stretch into the Report, arcs, a calendar day into Recent plays */
+const trendsReady = () => waitFor(`!!document.querySelector(".in3-life") && !document.querySelector('main [aria-busy="true"]')`, 8000);
+const top = () => js(`(document.querySelector("main")?.scrollTo(0, 0), window.scrollTo(0, 0), true)`);
+await step("T1 Trends: Shift+arrows brush three months; the Report opens on that custom period", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/trends?grain=month&vs=prev` });
+  await trendsReady();
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el).startsWith("Hours per month since")`, { what: "lifetime months" });
+  await press("Shift+ArrowLeft", 2);
+  await waitFor(`/^Aug 2026 to Oct 2026: /.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await top(); await sleep(1000); // let arrivals settle
+  await shot("T1-trends-brush");
+  await activate(byName("Report on Aug 2026 to Oct 2026"), { what: "Report on the stretch" });
+  await waitFor(`location.hash.startsWith("#/insights/report?grain=custom&from=2026-08-01&to=2026-10-") && location.hash.endsWith("&vs=prev")`);
+  await reportReady();
+});
+await step("T2 arcs by keyboard; a calendar day opens Recent plays for that date", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/trends?grain=month&vs=prev` });
+  await trendsReady();
+  await tabTo(`el.getAttribute("role") === "tab" && el.getAttribute("aria-selected") === "true" && !!el.closest('[aria-label="Artist arcs"]')`, { what: "Artist arcs tabs" });
+  await key("ArrowRight");
+  await waitFor(`$$(".in3-arc").some((r) => r.textContent.startsWith("Massive Attack"))`);
+  await tabTo(`!!el.closest(".in3-cal")`, { what: "calendar day" });
+  await key("ArrowUp"); // the day before
+  const d = await js(`document.activeElement.getAttribute("aria-label")`);
+  if (!/^\w{3} \d+ \w{3} 2026: \d/.test(d)) throw new Error(`calendar focus on ${d}`);
+  await js(`(document.querySelector(".in3-cal").scrollIntoView({ block: "center" }), true)`);
+  await sleep(600);
+  await shot("T2-trends-calendar");
+  await key("Enter");
+  await waitFor(`location.hash.startsWith("#/plays/all?date=2026-") && txt().includes("Plays on")`);
+});
+await step("T3 Trends states: loading, error, heavy, empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/trends?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load your trends/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await trendsReady();
+  await waitFor(`$$(".in3-era").length === 6 && $$(".in3-life .hm-col").length > 120`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Trends pushes the page sideways");
+  await top(); await sleep(1000);
+  await shot("T3-trends-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await trendsReady();
+});
+
+/* N — Insights v3 Discovery (M10 WI 7): the per-month split by keyboard, the period stepper, the log; states */
+const discoveryReady = (label) => waitFor(`!!document.querySelector('[aria-label="Discovery in ${label}"]') && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("N1 Discovery: the per-month chart answers the keyboard; ‹ steps the period; the log and starts show", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/discovery?grain=month&at=2026-09&vs=prev` });
+  await discoveryReady("Sep 2026");
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el).startsWith("New artists per month")`, { what: "new artists per month" });
+  await key("Home");
+  await waitFor(`/^\\w+ \\d{4}: (\\d+ new artists?|no data)/.test(document.activeElement.getAttribute("aria-valuetext")) && document.activeElement.getAttribute("aria-valuenow") === "0"`);
+  await waitFor(`$$(".in3-log tbody tr").length >= 4 && !!document.querySelector('.in3-split[role="img"]') && txt().includes("An estimate")`);
+  await activate(byName("Previous month"), { what: "Previous month", back: true });
+  await waitFor(`location.hash === "#/insights/discovery?grain=month&at=2026-08&vs=prev"`);
+  await discoveryReady("Aug 2026");
+  await top(); await sleep(1000); // let arrivals settle
+  await shot("N1-discovery");
+});
+await step("N2 Discovery states: loading, error, heavy, empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/discovery?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load your discoveries/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await discoveryReady("Oct 2026");
+  await waitFor(`$$(".in3-log tbody tr").some((r) => r.textContent.includes("Back again"))`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Discovery pushes the page sideways");
+  await top(); await sleep(1000);
+  await shot("N2-discovery-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await discoveryReady("Oct 2026");
+});
+
+/* L — Insights v3 How you listen (M10 WI 7): export-only banner, skips by hour by keyboard, estimates labelled; states */
+const habitsReady = (label) => waitFor(`!!document.querySelector('[aria-label="How you listen in ${label}"]') && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("L1 How you listen: skips by hour answer the keyboard; sessions and deep dives say they're estimates", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/habits?grain=month&at=2026-09&vs=prev` });
+  await habitsReady("Sep 2026");
+  await waitFor(`/cover your export plays/.test(document.querySelector('.banner[role="note"]')?.textContent ?? "")`);
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el) === "Share of plays skipped by hour of day"`, { what: "skips by hour" });
+  await key("Home");
+  await waitFor(`/^00:00: \\d+% of plays skipped$/.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el) === "Sessions by length"`, { what: "sessions by length" });
+  await key("End");
+  await waitFor(`/^4 hours or more: /.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await waitFor(`$$(".card").filter((c) => /An estimate/.test(c.textContent)).length === 2 && txt().includes("Mezzanine, 3 times through")`);
+  await top(); await sleep(1000); // let arrivals settle
+  await shot("L1-how-you-listen");
+});
+await step("L2 How you listen states: loading, error, heavy, empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/habits?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load how you listen/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await habitsReady("Oct 2026");
+  await waitFor(`$$('[aria-label="Share of plays on shuffle by year"] .hm-col').length > 10`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("How you listen pushes the page sideways");
+  await top(); await sleep(1000);
+  await shot("L2-how-you-listen-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await habitsReady("Oct 2026");
+});
+
+/* R — Insights v3 Records (M10 WI 7): record cards as links, a past "on this day" opens Recent plays; Play again; states */
+const recordsReady = () => waitFor(`!!document.querySelector('section[aria-labelledby="rec-h"] .in3-recs') && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("R1 Records: eight records, the estimate labelled; an earlier year on this day opens Recent plays for that date", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/records?grain=month&vs=prev` });
+  await recordsReady();
+  await waitFor(`$$(".in3-recs > *").length === 8 && /an estimate/.test(document.querySelector(".in3-recs").textContent)`);
+  await tabTo(nameStarts("Biggest day: "), { what: "Biggest day record" });
+  await top(); await sleep(1000); // let arrivals settle
+  await shot("R1-records");
+  await tabTo(`el.matches(".in3-otd a")`, { what: "on this day, an earlier year" });
+  const d = await js(`document.activeElement.getAttribute("href")`);
+  await key("Enter");
+  await waitFor(`location.hash === ${JSON.stringify(d)} && /Plays on|No plays that day/.test(txt())`);
+});
+await step("R2 Records states: loading, error, heavy (Play again opens Spotify), empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/records?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load your records/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await recordsReady();
+  await tabTo(`el.matches(".in3-fav a.btn") && /^Play .+ again in Spotify$/.test(nm(el))`, { what: "Play again" });
+  if (!(await js(`document.activeElement.href.startsWith("https://open.spotify.com/") && document.activeElement.target === "_blank"`))) throw new Error("Play again doesn't open Spotify");
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Records pushes the page sideways");
+  await js(`(document.querySelector(".in3-favs").scrollIntoView({ block: "center" }), true)`);
+  await sleep(1000);
+  await shot("R2-records-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await recordsReady();
+});
+
+/* J — Insights v3 Genres & decades (M10 WI 9): months by keyboard, the MusicBrainz credit, still looking up, the off switch */
+const genresReady = (label) => waitFor(`!!document.querySelector('[aria-label="Genres and decades in ${label}"]') && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("J1 Genres & decades: genres by month by keyboard, credit shown; turn lookups off (deleted) and on again", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/genres?grain=month&at=2026-09&vs=prev` });
+  await genresReady("Sep 2026");
+  await waitFor(`txt().includes("Genres from MusicBrainz, CC BY-NC-SA 3.0") && /Still looking up \\d+ names/.test(txt()) && txt().includes("From: Desktop log") && txt().includes("Music database")`);
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el) === "Top genres by month"`, { what: "genres by month" });
+  await key("Home");
+  await waitFor(`/^.+ \\d{4}: Spiritual jazz \\d+%/.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await key("End");
+  await top(); await sleep(1000);
+  await shot("J1-genres");
+  await activate(byName("Turn off lookups and delete them"), { what: "Turn off lookups" });
+  await toast(/^Lookups off\./);
+  await waitFor(`txt().includes("Genres and decades are off") && !txt().includes("Genres from MusicBrainz")`);
+  await activate(byName("Turn on lookups"), { back: true, what: "Turn on lookups" });
+  await genresReady("Sep 2026");
+});
+await step("J2 Genres & decades states: loading, error, heavy, empty; the switch in Your data", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/genres?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load genres and decades/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await genresReady("Oct 2026");
+  await waitFor(`$$(".in3-genre-row").length === 10 && $$(".in3-dec > div").length === 8`);
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Genres & decades pushes the page sideways");
+  await js(`(document.querySelector(".in3-dec").scrollIntoView({ block: "center" }), true)`); await sleep(1000);
+  await shot("J2-genres-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await send("Page.navigate", { url: `${APP}/#/insights/data?grain=month&vs=prev` });
+  await tabTo(`el.getAttribute("role") === "switch" && nm(el) === "Look up genres and release years"`, { what: "music database switch" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === false && txt().includes("nothing looked up is kept")`);
+  await key(" ");
+  await waitFor(`document.activeElement.checked === true`);
+});
+
+/* X — Insights v3 Explore (M10 WI 8): scrub the chart, a ready-made question fills the builder, save the view, Copy as CSV */
+const exploreReady = (name = "Hours per month") => waitFor(`!!$$('[role="slider"]').find((e) => nm(e) === ${JSON.stringify(name)}) && !document.querySelector('main [aria-busy="true"]')`, 8000);
+await step("X1 Explore: chart by arrow keys, a ready-made question fills the builder, Save this view, Copy as CSV", async () => {
+  await send("Browser.grantPermissions", { permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"], origin: APP }).catch(() => {});
+  await send("Page.navigate", { url: `${APP}/#/insights/explore` });
+  await exploreReady();
+  await tabTo(`el.getAttribute("role") === "slider" && nm(el) === "Hours per month"`, { what: "Explore chart" });
+  await key("End");
+  await waitFor(`/^Oct 2026: /.test(document.activeElement.getAttribute("aria-valuetext"))`);
+  await key("ArrowLeft");
+  await waitFor(`/^Sep 2026: /.test(document.activeElement.getAttribute("aria-valuetext")) && !!document.querySelector(".in3-dot")`);
+  await tabTo(`el.matches(".in3-q") && /late at night\\?$/.test(nm(el))`, { what: "ready-made question" });
+  await key("Enter");
+  await waitFor(`document.querySelector('select[aria-label="Hours of day, from"]').value === "22" && document.querySelector('select[aria-label="Hours of day, until"]').value === "2"`);
+  await exploreReady();
+  await tabTo(byName("Save this view"), { what: "Save this view" }); await key("Enter");
+  await waitFor(`document.activeElement.getAttribute("aria-label") === "Name for this view"`);
+  await type(" late"); await key("Enter");
+  await toast(/^Saved “.+ late”/);
+  await waitFor(`$$("button").some((b) => /^Delete saved view .+ late$/.test(nm(b)))`);
+  await tabTo(byName("Copy as CSV"), { what: "Copy as CSV" }); await key("Enter");
+  await toast(/Copied \d+ rows as CSV: hours and plays\./);
+  await js(`(document.getElementById("ex-h").scrollIntoView({ block: "start" }), true)`); await sleep(1000);
+  await shot("X1-explore");
+});
+await step("X2 Explore states: loading, error, heavy (export-only note), empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/records?grain=month&vs=prev` }); await sleep(300); // another tab first: a mounted Explore keeps its data
+  await send("Page.navigate", { url: `${APP}/#/insights/explore?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load Explore/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await exploreReady();
+  await tabTo(`el.matches(".in3-q") && /come up on shuffle\\?$/.test(nm(el))`, { what: "shuffle question" }); await key("Enter");
+  await waitFor(`txt().includes("plays on this PC are left out") && txt().includes("Export plays only")`);
+  await exploreReady("Plays per year");
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Explore pushes the page sideways");
+  await js(`(document.getElementById("ex-h").scrollIntoView({ block: "start" }), true)`); await sleep(1000);
+  await shot("X2-explore-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await exploreReady();
+});
+
+/* Y — Insights v3 Your data (M10 WI 8): coverage strip, imports, the reminder and private-session switches (moved from Settings) */
+const dataReady = () => waitFor(`!!document.querySelector('.in3-cov[role="img"]') && !!$$('[role="switch"]').find((e) => nm(e) === "Leave out private-session plays")`, 8000);
+await step("Y1 Your data: sources and gaps, imports; switches by keyboard; the private-session switch left Settings; import entry", async () => {
+  await send("Page.navigate", { url: `${APP}/#/insights/data?grain=month&vs=prev` });
+  await dataReady();
+  await waitFor(`/^Coverage: Spotify export from .+; desktop log from .+; no data for /.test(nm(document.querySelector(".in3-cov"))) && $$(".in3-imports tbody tr").length >= 1`);
+  await tabTo(`el.getAttribute("role") === "switch" && nm(el) === "Remind me to request a new export"`, { what: "export reminder switch" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === true`);
+  await tabTo(`el.getAttribute("role") === "switch" && nm(el) === "Leave out private-session plays"`, { what: "private-session switch" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === false && txt().includes("Private-session plays count in every insight.")`);
+  await key(" ");
+  await waitFor(`document.activeElement.checked === true && /\\d+ plays? left out of every insight/.test(txt())`);
+  await top(); await sleep(1000);
+  await shot("Y1-your-data");
+  await tabTo(`el.getAttribute("role") === "switch" && nm(el) === "Remind me to request a new export"`, { back: true, what: "export reminder switch" });
+  await key(" ");
+  await waitFor(`document.activeElement.checked === false`);
+  await send("Page.navigate", { url: `${APP}/#/settings?tab=logger` });
+  await waitFor(`txt().includes("Log what Spotify plays on this PC")`);
+  if (await js(`$$('[role="switch"]').some((e) => /private/i.test(nm(e)))`)) throw new Error("the private-session switch is still in Settings");
+  await send("Page.navigate", { url: `${APP}/#/insights/data?grain=month&vs=prev` });
+  await dataReady();
+  await activate(`el.matches("a.btn") && ${byName("Import a newer export")}`, { back: true, what: "Import a newer export" });
+  await waitFor(`location.hash === "#/import/1"`);
+});
+await step("Y2 Your data states: loading, error, heavy, empty", async () => {
+  await devState("loading");
+  await send("Page.navigate", { url: `${APP}/#/insights/data?grain=month&vs=prev` });
+  await waitFor(`!!document.querySelector('main [aria-busy="true"]')`);
+  await devState("error");
+  await waitFor(`/Couldn’t load what Runout knows/.test(document.querySelector('.banner.err')?.textContent ?? "")`);
+  await devState("heavy");
+  await dataReady();
+  const over = await js(`(() => { const m = document.querySelector("main"); return m.scrollWidth > m.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth; })()`);
+  if (over) throw new Error("Your data pushes the page sideways");
+  await top(); await sleep(1000);
+  await shot("Y2-your-data-heavy");
+  await devState("empty");
+  await waitFor(`txt().includes("Nothing to show yet")`);
+  await devState("normal");
+  await dataReady();
 });
 
 /* G — clean up a playlist */
@@ -382,6 +758,7 @@ await step("G3 undo banner restores the playlist", async () => {
 /* H — back up and restore */
 await step("H1 backup now: location and size confirmed", async () => {
   await go("Settings", "#/settings");
+  await pickTab("Your data");
   await activate(byName("Back up now"), { what: "Back up now" });
   await toast(/Backup saved to .+ \(\d+\.\d MB\)/);
   await waitFor(`txt().includes("(latest)")`);
@@ -410,6 +787,19 @@ await step("M1 prefers-reduced-motion: transitions/animations off", async () => 
   if (!(r.skelAnim === "none" || r.skelDur.split(",").every((d) => parseFloat(d) === 0))) throw new Error(`.skel animation ${r.skelAnim} ${r.skelDur}`);
   await devState("normal");
   await send("Emulation.setEmulatedMedia", { features: [] });
+});
+await step("M4 hovering the selected segment keeps its label legible (M8 audit: hover rule outranked selected)", async () => {
+  await go("Backlog", "#/backlog");
+  const box = await waitFor(`(() => { const b = document.querySelector('.seg button[aria-selected="true"], .seg button[aria-checked="true"]'); if (!b) return null;
+    const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: box.x, y: box.y });
+  await sleep(300);
+  const c = await js(`(() => { const b = document.querySelector('.seg button[aria-selected="true"], .seg button[aria-checked="true"]');
+    const ind = b.parentElement.querySelector(".seg-ind"); const bg = getComputedStyle(ind ?? b).backgroundColor;
+    return { fg: getComputedStyle(b).color, bg, hover: b.matches(":hover") }; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
+  if (!c.hover) throw new Error("mouse hover did not land on the selected segment");
+  if (c.fg === c.bg) throw new Error(`selected segment label invisible on hover: color ${c.fg} on ${c.bg}`);
 });
 await step("M2 every rendered <button> on visited routes has an accessible name", async () => {
   if (unnamed.size) throw new Error([...unnamed].join("\n  "));

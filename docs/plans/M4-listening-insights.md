@@ -5,6 +5,8 @@ Agents: `rust-core`; `spotify-researcher` for T1/O2 (step 4).
 
 **Entry:** M3 done. UI is already built (M2): implement [API.md](../API.md) as the UI expects it; no page changes (see [plans README](README.md#rules-for-backend-milestones-m3m5)). **U-2** (export files arrived) needed only for step 4; everything else runs on synthetic fixtures meanwhile.
 
+**Known gaps owned here:** G-1, G-7, G-8. See [MILESTONES Known gaps](../MILESTONES.md#known-gaps); remove each row when fixed.
+
 ## Steps
 1. **SMTC spike, then logger (WI 1).** Spike binary in `src-tauri/examples/smtc_spike.rs`: subscribe via `windows` crate, print 3 real Spotify tracks with accumulated `ms_played` (pause excluded). Then `logger/`:
    - `session.rs` — session manager subscription, allow-list on `SourceAppUserModelId` (default `Spotify`).
@@ -12,7 +14,7 @@ Agents: `rust-core`; `spotify-researcher` for T1/O2 (step 4).
    - `poll.rs` — 5 s timeline fallback.
    - Pause logging (until resumed / 1 h), autostart via `tauri-plugin-autostart`, tray tooltip states, `logger-status` + `play-logged` events.
    - Tests: accumulator table (play→pause→play, seek, track change mid-pause, < 1 s noise, 29.9 s vs 30 s play rule).
-2. **Migration (WI 2).** `0002_listening.sql`: `listening_event` (generated `counts_as_play`, `dedupe_hash UNIQUE`, partial unique index `one_to_one_reconcile`), `import_batch`, `exported_playlist*`. Test: v1 DB with data upgrades to v2 intact.
+2. **Migration (WI 2).** `0003_listening.sql`: `listening_event` (generated `counts_as_play`, `dedupe_hash UNIQUE`, partial unique index `one_to_one_reconcile`), `import_batch`, `exported_playlist*`. Test: v2 DB with data upgrades to v3 intact.
 3. **Importer skeleton (WI 3).** `importer/`: `source.rs` (folder or zip, file-type detection by name pattern), `preview.rs` (counts only, no writes), `run.rs` (one transaction, `import_batch` with checksum → re-importing the same files adds 0).
 4. **Real format (WI 4, T1).** After U-2: `verify-assumption` on file and field names; adjust `streaming.rs` field allow-list; record in KB + TSD §4.8. Build `tests/fixtures/export_synthetic/` from the **structure only** (random values).
 5. **Minimization + transforms (WI 5).** Parse into an explicit struct (serde with unknown fields ignored); drop any `ip_addr*`, `user_agent*`, `username`; skip null `spotify_track_uri`; UTC → local with Windows time-zone rules at that date (`windows` crate `SystemTimeToTzSpecificLocalTimeEx` or `chrono-tz` with the mapped zone — pick in spike, record in KB); `private_session = incognito_mode`.
